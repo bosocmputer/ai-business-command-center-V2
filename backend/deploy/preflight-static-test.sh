@@ -1,0 +1,118 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+temporary=$(mktemp -d "${TMPDIR:-/tmp}/nextstep-preflight.XXXXXX")
+trap 'rm -rf "$temporary"' EXIT INT TERM
+tls_dir="$temporary/tls"
+env_file="$temporary/production.env"
+bad_env_file="$temporary/production-bad.env"
+bad_telegram_context_env_file="$temporary/production-bad-telegram-context.env"
+raw_hash_env_file="$temporary/production-raw-hash.env"
+
+for runtime_script in backup.sh restore-drill.sh host-probe.sh; do
+  if ! grep -q 'docker info' "$script_dir/$runtime_script"; then
+    echo "$runtime_script must verify Docker daemon access before omitting sudo" >&2
+    exit 1
+  fi
+done
+
+if [ "$(grep -Fc '< /dev/null > "$temporary"' "$script_dir/backup.sh")" -ne 2 ]; then
+  echo "backup.sh must detach pg_dump stdin for interactive production releases" >&2
+  exit 1
+fi
+
+for feature_key in \
+  SMART_SCHEDULE_PERIODS_ENABLED SMART_SCHEDULE_PERIOD_TENANT_IDS \
+  SUMMARY_QUERY_ENABLED GENERATION_CACHE_ENABLED STALE_REVALIDATION_ENABLED \
+  HEAVY_CHUNK_ENABLED HEAVY_CHUNK_TENANT_REPORTS SCHEDULE_CHUNK_ENABLED \
+  REPORT_GLOBAL_QUERY_CONCURRENCY REPORT_HOST_QUERY_CONCURRENCY \
+  SML_ALLOW_PUBLIC_ENDPOINTS SML_ALLOWED_PORTS BACKUP_POLICY; do
+  if ! grep -q "^  $feature_key:" "$script_dir/compose.production.yml"; then
+    echo "compose.production.yml must pass $feature_key to API and Worker" >&2
+    exit 1
+  fi
+done
+
+chmod_line=$(awk '/chmod 600 .*server\.key/ { print NR; exit }' "$script_dir/generate-postgres-tls.sh")
+chown_line=$(awk '/chown .*server\.key/ { print NR; exit }' "$script_dir/generate-postgres-tls.sh")
+if [ -z "$chmod_line" ] || [ -z "$chown_line" ] || [ "$chmod_line" -ge "$chown_line" ]; then
+  echo "PostgreSQL TLS key permissions must be set before ownership is transferred" >&2
+  exit 1
+fi
+
+POSTGRES_TLS_DIR="$tls_dir" POSTGRES_UID=$(id -u) "$script_dir/generate-postgres-tls.sh" >/dev/null
+cat > "$env_file" <<'EOF'
+DASHBOARD_DOMAIN=dashboard.nextstep-soft.com
+BACKEND_SHA=1111111111111111111111111111111111111111
+FRONTEND_SHA=2222222222222222222222222222222222222222
+FRONTEND_BIND_ADDRESS=127.0.0.1
+POSTGRES_DB=nextstep
+POSTGRES_USER=nextstep
+POSTGRES_PASSWORD=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+DATABASE_URL=postgres://nextstep:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@postgres:5432/nextstep?sslmode=verify-full&sslrootcert=/run/secrets/postgres-root.crt
+DATABASE_MAX_CONNECTIONS=20
+DATABASE_MIN_CONNECTIONS=2
+ADMIN_USERNAME=superadmin
+ADMIN_PASSWORD_HASH='$argon2id$v=19$m=65536,t=3,p=2$fake$fake'
+SESSION_HMAC_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+ENCRYPTION_MASTER_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+ENCRYPTION_KEY_ID=test-key
+SML_ALLOWED_CIDRS=10.0.0.0/8
+SML_ALLOWED_HOSTS=sml.internal.local
+SML_ALLOW_PUBLIC_ENDPOINTS=false
+SML_ALLOWED_PORTS=*
+REPORT_WORKER_CONCURRENCY=4
+DELIVERY_WORKER_CONCURRENCY=4
+REPORT_GLOBAL_QUERY_CONCURRENCY=4
+REPORT_HOST_QUERY_CONCURRENCY=2
+SNAPSHOT_FIRST_ENABLED=false
+SNAPSHOT_FIRST_TENANT_IDS=
+SUMMARY_QUERY_ENABLED=false
+GENERATION_CACHE_ENABLED=false
+STALE_REVALIDATION_ENABLED=false
+HEAVY_CHUNK_ENABLED=false
+HEAVY_CHUNK_TENANT_REPORTS=
+SCHEDULE_CHUNK_ENABLED=false
+SMART_SCHEDULE_PERIODS_ENABLED=false
+SMART_SCHEDULE_PERIOD_TENANT_IDS=
+OPERATIONAL_ALERTS_MODE=observe
+TELEGRAM_TENANT_CONTEXT_MODE=off
+SENTINEL_INTERVAL_SECONDS=30
+SENTINEL_HOST_RUNTIME_DIR=/run/nextstep-dashboard
+WATCHDOG_ENABLED=true
+BACKUP_POLICY=PRE_MIGRATION_ONLY
+OFFSITE_BACKUP_CONFIGURED=false
+LINE_LOGIN_CHANNEL_ID=2010662588
+LINE_MESSAGING_CHANNEL_ACCESS_TOKEN=fake-token-value-that-is-long-enough-for-static-test
+EOF
+chmod 600 "$env_file"
+POSTGRES_TLS_DIR="$tls_dir" "$script_dir/preflight.sh" "$env_file" static >/dev/null
+
+sed 's|^ADMIN_PASSWORD_HASH=.*|ADMIN_PASSWORD_HASH=$argon2id$v=19$m=65536,t=3,p=2$fake$fake|' "$env_file" > "$raw_hash_env_file"
+chmod 600 "$raw_hash_env_file"
+if POSTGRES_TLS_DIR="$tls_dir" "$script_dir/preflight.sh" "$raw_hash_env_file" static >/dev/null 2>&1; then
+  echo "Preflight accepted an unquoted Argon2id hash that Compose would interpolate" >&2
+  exit 1
+fi
+
+sed 's/SML_ALLOWED_HOSTS=sml.internal.local/SML_ALLOWED_HOSTS=sml-shop.example.com/' "$env_file" > "$bad_env_file"
+chmod 600 "$bad_env_file"
+if POSTGRES_TLS_DIR="$tls_dir" "$script_dir/preflight.sh" "$bad_env_file" static >/dev/null 2>&1; then
+  echo "Preflight accepted an example SML hostname" >&2
+  exit 1
+fi
+
+sed 's/TELEGRAM_TENANT_CONTEXT_MODE=off/TELEGRAM_TENANT_CONTEXT_MODE=group/' "$env_file" > "$bad_telegram_context_env_file"
+chmod 600 "$bad_telegram_context_env_file"
+if POSTGRES_TLS_DIR="$tls_dir" "$script_dir/preflight.sh" "$bad_telegram_context_env_file" static >/dev/null 2>&1; then
+  echo "Preflight accepted a non-private Telegram tenant context mode" >&2
+  exit 1
+fi
+
+if ! grep -Fq -- "--quiet --tuples-only --no-align" "$script_dir/maintenance-window.sh"; then
+  echo "Maintenance window insert must suppress the PostgreSQL command tag before validating its UUID" >&2
+  exit 1
+fi
+
+echo "Static production preflight tests passed."

@@ -1,0 +1,11 @@
+.git
+.github
+.env*
+!.env.example
+dist
+docs
+e2e
+node_modules
+playwright.config.ts
+tasks
+npm-debug.log*

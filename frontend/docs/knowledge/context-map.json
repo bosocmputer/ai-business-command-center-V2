@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "viewer-routing",
+      "sourcePatterns": ["src/router/index.ts", "src/utils/viewerRouting.ts", "src/views/viewer/ViewerShell.vue", "src/views/viewer/ViewerHome.vue", "src/views/viewer/ViewerDelivery.vue", "src/views/viewer/ViewerDeliveryReport.vue"],
+      "excludePatterns": ["**/*.test.*"],
+      "contextDocuments": ["docs/knowledge/01-viewer-admin-flows.md"],
+      "fallback": false
+    },
+    {
+      "id": "viewer-request-lifecycle",
+      "sourcePatterns": ["src/api/client.ts", "src/views/viewer/ExecutiveOverview.vue", "src/views/viewer/ViewerReport.vue", "src/components/dashboard/ReportPeriodToolbar.vue", "src/utils/freshness.ts", "src/utils/reportPeriod.ts", "src/utils/viewerSnapshot.ts"],
+      "excludePatterns": ["**/*.test.*"],
+      "contextDocuments": ["docs/knowledge/02-request-lifecycle.md"],
+      "fallback": false
+    },
+    {
+      "id": "frontend-api-contract",
+      "sourcePatterns": ["src/api/index.ts", "src/api/types.ts", "src/api/index.test.ts", "scripts/update-contract.mjs", "scripts/verify-contract.mjs"],
+      "excludePatterns": [],
+      "contextDocuments": ["docs/knowledge/02-request-lifecycle.md"],
+      "fallback": false
+    },
+    {
+      "id": "admin-workflow",
+      "sourcePatterns": ["src/views/admin/**", "src/components/admin/**", "src/stores/adminTenantContext.ts"],
+      "excludePatterns": ["**/*.test.*"],
+      "contextDocuments": ["docs/knowledge/01-viewer-admin-flows.md"],
+      "fallback": false
+    },
+    {
+      "id": "app-shell-accessibility",
+      "sourcePatterns": ["src/layout/**", "src/assets/layout/**", "src/components/AppPageHeader.vue"],
+      "excludePatterns": ["**/*.test.*"],
+      "contextDocuments": ["docs/knowledge/03-ui-quality-gates.md"],
+      "fallback": false
+    },
+    {
+      "id": "dashboard-presentation",
+      "sourcePatterns": ["src/components/dashboard/**", "src/utils/chartPresentation.ts", "src/utils/dashboard.ts", "src/utils/reportPresentation.ts", "src/constants/themeConstants.ts"],
+      "excludePatterns": ["**/*.test.*", "src/components/dashboard/ReportPeriodToolbar.vue"],
+      "contextDocuments": ["docs/knowledge/03-ui-quality-gates.md"],
+      "fallback": false
+    },
+    {
+      "id": "frontend-project-source",
+      "sourcePatterns": ["src/**", "scripts/**", ".github/**", "package.json", "vite.config.*", "playwright.config.*"],
+      "excludePatterns": ["**/*.test.*", "**/*.node-test.*", "src/api/schema.d.ts", "scripts/context-impact-test.py", "scripts/context-sync.node-test.mjs"],
+      "contextDocuments": ["AGENTS.md", "docs/knowledge/*.md"],
+      "fallback": true
+    }
+  ]
+}

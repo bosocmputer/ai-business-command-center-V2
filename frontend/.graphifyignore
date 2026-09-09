@@ -1,0 +1,47 @@
+# Generated, runtime, dependency, and local-only content
+.git/
+graphify-out/
+.obsidian/
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.cache/
+tmp/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.log
+
+# Large/generated files that duplicate source-of-truth inputs
+package-lock.json
+components.d.ts
+src/api/schema.d.ts
+
+# Customer or binary artifacts must never enter the local graph
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.bak
+*.csv
+*.xlsx
+*.xls
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.mp4
+*.mov
+*.mp3
+*.wav

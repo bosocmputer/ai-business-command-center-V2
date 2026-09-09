@@ -1,0 +1,56 @@
+@use 'primeicons/primeicons.css';
+@use '@fontsource/lato/latin-400.css' as *;
+@use '@fontsource/lato/latin-700.css' as *;
+@use '@fontsource/noto-sans-thai/thai-400.css' as *;
+@use '@fontsource/noto-sans-thai/thai-700.css' as *;
+@use '@/assets/layout/layout.scss';
+
+:root {
+  font-family: Lato, "Noto Sans Thai", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-ground);
+  color: var(--text-color);
+}
+
+button, input, textarea, select { font: inherit; }
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.page-title { margin: 0; font-size: 1.65rem; font-weight: 700; letter-spacing: -0.02em; }
+.page-subtitle { margin: 0.35rem 0 0; color: var(--text-color-secondary); }
+.metric-value { font-variant-numeric: tabular-nums; }
+.table-number-column { text-align: right !important; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.table-number-column .p-datatable-column-header-content { justify-content: flex-end; }
+.table-select-column { text-align: center !important; }
+.table-select-column .p-datatable-column-header-content { justify-content: center; }
+.table-action-column { text-align: right !important; }
+.table-action-column .p-datatable-column-header-content { justify-content: flex-end; }
+.safe-wrap { overflow-wrap: anywhere; }
+.content-stack { display: grid; gap: 1rem; }
+.technical-detail { font-size: .75rem; color: var(--text-color-secondary); overflow-wrap: anywhere; }
+.table-card { overflow: visible; }
+.table-card > .p-datatable + .table-footer { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--surface-border); }
+.sakai-table-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.p-datatable-filter-overlay { max-width: min(24rem, calc(100vw - 2rem)); }
+.touch-action { min-width: 44px; min-height: 44px; }
+
+@media (max-width: 767px) {
+  .page-header { flex-direction: column; }
+  .page-title { font-size: 1.4rem; }
+  .responsive-dialog { width: calc(100vw - 2rem) !important; }
+  .table-card { padding: 1.25rem; }
+  .sakai-table-header { flex-direction: column-reverse; align-items: stretch; }
+  .sakai-table-header .p-iconfield, .sakai-table-header .p-inputtext { width: 100%; }
+  .entity-back-action .p-button-label { display: none; }
+  .entity-back-action.p-button { width: 44px; min-width: 44px; height: 44px; padding: 0; }
+}

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+coverage/
+playwright-report/
+test-results/
+*.log
+__pycache__/
+.DS_Store
+
+# Local project knowledge indexes and Obsidian application state
+graphify-out/
+docs/knowledge/.obsidian/

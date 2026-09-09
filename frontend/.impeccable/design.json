@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-10T16:29:43Z",
+  "title": "Design System: Nextstep Dashboard",
+  "extensions": {
+    "colorMeta": {
+      "primary-500": {
+        "role": "primary",
+        "displayName": "Operational Emerald",
+        "canonical": "#10b981",
+        "tonalRamp": ["#064e3b", "#065f46", "#047857", "#059669", "#10b981", "#34d399", "#a7f3d0", "#ecfdf5"]
+      },
+      "surface-ground": {
+        "role": "neutral",
+        "displayName": "Slate Ground",
+        "canonical": "#f1f5f9",
+        "tonalRamp": ["#020617", "#0f172a", "#334155", "#64748b", "#94a3b8", "#cbd5e1", "#e2e8f0", "#f8fafc"]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Page Headline", "purpose": "One page title per route." },
+      "body": { "displayName": "Thai-first Body", "purpose": "Forms, tables, status copy and explanations." }
+    },
+    "shadows": [
+      { "name": "overlay-only", "value": "0 4px 8px rgba(15, 23, 42, 0.12)", "purpose": "Dialogs, popovers and overlays only." }
+    ],
+    "motion": [
+      { "name": "state-transition", "value": "200ms ease-out", "purpose": "Menu, hover and state feedback." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "576px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "992px" },
+      { "name": "xl", "value": "1200px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary action within one task group.",
+      "html": "<button class=\"ds-button-primary\">บันทึกข้อมูล</button>",
+      "css": ".ds-button-primary{background:#059669;color:#fff;border:0;border-radius:6px;padding:10px 16px;font:600 14px Inter,'Noto Sans Thai',system-ui,sans-serif;transition:background-color .2s ease-out}.ds-button-primary:hover{background:#047857}.ds-button-primary:focus-visible{outline:2px solid #10b981;outline-offset:2px}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Visible-label field for admin forms and filters.",
+      "html": "<label class=\"ds-field\">ชื่อร้าน<input class=\"ds-input\" value=\"วาวา\"></label>",
+      "css": ".ds-field{display:grid;gap:8px;color:#334155;font:600 14px Inter,'Noto Sans Thai',system-ui,sans-serif}.ds-input{background:#fff;color:#334155;border:1px solid #cbd5e1;border-radius:6px;padding:10px 12px;font:400 14px Inter,'Noto Sans Thai',system-ui,sans-serif}.ds-input:focus-visible{border-color:#10b981;outline:2px solid #a7f3d0;outline-offset:1px}"
+    },
+    {
+      "name": "Content Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Tonal content surface without decorative shadow.",
+      "html": "<section class=\"ds-card\"><h3>สถานะรายงาน</h3><p>ข้อมูลล่าสุดพร้อมใช้งาน</p></section>",
+      "css": ".ds-card{background:#fff;color:#334155;border:1px solid #e2e8f0;border-radius:12px;padding:24px;font:400 14px Inter,'Noto Sans Thai',system-ui,sans-serif}.ds-card h3{margin:0 0 8px;font-size:18px}.ds-card p{margin:0;color:#64748b}"
+    },
+    {
+      "name": "Selected Navigation",
+      "kind": "nav",
+      "description": "Current Sakai sidebar destination.",
+      "html": "<a class=\"ds-nav-selected\" href=\"#\">ภาพรวมผู้บริหาร</a>",
+      "css": ".ds-nav-selected{display:block;background:#ecfdf5;color:#047857;border-radius:6px;padding:10px 12px;font:600 14px Inter,'Noto Sans Thai',system-ui,sans-serif;text-decoration:none}.ds-nav-selected:hover{background:#d1fae5}.ds-nav-selected:focus-visible{outline:2px solid #10b981;outline-offset:2px}"
+    },
+    {
+      "name": "Success Tag",
+      "kind": "chip",
+      "description": "Confirmed healthy or successful state.",
+      "html": "<span class=\"ds-tag-success\">พร้อมใช้งาน</span>",
+      "css": ".ds-tag-success{display:inline-flex;align-items:center;background:#d1fae5;color:#065f46;border-radius:999px;padding:4px 8px;font:600 12px Inter,'Noto Sans Thai',system-ui,sans-serif}"
+    }
+  ],
+  "narrative": {
+    "northStar": "ห้องควบคุมที่สงบ",
+    "overview": "Nextstep Dashboard ใช้โครงสร้าง Sakai ที่คุ้นเคย พื้นผิวแบบ tonal layering และสี Emerald เฉพาะ action, selection และ state เพื่อให้ข้อมูลและสถานะนำสายตา",
+    "keyCharacteristics": ["Thai-first", "Sakai-native", "Executive summary before detail", "Accessible on desktop and LIFF"],
+    "rules": [
+      { "name": "The One Accent Rule", "body": "สี Emerald ใช้กับ action, selection และ state เท่านั้น", "section": "colors" },
+      { "name": "The Flat-by-Default Rule", "body": "Card ปกติใช้ border หรือ tonal contrast โดยไม่มีเงากว้าง", "section": "elevation" }
+    ],
+    "dos": ["Do use Sakai and PrimeVue components before custom CSS.", "Do show period, Bangkok time and freshness with every metric group."],
+    "donts": ["Don't use SaaS marketing card grids.", "Don't use purple gradients, glassmorphism or misleading charts."]
+  }
+}

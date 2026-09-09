@@ -1,0 +1,190 @@
+package report
+
+import (
+	"errors"
+	"time"
+
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/failure"
+	"github.com/google/uuid"
+)
+
+type Source string
+
+const (
+	SourceDashboard  Source = "DASHBOARD"
+	SourceSchedule   Source = "SCHEDULE"
+	SourceBackground Source = "BACKGROUND"
+)
+
+type ResultKind string
+
+const (
+	ResultDetail  ResultKind = "DETAIL"
+	ResultSummary ResultKind = "SUMMARY"
+)
+
+type ExecutionStrategy string
+
+const (
+	ExecutionDirect  ExecutionStrategy = "DIRECT"
+	ExecutionChunked ExecutionStrategy = "CHUNKED"
+)
+
+type SourceConsistency string
+
+const (
+	ConsistencyStatement    SourceConsistency = "STATEMENT"
+	ConsistencySerialWindow SourceConsistency = "SERIAL_WINDOW"
+	ConsistencyChunkWindow  SourceConsistency = "CHUNK_WINDOW"
+)
+
+type ProgressPhase string
+
+const (
+	ProgressQueued             ProgressPhase = "QUEUED"
+	ProgressConnecting         ProgressPhase = "CONNECTING"
+	ProgressQueryingCurrent    ProgressPhase = "QUERYING_CURRENT"
+	ProgressQueryingComparison ProgressPhase = "QUERYING_COMPARISON"
+	ProgressBuildingDashboard  ProgressPhase = "BUILDING_DASHBOARD"
+	ProgressSavingResult       ProgressPhase = "SAVING_RESULT"
+	ProgressWaitingRetry       ProgressPhase = "WAITING_RETRY"
+	ProgressCompleted          ProgressPhase = "COMPLETED"
+)
+
+type RunStatus string
+
+const (
+	StatusQueued    RunStatus = "QUEUED"
+	StatusClaimed   RunStatus = "CLAIMED"
+	StatusRunning   RunStatus = "RUNNING"
+	StatusSucceeded RunStatus = "SUCCEEDED"
+	StatusFailed    RunStatus = "FAILED"
+	StatusCancelled RunStatus = "CANCELLED"
+	StatusExpired   RunStatus = "EXPIRED"
+)
+
+var (
+	ErrRunNotFound            = errors.New("report run not found")
+	ErrNoQueuedRun            = errors.New("no report run is available")
+	ErrRunLeaseLost           = errors.New("report run lease was lost")
+	ErrRunConcurrencyLimit    = errors.New("tenant report run concurrency limit reached")
+	ErrRunCircuitOpen         = errors.New("tenant SML circuit is open")
+	ErrRunIdempotencyConflict = errors.New("report run idempotency conflict")
+	ErrRunRowsExpired         = errors.New("report run rows expired")
+	ErrRunForbidden           = errors.New("report run is forbidden")
+	ErrRunNotCancellable      = errors.New("report run cannot be cancelled")
+)
+
+type EnqueueInput struct {
+	TenantID             uuid.UUID
+	ReportKey            Key
+	Source               Source
+	IdempotencyKey       string
+	Period               Period
+	RequestedByRecipient *uuid.UUID
+	ResultKind           ResultKind
+	Priority             int
+	ExecutionKey         string
+}
+
+type Run struct {
+	ID                      uuid.UUID
+	TenantID                uuid.UUID
+	ReportKey               Key
+	Source                  Source
+	ResultKind              ResultKind
+	Priority                int
+	ExecutionKey            string
+	IdempotencyKey          string
+	Status                  RunStatus
+	Period                  Period
+	RequestedByRecipient    *uuid.UUID
+	ClaimedBy               string
+	LeaseExpiresAt          *time.Time
+	Attempt                 int
+	RowCount                int
+	IsTruncated             bool
+	Summary                 map[string]string
+	Reconciliation          map[string]any
+	SafeErrorCode           string
+	SafeErrorMessage        string
+	FailureEvidence         *failure.Evidence
+	QueuedAt                time.Time
+	StartedAt               *time.Time
+	FinishedAt              *time.Time
+	ExpiresAt               time.Time
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
+	ReportDefinitionVersion string
+	DataSourceVersion       int
+	QueryPlanFingerprint    string
+	ExecutionStrategy       ExecutionStrategy
+	SourceConsistency       SourceConsistency
+	SourceStartedAt         *time.Time
+	SourceFinishedAt        *time.Time
+	ProgressPhase           ProgressPhase
+	ProgressSequence        int
+	ProgressCompletedSteps  int
+	ProgressTotalSteps      int
+	ProgressUpdatedAt       *time.Time
+	ExpectedP50MS           int64
+	ExpectedP90MS           int64
+	ExpectedSampleCount     int
+	ProgressCompletedChunks int
+	ProgressTotalChunks     int
+	QueuePosition           int
+}
+
+type RowsPage struct {
+	Rows        []map[string]string
+	NextOrdinal int
+	HasMore     bool
+}
+
+type RowFilterOperator string
+
+const (
+	RowFilterContains RowFilterOperator = "CONTAINS"
+	RowFilterEquals   RowFilterOperator = "EQUALS"
+	RowFilterGTE      RowFilterOperator = "GTE"
+	RowFilterLTE      RowFilterOperator = "LTE"
+	RowFilterBetween  RowFilterOperator = "BETWEEN"
+)
+
+type RowFilter struct {
+	ColumnKey string            `json:"columnKey"`
+	Operator  RowFilterOperator `json:"operator"`
+	Value     string            `json:"value"`
+	ValueTo   string            `json:"valueTo,omitempty"`
+	ValueType string            `json:"valueType,omitempty"`
+}
+
+type RowsQueryInput struct {
+	GlobalSearch        string      `json:"globalSearch,omitempty"`
+	GlobalSearchColumns []string    `json:"-"`
+	Filters             []RowFilter `json:"filters"`
+	Page                int         `json:"page"`
+	PageSize            int         `json:"pageSize"`
+}
+
+type RowsQueryPage struct {
+	Rows        []map[string]string
+	RowOrdinals []int
+	Page        int
+	PageSize    int
+	Total       int
+}
+
+type ChunkManifest struct {
+	Number     int
+	Key        string
+	CursorFrom string
+	CursorTo   string
+	UnitKeys   []string
+}
+
+type LeaseRecovery struct {
+	RequeuedClaimed   int
+	FailedRunning     int
+	CancelledSiblings int
+}
