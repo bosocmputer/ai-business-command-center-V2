@@ -18,7 +18,7 @@ func flexReport(key report.Key) FlexReport {
 	return FlexReport{Key: key, Metrics: metrics}
 }
 
-func TestRenderFlexBuildsOneCompactPermissionFilteredBubble(t *testing.T) {
+func TestRenderFlexBuildsOneBubblePerReportInACarousel(t *testing.T) {
 	reportURL := "https://dashboard.nextstep-soft.com/app/tenant/00000000-0000-0000-0000-000000000001/report/sales_goods_services?snapshotRunId=00000000-0000-0000-0000-000000000002&deliveryRef=opaque-reference-value"
 	sales := flexReport(report.SalesGoodsServices)
 	sales.ActionURL = reportURL
@@ -32,19 +32,19 @@ func TestRenderFlexBuildsOneCompactPermissionFilteredBubble(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderFlex() error = %v", err)
 	}
-	if len(payload) > maximumFlexPayloadBytes || strings.Count(string(payload), `"type":"bubble"`) != 1 || !strings.Contains(string(payload), "ดูภาพรวมร้าน") || !strings.Contains(string(payload), "สรุปผู้บริหาร") || !strings.Contains(string(payload), "ยอดขาย") {
+	if len(payload) > maximumFlexPayloadBytes || strings.Count(string(payload), `"type":"bubble"`) != 2 || !strings.Contains(string(payload), `"type":"carousel"`) || !strings.Contains(string(payload), "สรุปผู้บริหาร") || !strings.Contains(string(payload), "เปิดรายละเอียด") {
 		t.Fatalf("unexpected payload (%d bytes): %s", len(payload), payload)
 	}
-	if !strings.Contains(string(payload), `"size":"giga"`) || !strings.Contains(string(payload), "snapshotRunId=00000000-0000-0000-0000-000000000002") || !strings.Contains(string(payload), "10 ก.ค. 2569 · 22:30 น. เวลาไทย") || strings.Contains(string(payload), "UTC") {
+	if !strings.Contains(string(payload), `"size":"mega"`) || !strings.Contains(string(payload), "snapshotRunId=00000000-0000-0000-0000-000000000002") || !strings.Contains(string(payload), "อัปเดต 10 ก.ค. 2569 · 22:30 น.") || strings.Contains(string(payload), "UTC") {
 		t.Fatalf("executive layout, deep link, or timezone missing: %s", payload)
 	}
-	for _, color := range []string{"#0B2347", "#175CD3", "#123B6D", "#F5F8FC", "#E3EBF5"} {
+	for _, color := range []string{"#2563EB", "#F8FAFC", "#111827", "#6B7280"} {
 		if !strings.Contains(string(payload), color) {
-			t.Fatalf("Executive Navy color %s missing: %s", color, payload)
+			t.Fatalf("AI-BCC executive report color %s missing: %s", color, payload)
 		}
 	}
-	if strings.Contains(string(payload), "#1D4ED8") || strings.Contains(string(payload), "#0F766E") || strings.Contains(string(payload), "฿") {
-		t.Fatalf("blue palette or symbol-free values missing: %s", payload)
+	if strings.Contains(string(payload), "#0B2347") || strings.Contains(string(payload), "#175CD3") || strings.Contains(string(payload), "#123B6D") {
+		t.Fatalf("stale Executive Navy palette still present: %s", payload)
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal(payload, &decoded); err != nil {
@@ -120,8 +120,11 @@ func TestRenderFlexConstrainsLongTenantAndNumericText(t *testing.T) {
 		t.Fatalf("RenderFlex() error = %v", err)
 	}
 	encoded := string(payload)
-	if !strings.Contains(encoded, `"maxLines":2`) || !strings.Contains(encoded, `"adjustMode":"shrink-to-fit"`) || !strings.Contains(encoded, `"wrap":false`) {
+	if !strings.Contains(encoded, `"maxLines":2`) || !strings.Contains(encoded, `"size":"lg"`) || !strings.Contains(encoded, "123,456,789,012,345,678,901,234,567,890.12") {
 		t.Fatalf("long text safeguards missing: %s", payload)
+	}
+	if len(payload) > maximumFlexPayloadBytes {
+		t.Fatalf("long tenant/value payload exceeds hard limit: %d bytes", len(payload))
 	}
 }
 

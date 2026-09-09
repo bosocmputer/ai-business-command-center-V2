@@ -13,20 +13,25 @@ import (
 )
 
 const (
-	softFlexPayloadBytes    = 24 * 1024
-	maximumFlexPayloadBytes = 30 * 1024
-	FlexPresentationVersion = "executive-navy-v2"
+	softFlexPayloadBytes    = 32 * 1024
+	maximumFlexPayloadBytes = 40 * 1024
+	FlexPresentationVersion = "ai-bcc-executive-report-v2"
 )
 
+// Colors and layout below mirror AI-Business Command-Center's
+// buildExecutiveDigestFlexMessage "executive_report_v2" bubble exactly, so
+// recipients see the same card style across both systems.
 const (
-	flexHeaderColor   = "#0B2347"
-	flexActionColor   = "#175CD3"
-	flexTitleColor    = "#123B6D"
-	flexTextColor     = "#0F172A"
-	flexMutedColor    = "#5B6B82"
-	flexSurfaceColor  = "#F5F8FC"
-	flexBorderColor   = "#E3EBF5"
-	flexSubtitleColor = "#D6E4FF"
+	flexHeaderBackground = "#F8FAFC"
+	flexKickerColor      = "#2563EB"
+	flexTitleColor       = "#111827"
+	flexSubtitleColor    = "#6B7280"
+	flexMutedColor       = "#6B7280"
+	flexValueColor       = "#111827"
+	flexActionColor      = "#2563EB"
+	flexStatusReadyColor = "#047857"
+	flexStatusNoticeColor = "#B45309"
+	flexStatusCriticalColor = "#B42318"
 )
 
 var ErrFlexInputInvalid = errors.New("LINE Flex input is invalid")
@@ -128,55 +133,35 @@ func RenderFlexWithStats(input FlexInput) (result FlexRenderResult, err error) {
 		}
 	}
 	localGeneratedAt := input.GeneratedAt.In(location)
+	generatedAtLabel := thaiShortDate(localGeneratedAt) + " · " + localGeneratedAt.Format("15:04") + " น."
 	summaryLabel := flexReportSummary(input.Period, input.Reports, mixedPeriods, localGeneratedAt)
 
 	zeroReportCount := 0
-	bodyContents := []any{
-		map[string]any{"type": "text", "text": input.TenantName, "size": "xl", "color": flexTextColor, "weight": "bold", "wrap": true, "maxLines": 2, "adjustMode": "shrink-to-fit", "scaling": true},
-		flexText(summaryLabel, "sm", flexMutedColor, false, true, "sm"),
-		flexText(runeCountLabel(len(presentations)), "xs", "#94A3B8", false, true, "xs"),
-	}
-	if note := flexContextNote(input.Period); note != "" && !mixedPeriods {
-		bodyContents = append(bodyContents, flexText(note, "xs", flexMutedColor, false, true, "sm"))
-	}
-	lastCategory := ""
+	bubbles := make([]map[string]any, 0, len(presentations))
 	for index, item := range presentations {
-		if item.CategoryLabel != lastCategory {
-			bodyContents = append(bodyContents, flexText(item.CategoryLabel, "xs", flexMutedColor, true, true, "lg"))
-			lastCategory = item.CategoryLabel
-		}
 		if item.DataState == FlexDataZero {
 			zeroReportCount++
 		}
-		boxPeriodLabel := ""
+		subtitle := input.TenantName + " · " + periodLabel(reportPeriods[index])
+		contextNote := flexContextNote(reportPeriods[index])
 		if mixedPeriods {
-			boxPeriodLabel = flexReportPeriodLabel(item.Key, reportPeriods[index], input.GeneratedAt.In(location))
+			subtitle = input.TenantName + " · " + flexReportPeriodLabel(item.Key, reportPeriods[index], input.GeneratedAt.In(location))
+			contextNote = ""
 		}
-		bodyContents = append(bodyContents, reportBox(item, boxPeriodLabel))
+		bubbles = append(bubbles, buildExecutiveReportBubble(item, subtitle, generatedAtLabel, contextNote))
 	}
-	bodyContents = append(bodyContents, flexText("สร้างเมื่อ "+thaiShortDate(localGeneratedAt)+" · "+localGeneratedAt.Format("15:04")+" น. เวลาไทย", "xs", "#94A3B8", false, true, "lg"))
 
+	altText := flexAltTextLabel(input.TenantName, summaryLabel, len(presentations))
+	var contents any
+	if len(bubbles) == 1 {
+		contents = bubbles[0]
+	} else {
+		contents = map[string]any{"type": "carousel", "contents": bubbles}
+	}
 	message := map[string]any{
-		"type":    "flex",
-		"altText": flexAltTextLabel(input.TenantName, summaryLabel, len(presentations)),
-		"contents": map[string]any{
-			"type": "bubble", "size": "giga",
-			"header": map[string]any{
-				"type": "box", "layout": "vertical", "backgroundColor": flexHeaderColor, "paddingAll": "16px",
-				"contents": []any{
-					flexText("NEXTSTEP DASHBOARD", "sm", "#FFFFFF", true, false),
-					flexText("สรุปผู้บริหาร", "xs", flexSubtitleColor, false, false, "xs"),
-				},
-			},
-			"body": map[string]any{"type": "box", "layout": "vertical", "paddingAll": "18px", "contents": bodyContents},
-			"footer": map[string]any{
-				"type": "box", "layout": "vertical", "paddingAll": "16px",
-				"contents": []any{map[string]any{
-					"type": "button", "style": "primary", "color": flexActionColor, "height": "sm", "scaling": true,
-					"action": map[string]any{"type": "uri", "label": "ดูภาพรวมร้าน", "uri": overviewURL.String()},
-				}},
-			},
-		},
+		"type":     "flex",
+		"altText":  altText,
+		"contents": contents,
 	}
 	payload, err := json.Marshal(message)
 	if err != nil || len(payload) >= maximumFlexPayloadBytes {
@@ -191,50 +176,164 @@ func RenderFlexWithStats(input FlexInput) (result FlexRenderResult, err error) {
 	return result, nil
 }
 
-func reportBox(item FlexReportPresentation, reportPeriodLabel string) map[string]any {
-	contents := []any{
+// buildExecutiveReportBubble mirrors AI-BCC's buildExecutiveReportV2Bubble
+// (packages/reports/src/line-flex.ts) field for field: header kicker/title/
+// subtitle, a status + generated-at row, a primary-amount baseline, up to
+// four supporting metric rows, an insight block, an optional note, and a
+// footer button.
+func buildExecutiveReportBubble(item FlexReportPresentation, subtitle, generatedAtLabel, contextNote string) map[string]any {
+	statusText, statusColor := flexStatusFor(item)
+	insightLabel, insightValue := flexInsightFor(item)
+
+	headerContents := []any{
+		flexKickerText(item.CategoryLabel),
+		map[string]any{"type": "text", "text": item.Label, "weight": "bold", "size": "lg", "color": flexTitleColor, "wrap": true, "maxLines": 2, "margin": "xs"},
+		map[string]any{"type": "text", "text": subtitle, "size": "sm", "color": flexSubtitleColor, "margin": "sm", "wrap": true, "maxLines": 2},
+	}
+
+	bodyContents := []any{
 		map[string]any{
-			"type": "box", "layout": "horizontal", "alignItems": "center",
+			"type": "box", "layout": "horizontal",
 			"contents": []any{
-				map[string]any{"type": "text", "text": item.Label, "weight": "bold", "size": "sm", "color": flexTitleColor, "wrap": true, "maxLines": 2, "adjustMode": "shrink-to-fit", "scaling": true, "flex": 9},
-				map[string]any{"type": "text", "text": "›", "size": "lg", "color": "#94A3B8", "align": "end", "flex": 1},
+				map[string]any{"type": "text", "text": statusText, "size": "xs", "weight": "bold", "color": statusColor, "flex": 1, "maxLines": 1},
+				map[string]any{"type": "text", "text": "อัปเดต " + generatedAtLabel, "size": "xs", "color": flexMutedColor, "align": "end", "flex": 2, "maxLines": 1},
 			},
 		},
+		flexPrimaryAmountBaseline(item.Primary.Value),
 	}
-	if reportPeriodLabel != "" {
-		contents = append(contents, flexText(reportPeriodLabel, "xs", flexMutedColor, false, true, "xs"))
+	if len(item.Supporting) > 0 {
+		metricRows := make([]any, 0, len(item.Supporting))
+		for _, metric := range item.Supporting[:min(4, len(item.Supporting))] {
+			metricRows = append(metricRows, flexMetricRow(metric.Label, metric.Value))
+		}
+		bodyContents = append(bodyContents, map[string]any{"type": "box", "layout": "vertical", "spacing": "sm", "contents": metricRows})
 	}
-	if item.DataState == FlexDataZero {
-		contents = append(contents, flexText(item.StateText, "xs", flexMutedColor, false, true, "sm"))
-	} else {
-		contents = append(contents, metricRow(item.Primary, true))
-	}
+	bodyContents = append(bodyContents,
+		map[string]any{"type": "separator", "margin": "md"},
+		flexInfoBlock(insightLabel, insightValue),
+	)
 	if item.Comparison != nil {
-		contents = append(contents, flexText(item.Comparison.Text, "xs", "#64748B", false, true, "xs"))
+		bodyContents = append(bodyContents, flexInfoBlock("เทียบยอด", item.Comparison.Text))
 	}
-	if item.DataState != FlexDataZero {
-		for _, metric := range item.Supporting {
-			contents = append(contents, metricRow(metric, false))
-		}
+	if note, tone := flexNoteFor(item); note != "" {
+		bodyContents = append(bodyContents, flexNoteBlock(note, tone))
 	}
-	if item.Attention != nil {
-		background, color := "#E2E8F0", "#475569"
-		if item.Attention.Severity == FlexAttentionWarning {
-			background, color = "#FEF3C7", "#92400E"
-		} else if item.Attention.Severity == FlexAttentionDanger {
-			background, color = "#FEE2E2", "#B91C1C"
+	if contextNote != "" {
+		bodyContents = append(bodyContents, flexNoteBlock(contextNote, "info"))
+	}
+
+	return map[string]any{
+		"type": "bubble", "size": "mega",
+		"header": map[string]any{"type": "box", "layout": "vertical", "paddingAll": "16px", "backgroundColor": flexHeaderBackground, "contents": headerContents},
+		"body":   map[string]any{"type": "box", "layout": "vertical", "paddingAll": "16px", "spacing": "sm", "contents": bodyContents},
+		"footer": map[string]any{
+			"type": "box", "layout": "vertical", "paddingAll": "16px",
+			"contents": []any{map[string]any{
+				"type": "button", "style": "primary", "color": flexActionColor, "height": "sm",
+				"action": map[string]any{"type": "uri", "label": "เปิดรายละเอียด", "uri": item.ActionURL},
+			}},
+		},
+	}
+}
+
+func flexKickerText(kicker string) map[string]any {
+	return map[string]any{"type": "text", "text": truncateRunes(kicker, 40), "weight": "bold", "size": "xs", "color": flexKickerColor, "maxLines": 1}
+}
+
+func flexStatusFor(item FlexReportPresentation) (text string, color string) {
+	if item.DataState == FlexDataZero {
+		return item.StateText, flexStatusNoticeColor
+	}
+	if item.Attention != nil && item.Attention.Severity == FlexAttentionDanger {
+		return item.Attention.Text, flexStatusCriticalColor
+	}
+	if item.Attention != nil && item.Attention.Severity == FlexAttentionWarning {
+		return item.Attention.Text, flexStatusNoticeColor
+	}
+	return "พร้อมใช้งาน", flexStatusReadyColor
+}
+
+func flexInsightFor(item FlexReportPresentation) (label string, value string) {
+	if item.DataState == FlexDataZero {
+		return "วันนี้ควรรู้อะไร", item.StateText
+	}
+	if item.Comparison == nil && item.Attention != nil && item.Attention.Severity == FlexAttentionInfo {
+		return "วันนี้ควรรู้อะไร", item.Attention.Text
+	}
+	return "วันนี้ควรรู้อะไร", "กดปุ่มด้านล่างเพื่อดูรายละเอียดเพิ่มเติม"
+}
+
+func flexNoteFor(item FlexReportPresentation) (note string, tone string) {
+	if item.Attention == nil {
+		return "", ""
+	}
+	switch item.Attention.Severity {
+	case FlexAttentionWarning, FlexAttentionDanger:
+		return item.Attention.Text, "warning"
+	case FlexAttentionInfo:
+		if item.Comparison != nil {
+			// Already surfaced via the comparison block; avoid repeating it.
+			return "", ""
 		}
-		contents = append(contents, map[string]any{
-			"type": "box", "layout": "vertical", "margin": "sm", "paddingAll": "8px", "cornerRadius": "6px", "backgroundColor": background,
-			"contents": []any{flexText(item.Attention.Text, "xs", color, true, true)},
-		})
+		return "", ""
+	default:
+		return "", ""
+	}
+}
+
+func flexNoteBlock(value, tone string) map[string]any {
+	background, color := "#F8FAFC", "#475569"
+	switch tone {
+	case "warning":
+		background, color = "#FFF7ED", "#9A3412"
+	case "info":
+		background, color = "#EFF6FF", "#1D4ED8"
 	}
 	return map[string]any{
-		"type": "box", "layout": "vertical", "margin": "sm", "paddingAll": "12px", "cornerRadius": "8px", "backgroundColor": flexSurfaceColor,
-		"borderWidth": "1px", "borderColor": flexBorderColor,
-		"action":   map[string]any{"type": "uri", "label": "เปิดรายละเอียดรายงาน", "uri": item.ActionURL},
-		"contents": contents,
+		"type": "box", "layout": "vertical", "backgroundColor": background, "cornerRadius": "6px", "paddingAll": "8px", "margin": "md",
+		"contents": []any{map[string]any{"type": "text", "text": truncateRunes(value, 96), "size": "xs", "color": color, "wrap": true, "maxLines": 3}},
 	}
+}
+
+func flexPrimaryAmountBaseline(value string) map[string]any {
+	size := "xl"
+	if utf8.RuneCountInString(strings.ReplaceAll(value, " ", "")) >= 14 {
+		size = "lg"
+	}
+	return map[string]any{
+		"type": "box", "layout": "baseline", "spacing": "sm",
+		"contents": []any{
+			map[string]any{"type": "text", "text": value, "weight": "bold", "size": size, "color": flexValueColor, "flex": 0, "wrap": true, "maxLines": 2},
+		},
+	}
+}
+
+func flexMetricRow(label, value string) map[string]any {
+	return map[string]any{
+		"type": "box", "layout": "horizontal",
+		"contents": []any{
+			map[string]any{"type": "text", "text": label, "size": "sm", "color": flexMutedColor, "flex": 2, "wrap": true, "maxLines": 2},
+			map[string]any{"type": "text", "text": truncateRunes(value, 42), "size": "sm", "color": flexValueColor, "align": "end", "weight": "bold", "flex": 2, "wrap": true, "maxLines": 2},
+		},
+	}
+}
+
+func flexInfoBlock(label, value string) map[string]any {
+	return map[string]any{
+		"type": "box", "layout": "vertical", "spacing": "xs",
+		"contents": []any{
+			map[string]any{"type": "text", "text": label, "size": "xs", "color": flexMutedColor, "weight": "bold", "maxLines": 1},
+			map[string]any{"type": "text", "text": truncateRunes(value, 84), "size": "sm", "color": flexValueColor, "wrap": true, "maxLines": 3},
+		},
+	}
+}
+
+func truncateRunes(value string, maxLength int) string {
+	if utf8.RuneCountInString(value) <= maxLength {
+		return value
+	}
+	runes := []rune(value)
+	return string(runes[:max(0, maxLength-1)]) + "…"
 }
 
 func flexPeriodSummary(period report.Period, mixed bool) string {
@@ -262,33 +361,6 @@ func flexReportPeriodLabel(key report.Key, period report.Period, generatedAt tim
 		return "สถานะ ณ เวลาส่ง " + thaiShortDate(generatedAt) + " · " + generatedAt.Format("15:04") + " น."
 	}
 	return periodLabel(period)
-}
-
-func metricRow(metric FlexMetricPresentation, primary bool) map[string]any {
-	labelSize, valueSize, labelColor, valueColor := "xs", "sm", flexMutedColor, flexTextColor
-	weight := "regular"
-	labelFlex, valueFlex := 5, 5
-	if primary {
-		valueSize, weight, labelFlex, valueFlex = "md", "bold", 4, 6
-	}
-	return map[string]any{
-		"type": "box", "layout": "baseline", "margin": "sm",
-		"contents": []any{
-			map[string]any{"type": "text", "text": metric.Label, "size": labelSize, "color": labelColor, "flex": labelFlex, "wrap": true, "scaling": true},
-			map[string]any{"type": "text", "text": metric.Value, "size": valueSize, "color": valueColor, "weight": weight, "align": "end", "flex": valueFlex, "wrap": false, "scaling": true, "adjustMode": "shrink-to-fit"},
-		},
-	}
-}
-
-func flexText(text, size, color string, bold, wrap bool, margin ...string) map[string]any {
-	component := map[string]any{"type": "text", "text": text, "size": size, "color": color, "wrap": wrap, "scaling": true}
-	if bold {
-		component["weight"] = "bold"
-	}
-	if len(margin) > 0 && margin[0] != "" {
-		component["margin"] = margin[0]
-	}
-	return component
 }
 
 func validHTTPSURL(raw string) (*url.URL, error) {
@@ -338,7 +410,7 @@ func flexAltTextWithMode(tenantName string, period report.Period, reportCount in
 }
 
 func flexAltTextLabel(tenantName, summaryLabel string, reportCount int) string {
-	text := "สรุปรายงาน " + tenantName + ": " + summaryLabel + " (" + runeCountLabel(reportCount) + ")"
+	text := "สรุปผู้บริหาร " + tenantName + ": " + summaryLabel + " (" + runeCountLabel(reportCount) + ")"
 	if utf8.RuneCountInString(text) <= 400 {
 		return text
 	}

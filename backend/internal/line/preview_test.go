@@ -58,11 +58,19 @@ func TestFlexPreviewUsesTenantTimezoneAndExactRenderedMessage(t *testing.T) {
 		if item.Primary.Label == "" || item.Primary.Value == "" || item.CategoryLabel == "" || item.ActionURL == "" {
 			t.Fatalf("executive preview fields missing = %+v", item)
 		}
-		if !strings.Contains(string(preview.Message), item.Primary.Label) || !strings.Contains(string(preview.Message), item.Primary.Value) {
-			t.Fatalf("rendered message does not contain executive metric %+v", item.Primary)
+		// The executive_report_v2 bubble shows the primary amount as a bare
+		// headline value (no label, matching AI-BCC's design) but still shows
+		// each supporting metric's label and value together.
+		if !strings.Contains(string(preview.Message), item.Primary.Value) {
+			t.Fatalf("rendered message does not contain primary value %+v", item.Primary)
+		}
+		for _, metric := range item.Supporting {
+			if !strings.Contains(string(preview.Message), metric.Label) || !strings.Contains(string(preview.Message), metric.Value) {
+				t.Fatalf("rendered message does not contain supporting metric %+v", metric)
+			}
 		}
 	}
-	if !strings.Contains(string(preview.Message), "เวลาไทย") || strings.Contains(string(preview.Message), "UTC") || !strings.Contains(preview.ActionURL, "/app/tenant/"+tenantID.String()) {
+	if !strings.Contains(string(preview.Message), "11 ก.ค. 2569 · 08:00 น.") || strings.Contains(string(preview.Message), "UTC") || !strings.Contains(preview.ActionURL, "/app/tenant/"+tenantID.String()) {
 		t.Fatalf("preview timezone/action mismatch: %+v message=%s", preview, preview.Message)
 	}
 	var message struct {
