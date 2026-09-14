@@ -71,7 +71,9 @@ d run -d --name "$container" --network "$network" --memory 512m --cpus 0.50 --pi
 
 ready=false
 for _ in $(seq 1 60); do
-  if d exec "$container" pg_isready -U "$postgres_user" -d restorecheck >/dev/null 2>&1; then ready=true; break; fi
+  # Check over TCP: the image's first-boot init server listens only on the Unix
+  # socket and is then shut down, so a socket check can pass just before restart.
+  if d exec "$container" pg_isready -h 127.0.0.1 -U "$postgres_user" -d restorecheck >/dev/null 2>&1; then ready=true; break; fi
   sleep 1
 done
 if [ "$ready" != true ]; then
