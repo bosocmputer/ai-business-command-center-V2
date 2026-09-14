@@ -33,7 +33,7 @@ describe('admin tenant context', () => {
       title: 'ร้าน A', subtitle: 'รายละเอียดร้าน', homeTo: '/admin/tenants/tenant-a'
     });
     expect(resolveAdminMobileContext('tenant-b', 'รายละเอียดร้าน')).toEqual({
-      title: 'รายละเอียดร้าน', subtitle: 'Nextstep Admin', homeTo: '/admin'
+      title: 'รายละเอียดร้าน', subtitle: 'AI-BCC Admin', homeTo: '/admin'
     });
   });
 });

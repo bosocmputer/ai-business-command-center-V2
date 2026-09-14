@@ -1282,11 +1282,11 @@ components:
     AdminSession:
       type: apiKey
       in: cookie
-      name: nextstep_admin_session
+      name: aibcc_admin_session
     ViewerSession:
       type: apiKey
       in: cookie
-      name: nextstep_viewer_session
+      name: aibcc_viewer_session
   parameters:
     TenantID: {name: tenantId, in: path, required: true, schema: {type: string, format: uuid}}
     RecipientID: {name: recipientId, in: path, required: true, schema: {type: string, format: uuid}}

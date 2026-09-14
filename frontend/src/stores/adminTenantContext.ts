@@ -33,7 +33,7 @@ export function resolveAdminMobileContext(tenantId: string, pageTitle: string): 
   if (tenantId && state.tenantId === tenantId && state.name) {
     return { title: state.name, subtitle: pageTitle, homeTo: `/admin/tenants/${tenantId}` };
   }
-  return { title: pageTitle, subtitle: 'Nextstep Admin', homeTo: '/admin' };
+  return { title: pageTitle, subtitle: 'AI-BCC Admin', homeTo: '/admin' };
 }
 
 export function useAdminTenantContext() {

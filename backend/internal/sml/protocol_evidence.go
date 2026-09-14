@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const nextstepRequestRefHeader = "X-Nextstep-Request-Ref"
+const requestRefHeader = "X-AI-BCC-Request-Ref"
 
 type ProtocolEvidence struct {
 	RequestRef              string     `json:"requestRef"`

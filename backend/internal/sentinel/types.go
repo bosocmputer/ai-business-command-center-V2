@@ -327,14 +327,14 @@ func telegramMessage(alert Alert, adminBaseURL string, includeTenantContext bool
 	if incident.RootCause == RootSMLConnectivity {
 		return telegramSMLMessage(alert, adminURL, includeTenantContext)
 	}
-	heading := "Nextstep Sentinel " + string(incident.Severity)
+	heading := "AI-BCC Sentinel " + string(incident.Severity)
 	switch alert.Kind {
 	case "UPDATE":
 		heading = "อัปเดตเหตุสำคัญ · ผลกระทบเพิ่มขึ้น"
 	case "REMINDER":
 		heading = "แจ้งเตือนซ้ำ · ปัญหายังไม่หาย"
 	case "RECOVERY":
-		heading = "Nextstep Sentinel · ยืนยันว่าระบบฟื้นตัวแล้ว"
+		heading = "AI-BCC Sentinel · ยืนยันว่าระบบฟื้นตัวแล้ว"
 	}
 	presentation := incident.Presentation
 	if presentation.TitleTH == "" {

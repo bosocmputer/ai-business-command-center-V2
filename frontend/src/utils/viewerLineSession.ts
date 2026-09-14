@@ -1,6 +1,6 @@
 import { ApiError } from '@/api';
 
-export const VIEWER_LINE_LOGIN_RETRY_KEY = 'nextstep.viewer.line-login-retry.v1';
+export const VIEWER_LINE_LOGIN_RETRY_KEY = 'aibcc.viewer.line-login-retry.v1';
 const retryWindowMs = 5 * 60 * 1000;
 const lineOAuthTransientQueryKeys = ['code', 'state', 'liffClientId', 'liffRedirectUri'];
 

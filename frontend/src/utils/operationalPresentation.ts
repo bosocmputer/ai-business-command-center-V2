@@ -103,7 +103,7 @@ export function causalChain(event?: OperationalIncidentEvent): string[] {
 
 export function buildCodexIncidentText(incident: OperationalIncidentDetail): string {
   const lines = [
-    'Nextstep Sentinel incident',
+    'AI-BCC Sentinel incident',
     `alert_ref: ${incident.alertRef}`,
     `severity: ${incident.severity}`,
     `status: ${incident.status}`,

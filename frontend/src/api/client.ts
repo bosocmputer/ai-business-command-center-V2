@@ -67,7 +67,7 @@ async function requestOnce<T>(path: string, method: NonNullable<RequestOptions['
   if (options.body !== undefined) headers.set('Content-Type', 'application/json');
   if (options.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey);
   if (options.scope && unsafeMethods.has(method)) {
-    const csrf = readCookie(options.scope === 'admin' ? 'nextstep_admin_csrf' : 'nextstep_viewer_csrf');
+    const csrf = readCookie(options.scope === 'admin' ? 'aibcc_admin_csrf' : 'aibcc_viewer_csrf');
     if (csrf) headers.set('X-CSRF-Token', csrf);
   }
 
@@ -142,7 +142,7 @@ function parseRetryAfter(value: string | null): number | undefined {
 }
 
 function announceUnauthorized(scope: AuthScope): void {
-  window.dispatchEvent(new CustomEvent('nextstep:unauthorized', { detail: { scope } }));
+  window.dispatchEvent(new CustomEvent('aibcc:unauthorized', { detail: { scope } }));
 }
 
 function inferAuthScope(path: string): AuthScope | undefined {

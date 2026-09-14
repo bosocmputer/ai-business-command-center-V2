@@ -11,7 +11,7 @@ const router = useRouter();
 const route = useRoute();
 const { state, logout } = useAdminSession();
 const routeTenantId = computed(() => typeof route.params.tenantId === 'string' ? route.params.tenantId : '');
-const pageTitle = computed(() => typeof route.meta.pageTitle === 'string' ? route.meta.pageTitle : 'Nextstep Admin');
+const pageTitle = computed(() => typeof route.meta.pageTitle === 'string' ? route.meta.pageTitle : 'AI-BCC Admin');
 const mobileContext = computed(() => resolveAdminMobileContext(routeTenantId.value, pageTitle.value));
 watch(routeTenantId, (tenantId) => {
   if (tenantId) beginAdminTenantContext(tenantId);

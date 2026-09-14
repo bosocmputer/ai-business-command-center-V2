@@ -312,7 +312,7 @@ func TestTelegramNamesConcreteNextstepStageAndOwner(t *testing.T) {
 		CauseBreakdown: []CauseBreakdown{{Category: failure.CategoryReportProcessing, Stage: failure.StageBuildReport, AffectedCount: 1, ActiveAffectedCount: 1}},
 	}
 	message, _ := telegramMessage(Alert{Kind: "OPEN", Incident: incident}, "https://dashboard.nextstep-soft.com/admin/operational-incidents", false)
-	if !strings.Contains(message, "ส่วนที่เกิดปัญหา: ระบบสร้างรายงานของ Nextstep") || !strings.Contains(message, "ผู้ตรวจสอบ: ทีมดูแล Nextstep") || strings.Contains(message, "ประมวลผลภายใน") {
+	if !strings.Contains(message, "ส่วนที่เกิดปัญหา: ระบบสร้างรายงานของ AI-BCC") || !strings.Contains(message, "ผู้ตรวจสอบ: ทีมดูแล AI-BCC") || strings.Contains(message, "ประมวลผลภายใน") {
 		t.Fatalf("telegram message = %q", message)
 	}
 }

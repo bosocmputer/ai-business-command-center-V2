@@ -7,7 +7,7 @@ import (
 
 func TestSmokeSQLWrapsApprovedQueryWithOneRowLimit(t *testing.T) {
 	rendered := smokeSQL("select id from ic_trans order by id")
-	if !strings.HasPrefix(rendered, "select * from (\nselect id") || !strings.HasSuffix(rendered, ") as nextstep_smoke limit 1") {
+	if !strings.HasPrefix(rendered, "select * from (\nselect id") || !strings.HasSuffix(rendered, ") as aibcc_smoke limit 1") {
 		t.Fatalf("smokeSQL() = %q", rendered)
 	}
 }

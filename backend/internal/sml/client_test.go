@@ -18,7 +18,7 @@ import (
 func TestClientCapturesBoundedProtocolEvidenceForInvalidZIPWithoutRetry(t *testing.T) {
 	var requestRef string
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		requestRef = request.Header.Get(nextstepRequestRefHeader)
+		requestRef = request.Header.Get(requestRefHeader)
 		response.Header().Set("Content-Type", "Text/XML; Charset=UTF-8")
 		response.WriteHeader(http.StatusOK)
 		_, _ = response.Write([]byte(`<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><response><return>` + base64.StdEncoding.EncodeToString([]byte("not-a-zip")) + `</return></response></soap:Body></soap:Envelope>`))
@@ -139,7 +139,7 @@ func TestCompressedPayloadAndSOAPRowsRoundTrip(t *testing.T) {
 
 	resultXML := []byte(`<?xml version="1.0"?><ResultSet><Row><doc_no>IV-001</doc_no><total_amount>123.45</total_amount></Row></ResultSet>`)
 	zippedResult, _ := CompressPayload(resultXML)
-	soap := BuildQueryEnvelope("NEXTSTEP", "SMLConfigDATA.xml", "sml1_2026", base64.StdEncoding.EncodeToString(zippedResult))
+	soap := BuildQueryEnvelope("AI_BCC", "SMLConfigDATA.xml", "sml1_2026", base64.StdEncoding.EncodeToString(zippedResult))
 	if !strings.Contains(soap, `<_queryCompress xmlns="http://SMLWebService/">`) || !strings.Contains(soap, `<arg2 xmlns="">sml1_2026</arg2>`) {
 		t.Fatalf("unexpected SOAP envelope: %s", soap)
 	}

@@ -60,7 +60,7 @@ const shortcuts = [
   <AppPageHeader title="ภาพรวมระบบ" subtitle="ศูนย์ควบคุมรายงาน SML และการส่ง LINE"><template #actions><Tag :severity="ready === 'ready' ? 'success' : ready === 'checking' ? 'secondary' : 'danger'" :value="ready === 'ready' ? 'ระบบพร้อมใช้งาน' : ready === 'checking' ? 'กำลังตรวจสอบ' : 'ระบบไม่พร้อม'" /></template></AppPageHeader>
   <section class="card" aria-labelledby="line-quota-title">
     <div class="flex flex-wrap items-start justify-between gap-3">
-      <div><h2 id="line-quota-title" class="text-lg font-semibold m-0">LINE OA กลาง</h2><p class="m-0 mt-1 text-sm text-muted-color">ยอดประมาณจาก LINE รวม Nexflow และ OA Manager · Nextstep accepted {{ (lineQuota?.locallyAccepted ?? 0).toLocaleString('th-TH') }} ข้อความ</p></div>
+      <div><h2 id="line-quota-title" class="text-lg font-semibold m-0">LINE OA กลาง</h2><p class="m-0 mt-1 text-sm text-muted-color">ยอดประมาณจาก LINE รวมทุกระบบที่ใช้ OA นี้และ OA Manager · AI-BCC ส่งสำเร็จ {{ (lineQuota?.locallyAccepted ?? 0).toLocaleString('th-TH') }} ข้อความ</p></div>
       <Tag :severity="quotaSeverity" :value="lineQuota?.state ?? 'กำลังโหลด'" />
     </div>
     <template v-if="lineQuota?.state === 'READY' && lineQuota.providerLimit !== null && lineQuota.providerConsumed !== null">

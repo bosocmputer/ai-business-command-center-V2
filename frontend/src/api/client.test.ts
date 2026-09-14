@@ -9,7 +9,7 @@ afterEach(() => {
 
 describe('apiRequest', () => {
   it('sends same-site credentials, CSRF, and idempotency headers', async () => {
-    document.cookie = 'nextstep_admin_csrf=csrf-value; path=/';
+    document.cookie = 'aibcc_admin_csrf=csrf-value; path=/';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ id: '1' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     await apiRequest('/api/test', { method: 'POST', scope: 'admin', idempotencyKey: 'request-key', body: { value: 1 } });
     const [, options] = fetchMock.mock.calls[0]!;
@@ -69,12 +69,12 @@ describe('apiRequest', () => {
 
   it('announces an unauthorized response with its authentication scope', async () => {
     const listener = vi.fn();
-    window.addEventListener('nextstep:unauthorized', listener);
+    window.addEventListener('aibcc:unauthorized', listener);
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'Expired', requestId: 'req-auth', retryable: false } }), { status: 401, headers: { 'Content-Type': 'application/json' } }));
 
     await expect(apiRequest('/api/v1/admin/tenants')).rejects.toEqual(expect.objectContaining({ code: 'UNAUTHORIZED' }));
     expect(listener).toHaveBeenCalledOnce();
     expect((listener.mock.calls[0]![0] as CustomEvent).detail).toEqual({ scope: 'admin' });
-    window.removeEventListener('nextstep:unauthorized', listener);
+    window.removeEventListener('aibcc:unauthorized', listener);
   });
 });

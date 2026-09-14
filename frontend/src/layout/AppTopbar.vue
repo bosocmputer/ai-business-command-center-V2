@@ -21,12 +21,12 @@ defineEmits<{ signOut: [] }>();
       <button class="layout-menu-button layout-topbar-action" type="button" aria-label="เปิดหรือปิดเมนู" aria-controls="app-sidebar" :aria-expanded="layoutState.mobileMenuActive" @click="toggleMenu">
         <i class="pi pi-bars" />
       </button>
-      <RouterLink :to="homeTo" class="layout-topbar-logo desktop-brand" aria-label="Nextstep Dashboard">
+      <RouterLink :to="homeTo" class="layout-topbar-logo desktop-brand" aria-label="AI Business Command Center">
         <span class="brand-mark"><i class="pi pi-chart-line" /></span>
-        <span class="brand-name">NEXTSTEP</span>
+        <span class="brand-name">AI-BCC</span>
       </RouterLink>
       <RouterLink :to="contextualHome" class="mobile-topbar-context" :aria-label="contextualLabel" data-testid="mobile-topbar-context">
-        <strong :title="mobileTitle">{{ mobileTitle || 'Nextstep Dashboard' }}</strong>
+        <strong :title="mobileTitle">{{ mobileTitle || 'AI Business Command Center' }}</strong>
         <span v-if="mobileSubtitle" :title="mobileSubtitle">{{ mobileSubtitle }}</span>
       </RouterLink>
     </div>

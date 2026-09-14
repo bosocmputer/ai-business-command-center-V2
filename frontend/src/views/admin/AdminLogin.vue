@@ -39,7 +39,7 @@ async function submit() {
       <section class="login-card w-full bg-surface-0 dark:bg-surface-900 py-12 px-6 sm:py-16 sm:px-16">
         <div class="text-center mb-8">
           <div class="login-mark grid place-items-center w-16 h-16 bg-primary text-primary-contrast mx-auto mb-6"><i class="pi pi-chart-line text-2xl" /></div>
-          <h1 class="login-title m-0 font-bold">Nextstep Admin</h1>
+          <h1 class="login-title m-0 font-bold">AI-BCC Admin</h1>
           <p class="m-0 mt-3 text-muted-color font-medium">เข้าสู่ระบบผู้ดูแลส่วนกลาง</p>
         </div>
         <Message v-if="error" severity="error" :closable="false" class="mb-6" role="alert">{{ error }}</Message>

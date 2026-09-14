@@ -109,5 +109,5 @@ func smokePeriod(rawFrom, rawTo string) (report.Period, error) {
 }
 
 func smokeSQL(sql string) string {
-	return "select * from (\n" + strings.TrimSpace(sql) + "\n) as nextstep_smoke limit 1"
+	return "select * from (\n" + strings.TrimSpace(sql) + "\n) as aibcc_smoke limit 1"
 }

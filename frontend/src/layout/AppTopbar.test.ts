@@ -24,13 +24,13 @@ describe('AppTopbar contextual mobile presentation', () => {
 
     expect(wrapper.get('[data-testid="mobile-topbar-context"]').text()).toContain('วาวา');
     expect(wrapper.get('[data-testid="mobile-topbar-context"]').text()).toContain('ภาพรวม');
-    expect(wrapper.get('.brand-name').text()).toBe('NEXTSTEP');
+    expect(wrapper.get('.brand-name').text()).toBe('AI-BCC');
     expect(wrapper.get('[aria-label="เปิดหรือปิดเมนู"]').attributes('aria-expanded')).toBe('false');
   });
 
   it('exposes the open drawer state to assistive technology', async () => {
     const wrapper = mount(AppTopbar, {
-      props: { homeTo: '/admin', mobileTitle: 'ร้านค้า', mobileSubtitle: 'Nextstep Admin' },
+      props: { homeTo: '/admin', mobileTitle: 'ร้านค้า', mobileSubtitle: 'AI-BCC Admin' },
       global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } }
     });
 

@@ -161,7 +161,7 @@ func (client *TelegramClient) Preflight(ctx context.Context) error {
 // require an explicit operator flag so a routine preflight cannot create noise.
 func (client *TelegramClient) SendPreflightMessage(ctx context.Context) error {
 	requestBody := map[string]any{
-		"chat_id": client.chatID, "text": "Nextstep Sentinel preflight ผ่าน · ยังไม่ได้เปิดการแจ้งเตือน Production",
+		"chat_id": client.chatID, "text": "AI-BCC Sentinel preflight ผ่าน · ยังไม่ได้เปิดการแจ้งเตือน Production",
 		"disable_web_page_preview": true,
 	}
 	var response struct {

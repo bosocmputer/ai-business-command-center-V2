@@ -74,7 +74,7 @@ const navigationReports = computed(() => {
 const mobileTitle = computed(() => {
   if (switchingTenantId.value) return 'กำลังเปลี่ยนร้าน';
   if (typeof route.params.tenantId === 'string' && !routeTenant.value) return 'กำลังเปลี่ยนร้าน';
-  return routeTenant.value?.name ?? 'Nextstep Dashboard';
+  return routeTenant.value?.name ?? 'AI Business Command Center';
 });
 const mobileSubtitle = computed(() => {
   if (route.name === 'viewer-overview') return 'ภาพรวม';
@@ -358,8 +358,8 @@ function handleUnauthorized(event: Event) {
   if ((event as CustomEvent<{ scope?: string }>).detail?.scope !== 'viewer' || !shellReady.value) return;
   clearViewer(); stage.value = 'UNAVAILABLE'; message.value = 'Session LINE หมดอายุ กรุณากด “ลองใหม่” เพื่อยืนยันตัวตนอีกครั้ง';
 }
-onMounted(() => { window.addEventListener('nextstep:unauthorized', handleUnauthorized); void initialize(); });
-onBeforeUnmount(() => { contextController?.abort('viewer-shell-unmounted'); window.removeEventListener('nextstep:unauthorized', handleUnauthorized); });
+onMounted(() => { window.addEventListener('aibcc:unauthorized', handleUnauthorized); void initialize(); });
+onBeforeUnmount(() => { contextController?.abort('viewer-shell-unmounted'); window.removeEventListener('aibcc:unauthorized', handleUnauthorized); });
 watch([
   () => route.name,
   () => route.params.tenantId,

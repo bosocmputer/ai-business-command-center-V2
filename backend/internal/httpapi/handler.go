@@ -73,10 +73,10 @@ type fieldError struct {
 type requestIDContextKey struct{}
 
 const (
-	adminSessionCookie  = "nextstep_admin_session"
-	adminCSRFCookie     = "nextstep_admin_csrf"
-	viewerSessionCookie = "nextstep_viewer_session"
-	viewerCSRFCookie    = "nextstep_viewer_csrf"
+	adminSessionCookie  = "aibcc_admin_session"
+	adminCSRFCookie     = "aibcc_admin_csrf"
+	viewerSessionCookie = "aibcc_viewer_session"
+	viewerCSRFCookie    = "aibcc_viewer_csrf"
 )
 
 func NewHandler(dependencies Dependencies) http.Handler {

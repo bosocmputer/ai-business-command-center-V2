@@ -72,10 +72,10 @@ type AdminFailureAssessment struct {
 func Assess(evidence Evidence, baseline Baseline) AdminFailureAssessment {
 	assessment := assessmentForStage(evidence)
 	assessment.LoadSignal = LoadInsufficientEvidence
-	assessment.LoadSignalTH = "หลักฐานยังไม่เพียงพอสำหรับประเมินภาระจาก Nextstep"
+	assessment.LoadSignalTH = "หลักฐานยังไม่เพียงพอสำหรับประเมินภาระจาก AI-BCC"
 	if evidence.Level == LevelLegacyPartial {
 		assessment.InvestigationOwner = OwnerJointInvestigation
-		assessment.OwnerTH = "ทีม Nextstep และผู้ดูแลระบบที่เกี่ยวข้อง"
+		assessment.OwnerTH = "ทีม AI-BCC และผู้ดูแลระบบที่เกี่ยวข้อง"
 		return assessment
 	}
 	protocol := evidence.ProtocolEvidence
@@ -83,21 +83,21 @@ func Assess(evidence Evidence, baseline Baseline) AdminFailureAssessment {
 		normalLoad := protocol.RequestCount == 1 && protocol.RetryCount == 0 && protocol.TenantConcurrentQueries == 1 && protocol.HostConcurrentQueries > 0 && protocol.HostConcurrentQueries <= 2 && baseline.P90MS > 0 && *evidence.DurationMS <= baseline.P90MS
 		if normalLoad {
 			assessment.LoadSignal = LoadNoNextstepSignal
-			assessment.LoadSignalTH = "ไม่พบสัญญาณว่า Nextstep สร้างภาระผิดปกติ"
+			assessment.LoadSignalTH = "ไม่พบสัญญาณว่า AI-BCC สร้างภาระผิดปกติ"
 		} else {
 			assessment.LoadSignal = LoadReviewRequired
-			assessment.LoadSignalTH = "ควรให้ทีม Nextstep ตรวจสอบภาระและลำดับการทำงานเพิ่มเติม"
+			assessment.LoadSignalTH = "ควรให้ทีม AI-BCC ตรวจสอบภาระและลำดับการทำงานเพิ่มเติม"
 		}
 	}
 	return assessment
 }
 
 func assessmentForStage(evidence Evidence) AdminFailureAssessment {
-	result := AdminFailureAssessment{ProblemArea: ProblemUnknown, InvestigationOwner: OwnerJointInvestigation, SummaryTH: "ยังระบุส่วนที่เกิดปัญหาไม่ได้จากหลักฐานที่มี", ProblemAreaTH: "ยังไม่ทราบส่วนที่เกิดปัญหา", OwnerTH: "ทีม Nextstep และผู้ดูแลระบบที่เกี่ยวข้อง", CustomerActionTH: "รอข้อมูลเพิ่มเติมก่อน Restart หรือเปลี่ยนการตั้งค่า"}
+	result := AdminFailureAssessment{ProblemArea: ProblemUnknown, InvestigationOwner: OwnerJointInvestigation, SummaryTH: "ยังระบุส่วนที่เกิดปัญหาไม่ได้จากหลักฐานที่มี", ProblemAreaTH: "ยังไม่ทราบส่วนที่เกิดปัญหา", OwnerTH: "ทีม AI-BCC และผู้ดูแลระบบที่เกี่ยวข้อง", CustomerActionTH: "รอข้อมูลเพิ่มเติมก่อน Restart หรือเปลี่ยนการตั้งค่า"}
 	switch evidence.Stage {
 	case StageLoadConnection, StageResolveEndpoint:
 		result.ProblemArea, result.InvestigationOwner = ProblemConfiguration, OwnerNextstepTeam
-		result.SummaryTH, result.ProblemAreaTH, result.OwnerTH = "การตั้งค่าการเชื่อมต่อ SML ไม่พร้อมใช้งาน", "การตั้งค่าใน Dashboard", "ทีมดูแล Nextstep"
+		result.SummaryTH, result.ProblemAreaTH, result.OwnerTH = "การตั้งค่าการเชื่อมต่อ SML ไม่พร้อมใช้งาน", "การตั้งค่าใน Dashboard", "ทีมดูแล AI-BCC"
 	case StageConnectJavaWS, StageSendRequest, StageWaitResponse:
 		result.ProblemArea, result.InvestigationOwner = ProblemCustomerNetwork, OwnerCustomerIT
 		result.SummaryTH, result.ProblemAreaTH, result.OwnerTH = "ติดต่อ Java Web Service ของร้านไม่สำเร็จ", "Network หรือ Java Web Service ของลูกค้า", "ผู้ดูแล Server ลูกค้า"
@@ -109,28 +109,28 @@ func assessmentForStage(evidence Evidence) AdminFailureAssessment {
 		}
 	case StageBuildReport:
 		result.ProblemArea, result.InvestigationOwner = ProblemNextstepReportBuild, OwnerNextstepTeam
-		result.SummaryTH, result.ProblemAreaTH, result.OwnerTH, result.CustomerActionTH = "สร้างตัวเลขและตารางรายงานไม่สำเร็จ", "ระบบสร้างรายงานของ Nextstep", "ทีมดูแล Nextstep", "ไม่ต้องตรวจหรือ Restart Server ลูกค้า"
+		result.SummaryTH, result.ProblemAreaTH, result.OwnerTH, result.CustomerActionTH = "สร้างตัวเลขและตารางรายงานไม่สำเร็จ", "ระบบสร้างรายงานของ AI-BCC", "ทีมดูแล AI-BCC", "ไม่ต้องตรวจหรือ Restart Server ลูกค้า"
 	case StageSaveReport:
 		result.ProblemArea, result.InvestigationOwner = ProblemNextstepReportStorage, OwnerNextstepTeam
-		result.SummaryTH, result.ProblemAreaTH, result.OwnerTH, result.CustomerActionTH = "บันทึกผลรายงานลง Dashboard ไม่สำเร็จ", "ระบบจัดเก็บรายงานของ Nextstep", "ทีมดูแล Nextstep", "ไม่ต้องตรวจหรือ Restart Server ลูกค้า"
+		result.SummaryTH, result.ProblemAreaTH, result.OwnerTH, result.CustomerActionTH = "บันทึกผลรายงานลง Dashboard ไม่สำเร็จ", "ระบบจัดเก็บรายงานของ AI-BCC", "ทีมดูแล AI-BCC", "ไม่ต้องตรวจหรือ Restart Server ลูกค้า"
 	case StageQueueExecution:
 		result.ProblemArea, result.InvestigationOwner = ProblemNextstepJobProcessing, OwnerNextstepTeam
-		result.SummaryTH, result.ProblemAreaTH, result.OwnerTH, result.CustomerActionTH = "ระบบประมวลผลงานหยุดระหว่างทำงาน", "คิวและ Worker ของ Nextstep", "ทีมดูแล Nextstep", "ไม่ต้องตรวจหรือ Restart Server ลูกค้า"
+		result.SummaryTH, result.ProblemAreaTH, result.OwnerTH, result.CustomerActionTH = "ระบบประมวลผลงานหยุดระหว่างทำงาน", "คิวและ Worker ของ AI-BCC", "ทีมดูแล AI-BCC", "ไม่ต้องตรวจหรือ Restart Server ลูกค้า"
 	case StagePrepareNotification:
 		result.ProblemArea, result.InvestigationOwner = ProblemNextstepNotification, OwnerNextstepTeam
-		result.SummaryTH, result.ProblemAreaTH, result.OwnerTH, result.CustomerActionTH = "เตรียมชุดรายงานสำหรับ LINE ไม่สำเร็จ", "ระบบเตรียมการแจ้งเตือนของ Nextstep", "ทีมดูแล Nextstep", "ไม่ต้องตรวจหรือ Restart Server ลูกค้า"
+		result.SummaryTH, result.ProblemAreaTH, result.OwnerTH, result.CustomerActionTH = "เตรียมชุดรายงานสำหรับ LINE ไม่สำเร็จ", "ระบบเตรียมการแจ้งเตือนของ AI-BCC", "ทีมดูแล AI-BCC", "ไม่ต้องตรวจหรือ Restart Server ลูกค้า"
 	case StageSendLINE:
 		result.ProblemArea, result.InvestigationOwner = ProblemLineProvider, OwnerLineProvider
-		result.SummaryTH, result.ProblemAreaTH, result.OwnerTH = "ส่งข้อความไปยัง LINE ไม่สำเร็จ", "บริการส่งข้อความ LINE", "ทีม Nextstep และผู้ให้บริการ LINE"
+		result.SummaryTH, result.ProblemAreaTH, result.OwnerTH = "ส่งข้อความไปยัง LINE ไม่สำเร็จ", "บริการส่งข้อความ LINE", "ทีม AI-BCC และผู้ให้บริการ LINE"
 	case StagePlatformCheck:
 		if evidence.Category == CategoryCapacity {
-			result.ProblemArea, result.SummaryTH, result.ProblemAreaTH = ProblemNextstepCapacity, "ทรัพยากร Server Nextstep ใกล้หรือเกินขีดจำกัด", "ทรัพยากร Server Nextstep"
+			result.ProblemArea, result.SummaryTH, result.ProblemAreaTH = ProblemNextstepCapacity, "ทรัพยากร Server AI-BCC ใกล้หรือเกินขีดจำกัด", "ทรัพยากร Server AI-BCC"
 		} else if strings.Contains(evidence.SafeErrorCode, "DATABASE") || strings.Contains(evidence.SafeErrorCode, "POSTGRES") {
-			result.ProblemArea, result.SummaryTH, result.ProblemAreaTH = ProblemNextstepDatabase, "ฐานข้อมูลของ Nextstep ทำงานไม่พร้อม", "ฐานข้อมูล Nextstep"
+			result.ProblemArea, result.SummaryTH, result.ProblemAreaTH = ProblemNextstepDatabase, "ฐานข้อมูลของ AI-BCC ทำงานไม่พร้อม", "ฐานข้อมูล AI-BCC"
 		} else {
-			result.ProblemArea, result.SummaryTH, result.ProblemAreaTH = ProblemNextstepJobProcessing, "บริการระบบของ Nextstep ทำงานไม่พร้อม", "บริการระบบ Nextstep"
+			result.ProblemArea, result.SummaryTH, result.ProblemAreaTH = ProblemNextstepJobProcessing, "บริการระบบของ AI-BCC ทำงานไม่พร้อม", "บริการระบบ AI-BCC"
 		}
-		result.InvestigationOwner, result.OwnerTH, result.CustomerActionTH = OwnerNextstepTeam, "ทีมดูแล Nextstep", "ไม่ต้องตรวจหรือ Restart Server ลูกค้า"
+		result.InvestigationOwner, result.OwnerTH, result.CustomerActionTH = OwnerNextstepTeam, "ทีมดูแล AI-BCC", "ไม่ต้องตรวจหรือ Restart Server ลูกค้า"
 	}
 	return result
 }

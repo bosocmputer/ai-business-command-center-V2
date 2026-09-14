@@ -5,7 +5,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('adminApi recipients', () => {
   it('reissues a pending invitation with CSRF and a stable idempotency key', async () => {
-    document.cookie = 'nextstep_admin_csrf=csrf-value; path=/';
+    document.cookie = 'aibcc_admin_csrf=csrf-value; path=/';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ id: 'recipient-1', status: 'PENDING', invitationUrl: 'https://dashboard.nextstep-soft.com/app/invite?ref=new' }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
 
     await adminApi.reissueRecipientInvitation('tenant-1', 'recipient-1', 'recipient-reissue-stable');
@@ -18,7 +18,7 @@ describe('adminApi recipients', () => {
   });
 
   it('revokes a recipient within the selected tenant with an authenticated DELETE', async () => {
-    document.cookie = 'nextstep_admin_csrf=csrf-value; path=/';
+    document.cookie = 'aibcc_admin_csrf=csrf-value; path=/';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
 
     await adminApi.revokeRecipient('tenant-1', 'recipient-1');
@@ -39,7 +39,7 @@ describe('adminApi recipients', () => {
   });
 
   it('queries an exact recipient page with Admin CSRF protection', async () => {
-    document.cookie = 'nextstep_admin_csrf=csrf-value; path=/';
+    document.cookie = 'aibcc_admin_csrf=csrf-value; path=/';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ data: [], page: 0, pageSize: 25, total: 0, hasMore: false }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     await adminApi.queryRecipients('tenant-1', { search: 'ผู้บริหาร', status: 'ACTIVE', permissionState: 'WITH_REPORTS', page: 0, pageSize: 25 });
     const [url, options] = fetchMock.mock.calls[0]!;
@@ -60,7 +60,7 @@ describe('adminApi recipients', () => {
 
 describe('adminApi tenants', () => {
   it('archives a tenant with its optimistic version and CSRF protection', async () => {
-    document.cookie = 'nextstep_admin_csrf=csrf-value; path=/';
+    document.cookie = 'aibcc_admin_csrf=csrf-value; path=/';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
 
     await adminApi.archiveTenant('tenant-1', 4);
@@ -110,7 +110,7 @@ describe('adminApi operational incidents', () => {
   });
 
   it('acknowledges by optimistic version with admin CSRF protection', async () => {
-    document.cookie = 'nextstep_admin_csrf=csrf-value; path=/';
+    document.cookie = 'aibcc_admin_csrf=csrf-value; path=/';
     const incident = {
       id: 'incident-1', alertRef: 'NST-ABC123DEF456', status: 'OPEN', severity: 'P1', rootCause: 'PLATFORM',
       incidentType: 'WORKER_HEARTBEAT_MISSING', occurrenceCount: 1, affectedCount: 1,
@@ -134,7 +134,7 @@ describe('adminApi operational incidents', () => {
 
 describe('viewerApi delivery contexts', () => {
   it('resolves a reference once through a CSRF-protected body without putting the token in the URL', async () => {
-    document.cookie = 'nextstep_viewer_csrf=viewer-csrf; path=/';
+    document.cookie = 'aibcc_viewer_csrf=viewer-csrf; path=/';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       deliveryId: '11111111-1111-4111-8111-111111111111', tenantId: '88bfcb51-73fe-469a-964a-675e6386c644', reports: []
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -163,7 +163,7 @@ describe('viewerApi delivery contexts', () => {
   });
 
   it('filters only stored report rows with Viewer CSRF protection', async () => {
-    document.cookie = 'nextstep_viewer_csrf=viewer-csrf; path=/';
+    document.cookie = 'aibcc_viewer_csrf=viewer-csrf; path=/';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ runId: 'run-id', columns: ['ic_code'], data: [], page: 0, pageSize: 25, total: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
 
     await viewerApi.queryRows('tenant-id', 'stock_balance', 'run-id', { filters: [{ columnKey: 'ic_code', operator: 'CONTAINS', value: '001' }], page: 0, pageSize: 25 });

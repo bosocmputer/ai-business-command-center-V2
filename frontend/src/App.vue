@@ -22,10 +22,10 @@ function showFatalError(error: unknown) {
 }
 function reloadPage() { window.location.reload(); }
 
-window.addEventListener('nextstep:unauthorized', handleUnauthorized);
+window.addEventListener('aibcc:unauthorized', handleUnauthorized);
 router.onError(showFatalError);
 onErrorCaptured((error) => { showFatalError(error); return false; });
-onBeforeUnmount(() => window.removeEventListener('nextstep:unauthorized', handleUnauthorized));
+onBeforeUnmount(() => window.removeEventListener('aibcc:unauthorized', handleUnauthorized));
 </script>
 
 <template>

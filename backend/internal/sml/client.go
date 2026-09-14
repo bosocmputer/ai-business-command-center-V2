@@ -91,7 +91,7 @@ func (client *Client) Query(ctx context.Context, connection Connection, sql stri
 	if err != nil {
 		return nil, protocolSafeError(recorder, "SML_QUERY_ENCODING_FAILED", false, "")
 	}
-	envelope := BuildQueryEnvelope("NEXTSTEP", connection.ConfigFileName, connection.DatabaseName, base64.StdEncoding.EncodeToString(compressed))
+	envelope := BuildQueryEnvelope("AI_BCC", connection.ConfigFileName, connection.DatabaseName, base64.StdEncoding.EncodeToString(compressed))
 
 	requestCtx, cancel := context.WithTimeout(ctx, client.timeout)
 	defer cancel()
@@ -101,7 +101,7 @@ func (client *Client) Query(ctx context.Context, connection Connection, sql stri
 	}
 	request.Header.Set("Content-Type", "text/xml; charset=utf-8")
 	request.Header.Set("SOAPAction", "")
-	request.Header.Set(nextstepRequestRefHeader, recorder.Snapshot().RequestRef)
+	request.Header.Set(requestRefHeader, recorder.Snapshot().RequestRef)
 	if connection.Username != "" || connection.Password != "" {
 		request.SetBasicAuth(connection.Username, connection.Password)
 	}

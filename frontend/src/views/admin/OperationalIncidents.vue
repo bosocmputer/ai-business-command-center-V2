@@ -17,7 +17,7 @@ const severityOptions = [
   { label: 'P1 · แจ้ง Telegram', value: 'P1' },
   { label: 'P2 · ติดตามในระบบ', value: 'P2' }
 ];
-const rootCauseOptions = [{ label: 'Java Web Service / SML', value: 'SML_CONNECTIVITY' }, { label: 'ข้อมูลรายงาน', value: 'REPORT_DATA' }, { label: 'การส่ง LINE', value: 'LINE_DELIVERY' }, { label: 'ระบบ Nextstep', value: 'PLATFORM' }, { label: 'ทรัพยากร Server', value: 'CAPACITY' }];
+const rootCauseOptions = [{ label: 'Java Web Service / SML', value: 'SML_CONNECTIVITY' }, { label: 'ข้อมูลรายงาน', value: 'REPORT_DATA' }, { label: 'การส่ง LINE', value: 'LINE_DELIVERY' }, { label: 'ระบบ AI-BCC', value: 'PLATFORM' }, { label: 'ทรัพยากร Server', value: 'CAPACITY' }];
 type RootCause = OperationalIncident['rootCause'];
 type IncidentFilters = { statuses: OperationalIncidentStatus[]; severities: OperationalIncidentSeverity[]; rootCauses: RootCause[]; activeOnly: boolean };
 const primeFilters = ref({ severity: { value: null as OperationalIncidentSeverity[] | null, matchMode: 'in' }, rootCause: { value: null as RootCause[] | null, matchMode: 'in' }, status: { value: null as OperationalIncidentStatus[] | null, matchMode: 'in' } });
@@ -45,7 +45,7 @@ function checkArea(item: OperationalIncident) {
   if (item.rootCause === 'SML_CONNECTIVITY') return 'Server และ Java Web Service ของลูกค้า';
   if (item.rootCause === 'LINE_DELIVERY') return 'ผู้ให้บริการ LINE';
   if (item.subjectType === 'DATABASE') return 'ฐานข้อมูล Dashboard';
-  return 'ระบบ Nextstep Dashboard';
+  return 'ระบบ AI Business Command Center';
 }
 function measurementLabel(item: OperationalIncident) {
   if (!item.measurement) return '';

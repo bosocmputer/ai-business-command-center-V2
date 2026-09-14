@@ -7,7 +7,7 @@ function diagnosis(overrides: Partial<IncidentDiagnosis> = {}): IncidentDiagnosi
     assessment: {
       problemArea: 'CUSTOMER_JAVA_WS', investigationOwner: 'CUSTOMER_IT', loadSignal: 'NO_NEXTSTEP_LOAD_SIGNAL',
       summaryTh: 'เชื่อมต่อ Java Web Service สำเร็จ แต่ข้อมูลตอบกลับไม่ใช่ ZIP', problemAreaTh: 'คำตอบจาก Java Web Service',
-      ownerTh: 'ผู้ดูแล Java Web Service ของลูกค้า', loadSignalTh: 'ไม่พบสัญญาณว่า Nextstep สร้างภาระผิดปกติ', customerActionTh: 'ตรวจ Java Web Service'
+      ownerTh: 'ผู้ดูแล Java Web Service ของลูกค้า', loadSignalTh: 'ไม่พบสัญญาณว่า AI-BCC สร้างภาระผิดปกติ', customerActionTh: 'ตรวจ Java Web Service'
     },
     protocolEvidence: {
       requestRef: 'NXR-ABCDEFGHIJKLMNOP', requestCount: 1, retryCount: 0, httpStatus: 200,

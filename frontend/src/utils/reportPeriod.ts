@@ -16,7 +16,7 @@ export type PeriodValidation = {
   dateTo?: string;
 };
 
-const storagePrefix = 'nextstep.viewer.period.v1:';
+const storagePrefix = 'aibcc.viewer.period.v1:';
 const reportPeriodModes: Record<ReportKey, ReportPeriodMode> = {
   sales_goods_services: 'DATE_RANGE',
   purchase_goods_payables: 'DATE_RANGE',

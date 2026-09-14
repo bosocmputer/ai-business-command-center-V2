@@ -62,9 +62,9 @@ describe('report period model', () => {
   it('stores a versioned selection per tenant and discards malformed or future values', () => {
     savePeriodSelection('tenant-a', { periodPreset: 'YESTERDAY' }, now);
     expect(loadPeriodSelection('tenant-a', now)).toEqual({ periodPreset: 'YESTERDAY' });
-    sessionStorage.setItem('nextstep.viewer.period.v1:tenant-b', JSON.stringify({ version: 1, selection: { periodPreset: 'CUSTOM', dateFrom: '2026-07-13', dateTo: '2026-07-13' } }));
+    sessionStorage.setItem('aibcc.viewer.period.v1:tenant-b', JSON.stringify({ version: 1, selection: { periodPreset: 'CUSTOM', dateFrom: '2026-07-13', dateTo: '2026-07-13' } }));
     expect(loadPeriodSelection('tenant-b', now)).toEqual(defaultPeriodSelection());
     clearStoredPeriodSelections();
-    expect(sessionStorage.getItem('nextstep.viewer.period.v1:tenant-a')).toBeNull();
+    expect(sessionStorage.getItem('aibcc.viewer.period.v1:tenant-a')).toBeNull();
   });
 });

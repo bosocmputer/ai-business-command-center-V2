@@ -68,7 +68,7 @@ function byteLabel(value?: number) {
         </div>
         <div class="fact-card">
           <i class="pi pi-gauge" aria-hidden="true" />
-          <span>ภาระจาก Nextstep</span>
+          <span>ภาระจาก AI-BCC</span>
           <strong>{{ diagnosis.assessment.loadSignalTh }}</strong>
         </div>
       </div>

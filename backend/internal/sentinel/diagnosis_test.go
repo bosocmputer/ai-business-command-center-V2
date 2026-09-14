@@ -56,7 +56,7 @@ func TestDiagnosisBuildsCustomerMessageFromConfirmedBoundedEvidence(t *testing.T
 			t.Fatalf("unsafe customer message = %q", diagnosis.CustomerMessageTH)
 		}
 	}
-	if !strings.Contains(diagnosis.CustomerMessageTH, "Request Ref: NXR-ABCDEFGHIJKLMNOP") || !strings.Contains(diagnosis.CustomerMessageTH, "ไม่พบสัญญาณว่า Nextstep สร้างภาระผิดปกติ") {
+	if !strings.Contains(diagnosis.CustomerMessageTH, "Request Ref: NXR-ABCDEFGHIJKLMNOP") || !strings.Contains(diagnosis.CustomerMessageTH, "ไม่พบสัญญาณว่า AI-BCC สร้างภาระผิดปกติ") {
 		t.Fatalf("customer message = %q", diagnosis.CustomerMessageTH)
 	}
 }
