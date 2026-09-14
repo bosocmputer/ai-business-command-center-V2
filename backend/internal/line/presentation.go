@@ -210,7 +210,7 @@ func addExecutiveHighlights(presentation *FlexReportPresentation, primary report
 		if presentation.Key == report.CashBankPayments {
 			key = "cash_payment_methods"
 		}
-		channels, err := channelRows(visualizations, key)
+		channels, err := channelRows(visualizations, key, primary.Value)
 		if err != nil || len(channels) == 0 {
 			return err
 		}
@@ -239,25 +239,55 @@ func topRanked(visualizations []report.DashboardVisualization, key string) (stri
 	return "", "", false
 }
 
-func channelRows(visualizations []report.DashboardVisualization, key string) ([]FlexMetricPresentation, error) {
+// channelRows lists money by payment channel so the rows always add up to the
+// card total: money not recorded against any channel becomes "ไม่ระบุช่องทาง",
+// and channels beyond the row budget are folded into "ช่องทางอื่น".
+func channelRows(visualizations []report.DashboardVisualization, key, total string) ([]FlexMetricPresentation, error) {
+	type channel struct {
+		label  string
+		amount *big.Rat
+	}
+	channels := make([]channel, 0, 6)
+	known := new(big.Rat)
 	for _, item := range visualizations {
 		if item.Key != key || len(item.Series) == 0 {
 			continue
 		}
-		rows := make([]FlexMetricPresentation, 0, flexChannelLimit)
 		for index, label := range item.Categories {
-			if index >= len(item.Series[0].Values) || len(rows) == flexChannelLimit {
+			if index >= len(item.Series[0].Values) {
 				break
 			}
-			formatted, err := formatMetricValue(item.Series[0].Values[index], report.UnitTHB)
-			if err != nil {
+			amount, ok := new(big.Rat).SetString(normalizeNumber(item.Series[0].Values[index]))
+			if !ok {
 				return nil, ErrFlexInputInvalid
 			}
-			rows = append(rows, FlexMetricPresentation{Label: label, Value: formatted, Unit: "บาท"})
+			channels = append(channels, channel{label: label, amount: amount})
+			known.Add(known, amount)
 		}
-		return rows, nil
+		break
 	}
-	return nil, nil
+	if totalValue, ok := new(big.Rat).SetString(normalizeNumber(total)); ok {
+		unassigned := new(big.Rat).Sub(totalValue, known)
+		if unassigned.Cmp(big.NewRat(1, 200)) > 0 {
+			channels = append(channels, channel{label: "ไม่ระบุช่องทาง", amount: unassigned})
+		}
+	}
+	if len(channels) > flexChannelLimit {
+		other := new(big.Rat)
+		for _, item := range channels[flexChannelLimit-1:] {
+			other.Add(other, item.amount)
+		}
+		channels = append(channels[:flexChannelLimit-1], channel{label: "ช่องทางอื่น", amount: other})
+	}
+	rows := make([]FlexMetricPresentation, 0, len(channels))
+	for _, item := range channels {
+		formatted, err := formatMetricValue(item.amount.FloatString(2), report.UnitTHB)
+		if err != nil {
+			return nil, ErrFlexInputInvalid
+		}
+		rows = append(rows, FlexMetricPresentation{Label: item.label, Value: formatted, Unit: "บาท"})
+	}
+	return rows, nil
 }
 
 func sharePercent(part, total string) (string, bool) {

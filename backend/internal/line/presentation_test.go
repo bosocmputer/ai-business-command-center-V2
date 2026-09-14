@@ -211,6 +211,51 @@ func TestBuildFlexReportPresentationReplacesCashAverageWithChannels(t *testing.T
 	}
 }
 
+func TestBuildFlexReportPresentationCashChannelsAlwaysSumToTotal(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		total      string
+		categories []string
+		values     []string
+		want       []FlexMetricPresentation
+	}{
+		{
+			name: "unassigned money", total: "29050.00",
+			categories: []string{"เงินโอน"}, values: []string{"9850.00"},
+			want: []FlexMetricPresentation{{Label: "เอกสาร", Value: "2", Unit: "ใบ"}, {Label: "เงินโอน", Value: "9,850.00", Unit: "บาท"}, {Label: "ไม่ระบุช่องทาง", Value: "19,200.00", Unit: "บาท"}},
+		},
+		{
+			name: "more channels than rows", total: "1000.00",
+			categories: []string{"เงินสด", "บัตร", "เช็ค", "เงินโอน"}, values: []string{"400.00", "300.00", "200.00", "100.00"},
+			want: []FlexMetricPresentation{{Label: "เอกสาร", Value: "2", Unit: "ใบ"}, {Label: "เงินสด", Value: "400.00", Unit: "บาท"}, {Label: "บัตร", Value: "300.00", Unit: "บาท"}, {Label: "ช่องทางอื่น", Value: "300.00", Unit: "บาท"}},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dashboard := report.Dashboard{
+				ReportKey: report.CashBankReceipts,
+				KPIs: []report.DashboardMetric{
+					{Key: "total_amount", Label: "ยอดรับเงิน", Value: test.total, Unit: report.UnitTHB},
+					{Key: "document_count", Label: "จำนวนเอกสาร", Value: "2", Unit: report.UnitCount},
+					{Key: "average_per_document", Label: "ยอดเฉลี่ยต่อเอกสาร", Value: "0.00", Unit: report.UnitTHB},
+				},
+				Visualizations: []report.DashboardVisualization{{Key: "cash_receipt_methods", Categories: test.categories, Series: []report.VisualizationSeries{{Key: "amount", Values: test.values}}}},
+			}
+			presentation, err := BuildFlexReportPresentation(FlexReport{Key: report.CashBankReceipts, Dashboard: &dashboard, ActionURL: "https://dashboard.nextstep-soft.com/app"})
+			if err != nil {
+				t.Fatalf("BuildFlexReportPresentation() error = %v", err)
+			}
+			if len(presentation.Supporting) != len(test.want) {
+				t.Fatalf("supporting = %+v", presentation.Supporting)
+			}
+			for index := range test.want {
+				if presentation.Supporting[index] != test.want[index] {
+					t.Fatalf("supporting[%d] = %+v, want %+v", index, presentation.Supporting[index], test.want[index])
+				}
+			}
+		})
+	}
+}
+
 func TestBuildFlexReportPresentationFlagsLossWithoutLeakingEntityNames(t *testing.T) {
 	dashboard := report.Dashboard{
 		ReportKey: report.GrossProfitByProduct,
