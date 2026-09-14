@@ -7,6 +7,7 @@ project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 env_file=${1:-"$script_dir/.env.production"}
 runtime_dir=${SENTINEL_HOST_RUNTIME_DIR:-/run/nextstep-dashboard}
 backup_dir=${BACKUP_DIR:-"$project_dir/backups"}
+compose_project=${COMPOSE_PROJECT_NAME:-nextstep-dashboard}
 
 if [ ! -r "$env_file" ]; then
   echo "Production environment file is not readable: $env_file" >&2
@@ -18,9 +19,9 @@ container_ok() {
   service=$1
   if [ "$docker_prefix" = unavailable ]; then printf false; return; fi
   if [ -n "$docker_prefix" ]; then
-    container_id=$(sudo docker ps -aq --filter label=com.docker.compose.project=nextstep-dashboard --filter "label=com.docker.compose.service=$service" | head -1)
+    container_id=$(sudo docker ps -aq --filter "label=com.docker.compose.project=$compose_project" --filter "label=com.docker.compose.service=$service" | head -1)
   else
-    container_id=$(docker ps -aq --filter label=com.docker.compose.project=nextstep-dashboard --filter "label=com.docker.compose.service=$service" | head -1)
+    container_id=$(docker ps -aq --filter "label=com.docker.compose.project=$compose_project" --filter "label=com.docker.compose.service=$service" | head -1)
   fi
   if [ -z "$container_id" ]; then printf false; return; fi
   if [ -n "$docker_prefix" ]; then state=$(sudo docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id" 2>/dev/null || true)
@@ -51,7 +52,7 @@ json_time_or_null() {
 
 memory_critical_epoch=
 if [ -s "$critical_file" ]; then memory_critical_epoch=$(tr -cd '0-9' < "$critical_file"); fi
-latest_backup=$(find "$backup_dir" -maxdepth 1 -type f -name 'nextstep-*.dump' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
+latest_backup=$(find "$backup_dir" -maxdepth 1 -type f -name 'aibcc-*.dump' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
 backup_epoch=
 checksum_valid=false
 if [ -n "$latest_backup" ] && [ -f "$latest_backup.sha256" ]; then
@@ -59,7 +60,8 @@ if [ -n "$latest_backup" ] && [ -f "$latest_backup.sha256" ]; then
   if (cd "$(dirname -- "$latest_backup")" && sha256sum -c "$(basename -- "$latest_backup.sha256")" >/dev/null 2>&1); then checksum_valid=true; fi
 fi
 restore_epoch=
-if [ -s "$runtime_dir/host/restore-verified-at" ]; then restore_epoch=$(tr -cd '0-9' < "$runtime_dir/host/restore-verified-at"); fi
+if [ -s "$runtime_dir/host/restore-verified-at" ]; then restore_epoch=$(tr -cd '0-9' < "$runtime_dir/host/restore-verified-at")
+elif [ -s "$backup_dir/.restore-verified-at" ]; then restore_epoch=$(tr -cd '0-9' < "$backup_dir/.restore-verified-at"); fi
 offsite=false
 if awk -F= '$1 == "OFFSITE_BACKUP_CONFIGURED" && $2 == "true" { found=1 } END { exit !found }' "$env_file"; then offsite=true; fi
 

@@ -28,7 +28,7 @@ pending=$(dc run --rm --no-deps migrate /app/migrate --pending | tail -1 | tr -c
 case "$pending" in ''|*[!0-9]*) echo "Unable to determine pending migrations." >&2; exit 1;; esac
 if [ "$pending" -gt 0 ]; then
   "$script_dir/backup.sh" "$env_file"
-  latest=$(find "$backup_dir" -maxdepth 1 -type f -name 'nextstep-pre-migration-*.dump' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
+  latest=$(find "$backup_dir" -maxdepth 1 -type f -name 'aibcc-pre-migration-*.dump' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
   [ -n "$latest" ] || { echo "Verified pre-migration backup was not found." >&2; exit 1; }
   "$script_dir/restore-drill.sh" "$env_file" "$latest"
 fi

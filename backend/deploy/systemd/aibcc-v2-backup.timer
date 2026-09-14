@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AI-BCC V2 PostgreSQL backup daily at 02:30
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

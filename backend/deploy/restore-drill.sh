@@ -3,10 +3,14 @@ set -eu
 
 umask 077
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-compose_file="$script_dir/compose.production.yml"
+compose_file=${COMPOSE_FILE:-"$script_dir/compose.production.yml"}
 env_file=${1:-"$script_dir/.env.production"}
 backup_file=${2:-}
 runtime_dir=${SENTINEL_HOST_RUNTIME_DIR:-/run/nextstep-dashboard}
+if [ "$backup_file" = latest ]; then
+  backup_dir=${BACKUP_DIR:-"$(CDPATH= cd -- "$script_dir/.." && pwd)/backups"}
+  backup_file=$(find "$backup_dir" -maxdepth 1 -type f -name 'aibcc-*.dump' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
+fi
 
 if [ ! -r "$env_file" ] || [ -z "$backup_file" ] || [ ! -r "$backup_file" ]; then
   echo "Usage: $0 <production-env-file> <backup.dump>" >&2
@@ -49,9 +53,9 @@ if [ "$busy" != "f" ]; then
 fi
 
 suffix=$(date -u +%Y%m%d%H%M%S)-$$
-container="nextstep-restore-${suffix}"
-volume="nextstep-restore-${suffix}"
-network="nextstep-restore-${suffix}"
+container="aibcc-restore-${suffix}"
+volume="aibcc-restore-${suffix}"
+network="aibcc-restore-${suffix}"
 cleanup() {
   d rm -f "$container" >/dev/null 2>&1 || true
   d volume rm "$volume" >/dev/null 2>&1 || true
@@ -89,4 +93,8 @@ temporary="$marker.tmp.$$"
 date -u +%s > "$temporary"
 chmod 0600 "$temporary"
 mv "$temporary" "$marker"
+# /run is cleared on reboot; keep a durable copy so Sentinel does not report an
+# overdue restore verification just because the host restarted.
+persistent_marker="$(dirname -- "$backup_file")/.restore-verified-at"
+cp "$marker" "$persistent_marker.tmp.$$" && mv "$persistent_marker.tmp.$$" "$persistent_marker"
 echo "Isolated restore drill passed; Production PostgreSQL was read only for the busy check."

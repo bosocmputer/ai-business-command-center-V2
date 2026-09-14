@@ -1,0 +1,16 @@
+[Unit]
+Description=AI-BCC V2 isolated restore drill of the newest backup
+After=docker.service aibcc-v2-backup.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/home/bosscatdog/deployments/ai-business-command-center-v2/backend/deploy
+Environment=COMPOSE_FILE=/home/bosscatdog/deployments/ai-business-command-center-v2/backend/deploy/compose.local.yml
+Environment=SENTINEL_HOST_RUNTIME_DIR=/run/ai-bcc-v2
+ExecStart=/home/bosscatdog/deployments/ai-business-command-center-v2/backend/deploy/restore-drill.sh /home/bosscatdog/deployments/ai-business-command-center-v2/backend/deploy/.env.production latest
+# 75 = deferred because report/notification work or a schedule is due soon
+SuccessExitStatus=75
+PrivateTmp=true
+NoNewPrivileges=true

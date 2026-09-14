@@ -1,0 +1,15 @@
+[Unit]
+Description=AI-BCC V2 daily PostgreSQL backup
+After=docker.service
+
+[Service]
+Type=oneshot
+User=bosscatdog
+Group=bosscatdog
+WorkingDirectory=/home/bosscatdog/deployments/ai-business-command-center-v2/backend/deploy
+Environment=COMPOSE_FILE=/home/bosscatdog/deployments/ai-business-command-center-v2/backend/deploy/compose.local.yml
+ExecStart=/home/bosscatdog/deployments/ai-business-command-center-v2/backend/deploy/backup.sh /home/bosscatdog/deployments/ai-business-command-center-v2/backend/deploy/.env.production daily
+# 75 = another backup already holds the lock
+SuccessExitStatus=75
+PrivateTmp=true
+NoNewPrivileges=true
