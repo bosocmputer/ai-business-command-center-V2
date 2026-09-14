@@ -21,9 +21,10 @@ const preview: FlexPreview = {
       key: 'sales_goods_services',
       label: 'รายงานขายสินค้าและบริการ',
       categoryLabel: 'ขาย',
-      primary: { label: 'ยอดขาย', value: '1,234,567.89' },
-      supporting: [{ label: 'จำนวนเอกสาร', value: '128' }, { label: 'ยอดเฉลี่ยต่อเอกสาร', value: '9,645.06' }],
-      comparison: { text: '↓ 7.82% จากช่วงก่อน', direction: 'DOWN' },
+      primary: { label: 'ยอดขาย', value: '1,234,567.89', unit: 'บาท' },
+      supporting: [{ label: 'บิลขาย', value: '128', unit: 'ใบ' }, { label: 'ยอดเฉลี่ยต่อบิล', value: '9,645.06', unit: 'บาท' }],
+      comparison: { text: '↓ 7.82% เทียบ 9 ก.ค. 2569 (1,339,300.00 บาท)', direction: 'DOWN' },
+      highlights: [{ label: 'สินค้าขายดี', value: 'สินค้าตัวอย่าง: 45,000.00 บาท' }],
       attention: { severity: 'WARNING', text: 'ตัวอย่างสถานะที่ต้องตรวจสอบ' },
       actionUrl: 'https://dashboard.nextstep-soft.com/app/tenant/t/report/sales_goods_services',
       periodLabel: 'ข้อมูล ณ 11 ก.ค. 2569',
@@ -38,22 +39,28 @@ describe('LineFlexPreview', () => {
     global: { stubs: { Tag: { template: '<span><slot />{{ value }}</span>', props: ['value'] } } }
   });
 
-  it('renders the AI-BCC executive report card hierarchy with backend values', () => {
+  it('renders the executive card with units, dated comparison and highlights', () => {
     const wrapper = mountPreview(preview);
+    const text = wrapper.text();
 
-    expect(wrapper.text()).toContain('ตัวเลขสมมติเท่านั้น');
-    expect(wrapper.text()).toContain('ไม่ดึงข้อมูลจาก SML');
-    expect(wrapper.text()).toContain('แบบอักษรอาจต่างเล็กน้อยตาม iOS/Android');
-    expect(wrapper.text()).toContain('วันนี้ยังไม่มีช่วงเวลาเปรียบเทียบที่เท่ากัน');
-    expect(wrapper.text()).toContain('รายงานขายสินค้าและบริการ');
-    expect(wrapper.text()).toContain('1,234,567.89');
-    expect(wrapper.text()).not.toContain('฿');
-    expect(wrapper.text()).toContain('↓ 7.82% จากช่วงก่อน');
-    expect(wrapper.text()).toContain('ตัวอย่างสถานะที่ต้องตรวจสอบ');
-    expect(wrapper.text()).toContain('เปิดรายละเอียด');
-    expect(wrapper.text()).toContain('2.0 KB');
+    expect(text).toContain('ตัวเลขสมมติเท่านั้น');
+    expect(text).toContain('ไม่ดึงข้อมูลจาก SML');
+    expect(text).toContain('วันนี้ยังไม่มีช่วงเวลาเปรียบเทียบที่เท่ากัน');
+    expect(wrapper.find('.flex-preview-kicker').text()).toBe('ขาย · รายวัน');
+    expect(wrapper.find('.flex-preview-header h3').text()).toBe('ขายสินค้าและบริการ');
+    expect(wrapper.find('.flex-preview-primary-amount').text()).toContain('1,234,567.89');
+    expect(wrapper.find('.flex-preview-primary-amount').text()).toContain('บาท');
+    expect(text).toContain('128 ใบ');
+    expect(text).toContain('9,645.06 บาท');
+    expect(wrapper.find('.flex-preview-comparison').text()).toContain('เทียบ 9 ก.ค. 2569');
+    expect(wrapper.find('.flex-preview-highlight').text()).toContain('สินค้าตัวอย่าง: 45,000.00 บาท');
+    expect(wrapper.find('.flex-preview-status').text()).toBe('ควรตรวจสอบ');
+    expect(text).toContain('ตัวอย่างสถานะที่ต้องตรวจสอบ');
+    expect(text).not.toContain('กดปุ่มด้านล่างเพื่อดูรายละเอียดเพิ่มเติม');
+    expect(text).not.toContain('฿');
+    expect(text).toContain('เปิดรายละเอียด');
+    expect(text).toContain('2.0 KB');
     expect(wrapper.find('[role="button"]').attributes('aria-disabled')).toBe('true');
-    expect(wrapper.find('.flex-preview-card').exists()).toBe(true);
     expect(wrapper.find('.flex-preview-carousel').attributes('data-presentation-version')).toBe('ai-bcc-executive-report-v2');
     expect(wrapper.find('.flex-preview-version-warning').exists()).toBe(false);
   });
@@ -65,17 +72,19 @@ describe('LineFlexPreview', () => {
         ...preview.reports[0]!,
         dataState: 'ZERO',
         stateText: 'ไม่มีรายการขายในช่วงนี้',
-        primary: { label: 'ยอดขาย', value: '0.00' },
-        supporting: [{ label: 'จำนวนเอกสาร', value: '0' }, { label: 'ยอดเฉลี่ยต่อเอกสาร', value: '0.00' }],
+        primary: { label: 'ยอดขาย', value: '0.00', unit: 'บาท' },
+        supporting: [{ label: 'บิลขาย', value: '0', unit: 'ใบ' }, { label: 'ยอดเฉลี่ยต่อบิล', value: '0.00', unit: 'บาท' }],
         comparison: undefined,
+        highlights: undefined,
         attention: undefined
       }]
     };
     const wrapper = mountPreview(zeroPreview);
 
     expect(wrapper.text()).toContain('ไม่มีรายการขายในช่วงนี้');
+    expect(wrapper.find('.flex-preview-status').text()).toBe('ไม่มีรายการ');
     expect(wrapper.findAll('.flex-preview-metric')).toHaveLength(0);
-    expect(wrapper.find('.flex-preview-primary-amount').exists()).toBe(false);
+    expect(wrapper.find('.flex-preview-primary-amount').text()).toContain('0.00');
   });
 
   it('warns instead of claiming an exact preview for unsupported versions', () => {

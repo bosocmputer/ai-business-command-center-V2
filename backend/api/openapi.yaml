@@ -1853,6 +1853,7 @@ components:
       properties:
         label: {type: string}
         value: {type: string, description: Numeric sample value; never customer data.}
+        unit: {type: string, description: 'Optional Thai unit label shown after the value, such as บาท or ใบ.'}
     FlexPreviewComparison:
       type: object
       additionalProperties: false
@@ -1877,9 +1878,10 @@ components:
         categoryLabel: {type: string}
         metrics: {type: array, minItems: 2, maxItems: 2, items: {$ref: '#/components/schemas/FlexPreviewMetric'}}
         primary: {$ref: '#/components/schemas/FlexPreviewMetric'}
-        supporting: {type: array, maxItems: 2, items: {$ref: '#/components/schemas/FlexPreviewMetric'}}
+        supporting: {type: array, maxItems: 4, items: {$ref: '#/components/schemas/FlexPreviewMetric'}}
         comparison: {$ref: '#/components/schemas/FlexPreviewComparison'}
         attention: {$ref: '#/components/schemas/FlexPreviewAttention'}
+        highlights: {type: array, maxItems: 2, description: 'Executive context lines such as the top product or supplier; previews use fictional sample names.', items: {$ref: '#/components/schemas/FlexPreviewMetric'}}
         dataState: {type: string, enum: [DATA, ZERO], description: Optional presentation state; absent for legacy preview producers.}
         stateText: {type: string, description: Backend-approved Thai state text when dataState is ZERO.}
         periodLabel: {type: string}

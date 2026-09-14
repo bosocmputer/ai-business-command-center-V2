@@ -109,7 +109,7 @@ func TestBuildFlexReportPresentationKeepsNonzeroComparisonForTrustedZeroData(t *
 	if err != nil {
 		t.Fatalf("BuildFlexReportPresentation() error = %v", err)
 	}
-	if presentation.DataState != FlexDataZero || presentation.Comparison == nil || presentation.Comparison.Text != "↓ 100.00% จากช่วงก่อน" {
+	if presentation.DataState != FlexDataZero || presentation.Comparison == nil || presentation.Comparison.Text != "↓ 100.00% เทียบ 11 ก.ค. 2569 (100.00 บาท)" {
 		t.Fatalf("zero state lost a meaningful comparison: %+v", presentation)
 	}
 }
@@ -138,6 +138,76 @@ func TestBuildFlexReportPresentationUsesExecutiveSalesMetrics(t *testing.T) {
 	}
 	if presentation.Attention != nil {
 		t.Fatalf("unexpected attention = %+v", presentation.Attention)
+	}
+}
+
+func TestBuildFlexReportPresentationNamesComparisonReferenceAndPreviousValue(t *testing.T) {
+	dashboard := report.Dashboard{
+		ReportKey:        report.SalesGoodsServices,
+		ComparisonPeriod: report.Period{DateFrom: "2026-09-12", DateTo: "2026-09-12"},
+		KPIs: []report.DashboardMetric{
+			{Key: "total_amount", Label: "ยอดขาย", Value: "143685.00", Unit: report.UnitTHB, Comparison: report.MetricComparison{Availability: report.ComparisonAvailable, PreviousValue: "70669.40", Percent: "103.32", Direction: report.DirectionUp}},
+			{Key: "document_count", Label: "จำนวนเอกสาร", Value: "15", Unit: report.UnitCount},
+			{Key: "average_per_document", Label: "ยอดเฉลี่ยต่อเอกสาร", Value: "9579.00", Unit: report.UnitTHB},
+		},
+		Visualizations: []report.DashboardVisualization{{Key: "top_products", Categories: []string{"คอนกรีตผสมเสร็จ 210 ksc."}, Series: []report.VisualizationSeries{{Key: "value", Values: []string{"27260.00"}}}}},
+	}
+	presentation, err := BuildFlexReportPresentation(FlexReport{Key: report.SalesGoodsServices, Dashboard: &dashboard, ActionURL: "https://dashboard.nextstep-soft.com/app"})
+	if err != nil {
+		t.Fatalf("BuildFlexReportPresentation() error = %v", err)
+	}
+	if presentation.Comparison == nil || presentation.Comparison.Text != "↑ 103.32% เทียบ 12 ก.ย. 2569 (70,669.40 บาท)" {
+		t.Fatalf("comparison = %+v", presentation.Comparison)
+	}
+	if presentation.Primary.Unit != "บาท" || presentation.Supporting[0].Label != "บิลขาย" || presentation.Supporting[0].Unit != "ใบ" || presentation.Supporting[1].Label != "ยอดเฉลี่ยต่อบิล" {
+		t.Fatalf("units/labels = primary %+v supporting %+v", presentation.Primary, presentation.Supporting)
+	}
+	if len(presentation.Highlights) != 1 || presentation.Highlights[0].Label != "สินค้าขายดี" || presentation.Highlights[0].Value != "คอนกรีตผสมเสร็จ 210 ksc.: 27,260.00 บาท" {
+		t.Fatalf("highlights = %+v", presentation.Highlights)
+	}
+}
+
+func TestBuildFlexReportPresentationShowsTopSupplierShare(t *testing.T) {
+	dashboard := report.Dashboard{
+		ReportKey: report.PurchaseGoodsPayables,
+		KPIs: []report.DashboardMetric{
+			{Key: "total_amount", Label: "ยอดซื้อ", Value: "9620.00", Unit: report.UnitTHB},
+			{Key: "document_count", Label: "จำนวนเอกสาร", Value: "3", Unit: report.UnitCount},
+			{Key: "average_per_document", Label: "ยอดเฉลี่ยต่อเอกสาร", Value: "3206.67", Unit: report.UnitTHB},
+		},
+		Visualizations: []report.DashboardVisualization{{Key: "top_suppliers", Categories: []string{"หจก.รัตนพงษ์ลำปาง"}, Series: []report.VisualizationSeries{{Key: "value", Values: []string{"4810.00"}}}}},
+	}
+	presentation, err := BuildFlexReportPresentation(FlexReport{Key: report.PurchaseGoodsPayables, Dashboard: &dashboard, ActionURL: "https://dashboard.nextstep-soft.com/app"})
+	if err != nil {
+		t.Fatalf("BuildFlexReportPresentation() error = %v", err)
+	}
+	if len(presentation.Highlights) != 1 || presentation.Highlights[0].Value != "หจก.รัตนพงษ์ลำปาง: 4,810.00 บาท (50.0% ของยอดซื้อ)" {
+		t.Fatalf("highlights = %+v", presentation.Highlights)
+	}
+}
+
+func TestBuildFlexReportPresentationReplacesCashAverageWithChannels(t *testing.T) {
+	dashboard := report.Dashboard{
+		ReportKey: report.CashBankReceipts,
+		KPIs: []report.DashboardMetric{
+			{Key: "total_amount", Label: "ยอดรับเงิน", Value: "38980.00", Unit: report.UnitTHB},
+			{Key: "document_count", Label: "จำนวนเอกสาร", Value: "3", Unit: report.UnitCount},
+			{Key: "average_per_document", Label: "ยอดเฉลี่ยต่อเอกสาร", Value: "12993.33", Unit: report.UnitTHB},
+		},
+		Visualizations: []report.DashboardVisualization{{Key: "cash_receipt_methods", Categories: []string{"เงินสด", "เงินโอน"}, Series: []report.VisualizationSeries{{Key: "amount", Values: []string{"4200.00", "34780.00"}}}}},
+	}
+	presentation, err := BuildFlexReportPresentation(FlexReport{Key: report.CashBankReceipts, Dashboard: &dashboard, ActionURL: "https://dashboard.nextstep-soft.com/app"})
+	if err != nil {
+		t.Fatalf("BuildFlexReportPresentation() error = %v", err)
+	}
+	want := []FlexMetricPresentation{{Label: "เอกสาร", Value: "3", Unit: "ใบ"}, {Label: "เงินสด", Value: "4,200.00", Unit: "บาท"}, {Label: "เงินโอน", Value: "34,780.00", Unit: "บาท"}}
+	if len(presentation.Supporting) != len(want) {
+		t.Fatalf("supporting = %+v", presentation.Supporting)
+	}
+	for index := range want {
+		if presentation.Supporting[index] != want[index] {
+			t.Fatalf("supporting[%d] = %+v, want %+v", index, presentation.Supporting[index], want[index])
+		}
 	}
 }
 

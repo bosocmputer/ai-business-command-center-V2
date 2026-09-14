@@ -35,7 +35,7 @@ func TestRenderFlexBuildsOneBubblePerReportInACarousel(t *testing.T) {
 	if len(payload) > maximumFlexPayloadBytes || strings.Count(string(payload), `"type":"bubble"`) != 2 || !strings.Contains(string(payload), `"type":"carousel"`) || !strings.Contains(string(payload), "สรุปผู้บริหาร") || !strings.Contains(string(payload), "เปิดรายละเอียด") {
 		t.Fatalf("unexpected payload (%d bytes): %s", len(payload), payload)
 	}
-	if !strings.Contains(string(payload), `"size":"mega"`) || !strings.Contains(string(payload), "snapshotRunId=00000000-0000-0000-0000-000000000002") || !strings.Contains(string(payload), "อัปเดต 10 ก.ค. 2569 · 22:30 น.") || strings.Contains(string(payload), "UTC") {
+	if !strings.Contains(string(payload), `"size":"mega"`) || !strings.Contains(string(payload), "snapshotRunId=00000000-0000-0000-0000-000000000002") || !strings.Contains(string(payload), "อัปเดต 10 ก.ค. 2569 22:30") || strings.Contains(string(payload), "UTC") {
 		t.Fatalf("executive layout, deep link, or timezone missing: %s", payload)
 	}
 	for _, color := range []string{"#2563EB", "#F8FAFC", "#111827", "#6B7280"} {

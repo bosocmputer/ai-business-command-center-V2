@@ -1561,6 +1561,8 @@ export interface components {
             label: string;
             /** @description Numeric sample value; never customer data. */
             value: string;
+            /** @description Optional Thai unit label shown after the value, such as บาท or ใบ. */
+            unit?: string;
         };
         FlexPreviewComparison: {
             text: string;
@@ -1581,6 +1583,8 @@ export interface components {
             supporting?: components["schemas"]["FlexPreviewMetric"][];
             comparison?: components["schemas"]["FlexPreviewComparison"];
             attention?: components["schemas"]["FlexPreviewAttention"];
+            /** @description Executive context lines such as the top product or supplier; previews use fictional sample names. */
+            highlights?: components["schemas"]["FlexPreviewMetric"][];
             /**
              * @description Optional presentation state; absent for legacy preview producers.
              * @enum {string}

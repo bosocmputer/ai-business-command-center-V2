@@ -3,6 +3,7 @@ package line
 import (
 	"math/big"
 	"strings"
+	"time"
 
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
 )
@@ -10,6 +11,7 @@ import (
 type FlexMetricPresentation struct {
 	Label string `json:"label"`
 	Value string `json:"value"`
+	Unit  string `json:"unit,omitempty"`
 }
 
 type FlexComparisonPresentation struct {
@@ -45,10 +47,33 @@ type FlexReportPresentation struct {
 	Supporting    []FlexMetricPresentation    `json:"supporting"`
 	Comparison    *FlexComparisonPresentation `json:"comparison,omitempty"`
 	Attention     *FlexAttentionPresentation  `json:"attention,omitempty"`
+	Highlights    []FlexMetricPresentation    `json:"highlights,omitempty"`
 	DataState     FlexDataState               `json:"dataState"`
 	StateText     string                      `json:"stateText,omitempty"`
 	ActionURL     string                      `json:"actionUrl"`
 }
+
+// Executive wording for LINE cards; the dashboard's generic labels stay unchanged elsewhere.
+var flexLabelOverrides = map[report.Key]map[string]string{
+	report.SalesGoodsServices:    {"document_count": "บิลขาย", "average_per_document": "ยอดเฉลี่ยต่อบิล"},
+	report.PurchaseGoodsPayables: {"document_count": "เอกสารซื้อ"},
+	report.CashBankReceipts:      {"document_count": "เอกสาร"},
+	report.CashBankPayments:      {"document_count": "เอกสาร"},
+}
+
+var flexCountUnits = map[string]string{
+	"document_count":              "ใบ",
+	"receipt_count":               "ใบ",
+	"payment_split_missing_count": "ใบ",
+	"item_count":                  "รายการ",
+	"reorder_item_count":          "รายการ",
+	"customer_count":              "ราย",
+}
+
+const (
+	flexHighlightNameLimit = 38
+	flexChannelLimit       = 3
+)
 
 type flexPresentationDefinition struct {
 	primary    string
@@ -85,7 +110,7 @@ func BuildFlexReportPresentation(input FlexReport) (FlexReportPresentation, erro
 		if !metricOK {
 			return FlexReportPresentation{}, ErrFlexInputInvalid
 		}
-		formatted, err := presentMetric(metric)
+		formatted, err := presentMetric(input.Key, metric)
 		if err != nil {
 			return FlexReportPresentation{}, err
 		}
@@ -95,7 +120,7 @@ func BuildFlexReportPresentation(input FlexReport) (FlexReportPresentation, erro
 			if !exists {
 				continue
 			}
-			formatted, err := presentMetric(metric)
+			formatted, err := presentMetric(input.Key, metric)
 			if err != nil {
 				return FlexReportPresentation{}, err
 			}
@@ -116,12 +141,12 @@ func BuildFlexReportPresentation(input FlexReport) (FlexReportPresentation, erro
 	if !exists {
 		return FlexReportPresentation{}, ErrFlexInputInvalid
 	}
-	formattedPrimary, err := presentMetric(primary)
+	formattedPrimary, err := presentMetric(input.Key, primary)
 	if err != nil {
 		return FlexReportPresentation{}, err
 	}
 	presentation.Primary = formattedPrimary
-	presentation.Comparison, err = presentComparison(primary)
+	presentation.Comparison, err = presentComparison(primary, input.Dashboard.ComparisonPeriod)
 	if err != nil {
 		return FlexReportPresentation{}, err
 	}
@@ -130,7 +155,7 @@ func BuildFlexReportPresentation(input FlexReport) (FlexReportPresentation, erro
 		if !exists {
 			return FlexReportPresentation{}, ErrFlexInputInvalid
 		}
-		formatted, err := presentMetric(metric)
+		formatted, err := presentMetric(input.Key, metric)
 		if err != nil {
 			return FlexReportPresentation{}, err
 		}
@@ -143,8 +168,107 @@ func BuildFlexReportPresentation(input FlexReport) (FlexReportPresentation, erro
 		if !comparisonHasChange(primary.Comparison) {
 			presentation.Comparison = nil
 		}
+		return presentation, nil
+	}
+	if err := addExecutiveHighlights(&presentation, primary, input.Dashboard.Visualizations); err != nil {
+		return FlexReportPresentation{}, err
 	}
 	return presentation, nil
+}
+
+// addExecutiveHighlights adds the one-line context an owner scans first: the
+// top product or supplier, and the cash/transfer split for cash-bank reports.
+// Loss rankings are deliberately never named here.
+func addExecutiveHighlights(presentation *FlexReportPresentation, primary report.DashboardMetric, visualizations []report.DashboardVisualization) error {
+	switch presentation.Key {
+	case report.SalesGoodsServices:
+		name, amount, ok := topRanked(visualizations, "top_products")
+		if !ok {
+			return nil
+		}
+		formatted, err := formatMetricValue(amount, report.UnitTHB)
+		if err != nil {
+			return ErrFlexInputInvalid
+		}
+		presentation.Highlights = append(presentation.Highlights, FlexMetricPresentation{Label: "สินค้าขายดี", Value: truncateRunes(name, flexHighlightNameLimit) + ": " + formatted + " บาท"})
+	case report.PurchaseGoodsPayables:
+		name, amount, ok := topRanked(visualizations, "top_suppliers")
+		if !ok {
+			return nil
+		}
+		formatted, err := formatMetricValue(amount, report.UnitTHB)
+		if err != nil {
+			return ErrFlexInputInvalid
+		}
+		value := truncateRunes(name, flexHighlightNameLimit) + ": " + formatted + " บาท"
+		if share, ok := sharePercent(amount, primary.Value); ok {
+			value += " (" + share + "% ของยอดซื้อ)"
+		}
+		presentation.Highlights = append(presentation.Highlights, FlexMetricPresentation{Label: "ผู้จำหน่ายหลัก", Value: value})
+	case report.CashBankReceipts, report.CashBankPayments:
+		key := "cash_receipt_methods"
+		if presentation.Key == report.CashBankPayments {
+			key = "cash_payment_methods"
+		}
+		channels, err := channelRows(visualizations, key)
+		if err != nil || len(channels) == 0 {
+			return err
+		}
+		documents := make([]FlexMetricPresentation, 0, 1+len(channels))
+		for _, item := range presentation.Supporting {
+			if item.Unit == "ใบ" {
+				documents = append(documents, item)
+			}
+		}
+		presentation.Supporting = append(documents, channels...)
+	}
+	return nil
+}
+
+func topRanked(visualizations []report.DashboardVisualization, key string) (string, string, bool) {
+	for _, item := range visualizations {
+		if item.Key != key || len(item.Categories) == 0 || len(item.Series) == 0 || len(item.Series[0].Values) == 0 {
+			continue
+		}
+		name := strings.TrimSpace(item.Categories[0])
+		if name == "" {
+			return "", "", false
+		}
+		return name, item.Series[0].Values[0], true
+	}
+	return "", "", false
+}
+
+func channelRows(visualizations []report.DashboardVisualization, key string) ([]FlexMetricPresentation, error) {
+	for _, item := range visualizations {
+		if item.Key != key || len(item.Series) == 0 {
+			continue
+		}
+		rows := make([]FlexMetricPresentation, 0, flexChannelLimit)
+		for index, label := range item.Categories {
+			if index >= len(item.Series[0].Values) || len(rows) == flexChannelLimit {
+				break
+			}
+			formatted, err := formatMetricValue(item.Series[0].Values[index], report.UnitTHB)
+			if err != nil {
+				return nil, ErrFlexInputInvalid
+			}
+			rows = append(rows, FlexMetricPresentation{Label: label, Value: formatted, Unit: "บาท"})
+		}
+		return rows, nil
+	}
+	return nil, nil
+}
+
+func sharePercent(part, total string) (string, bool) {
+	partValue, partOK := new(big.Rat).SetString(normalizeNumber(part))
+	totalValue, totalOK := new(big.Rat).SetString(normalizeNumber(total))
+	if !partOK || !totalOK || totalValue.Sign() <= 0 {
+		return "", false
+	}
+	share := new(big.Rat).Quo(partValue, totalValue)
+	share.Mul(share, big.NewRat(100, 1))
+	return share.FloatString(1), true
 }
 
 func trustedZeroDashboard(dashboard *report.Dashboard, definition flexPresentationDefinition, metrics map[string]report.DashboardMetric) bool {
@@ -209,15 +333,30 @@ func unitForMetricKey(key string) report.MetricUnit {
 	return report.UnitTHB
 }
 
-func presentMetric(metric report.DashboardMetric) (FlexMetricPresentation, error) {
+func presentMetric(key report.Key, metric report.DashboardMetric) (FlexMetricPresentation, error) {
 	value, err := formatMetricValue(metric.Value, metric.Unit)
 	if err != nil {
 		return FlexMetricPresentation{}, ErrFlexInputInvalid
 	}
-	return FlexMetricPresentation{Label: metric.Label, Value: value}, nil
+	label := metric.Label
+	if override := flexLabelOverrides[key][metric.Key]; override != "" {
+		label = override
+	}
+	return FlexMetricPresentation{Label: label, Value: value, Unit: flexUnitLabel(metric)}, nil
 }
 
-func presentComparison(metric report.DashboardMetric) (*FlexComparisonPresentation, error) {
+func flexUnitLabel(metric report.DashboardMetric) string {
+	switch metric.Unit {
+	case report.UnitTHB:
+		return "บาท"
+	case report.UnitCount:
+		return flexCountUnits[metric.Key]
+	default:
+		return ""
+	}
+}
+
+func presentComparison(metric report.DashboardMetric, comparisonPeriod report.Period) (*FlexComparisonPresentation, error) {
 	comparison := metric.Comparison
 	if comparison.Availability != report.ComparisonAvailable {
 		return nil, nil
@@ -238,7 +377,32 @@ func presentComparison(metric report.DashboardMetric) (*FlexComparisonPresentati
 		return nil, ErrFlexInputInvalid
 	}
 	formatted = strings.TrimPrefix(strings.TrimPrefix(formatted, "−"), "-")
-	return &FlexComparisonPresentation{Text: arrow + " " + formatted + " จากช่วงก่อน", Direction: comparison.Direction}, nil
+	reference := comparisonReferenceLabel(comparisonPeriod)
+	if reference == "" {
+		return &FlexComparisonPresentation{Text: arrow + " " + formatted + " จากช่วงก่อน", Direction: comparison.Direction}, nil
+	}
+	text := arrow + " " + formatted + " เทียบ " + reference
+	if previous, err := formatMetricValue(comparison.PreviousValue, metric.Unit); err == nil && strings.TrimSpace(comparison.PreviousValue) != "" {
+		if unit := flexUnitLabel(metric); unit != "" {
+			previous += " " + unit
+		}
+		text += " (" + previous + ")"
+	}
+	return &FlexComparisonPresentation{Text: text, Direction: comparison.Direction}, nil
+}
+
+// comparisonReferenceLabel names the compared window, e.g. "12 ก.ย. 2569",
+// so a percentage is never shown without saying what it is relative to.
+func comparisonReferenceLabel(period report.Period) string {
+	if period.DateFrom == "" || period.DateTo == "" {
+		return ""
+	}
+	from, fromErr := time.Parse(time.DateOnly, period.DateFrom)
+	to, toErr := time.Parse(time.DateOnly, period.DateTo)
+	if fromErr != nil || toErr != nil || to.Before(from) {
+		return ""
+	}
+	return strings.TrimPrefix(strings.TrimPrefix(periodLabel(period), "ข้อมูล ณ "), "ข้อมูล ")
 }
 
 func attentionFor(key report.Key, metrics map[string]report.DashboardMetric, visualizations []report.DashboardVisualization, quality report.DashboardQuality) *FlexAttentionPresentation {

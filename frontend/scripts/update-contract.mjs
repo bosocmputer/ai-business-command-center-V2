@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 const schemaPath = new URL('../src/api/schema.d.ts', import.meta.url);
 const contractPath = new URL('../api/contract.json', import.meta.url);
-const backendPath = new URL('../../nextstep-dashboard-backend', import.meta.url);
+const backendPath = new URL('../../backend', import.meta.url);
 
 const schema = await readFile(schemaPath);
 const existing = JSON.parse(await readFile(contractPath, 'utf8'));

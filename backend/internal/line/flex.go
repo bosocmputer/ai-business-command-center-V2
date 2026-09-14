@@ -22,15 +22,15 @@ const (
 // buildExecutiveDigestFlexMessage "executive_report_v2" bubble exactly, so
 // recipients see the same card style across both systems.
 const (
-	flexHeaderBackground = "#F8FAFC"
-	flexKickerColor      = "#2563EB"
-	flexTitleColor       = "#111827"
-	flexSubtitleColor    = "#6B7280"
-	flexMutedColor       = "#6B7280"
-	flexValueColor       = "#111827"
-	flexActionColor      = "#2563EB"
-	flexStatusReadyColor = "#047857"
-	flexStatusNoticeColor = "#B45309"
+	flexHeaderBackground    = "#F8FAFC"
+	flexKickerColor         = "#2563EB"
+	flexTitleColor          = "#111827"
+	flexSubtitleColor       = "#6B7280"
+	flexMutedColor          = "#6B7280"
+	flexValueColor          = "#111827"
+	flexActionColor         = "#2563EB"
+	flexStatusReadyColor    = "#047857"
+	flexStatusNoticeColor   = "#B45309"
 	flexStatusCriticalColor = "#B42318"
 )
 
@@ -133,7 +133,8 @@ func RenderFlexWithStats(input FlexInput) (result FlexRenderResult, err error) {
 		}
 	}
 	localGeneratedAt := input.GeneratedAt.In(location)
-	generatedAtLabel := thaiShortDate(localGeneratedAt) + " · " + localGeneratedAt.Format("15:04") + " น."
+	// Compact on purpose: the status row is one line and truncates longer labels on narrow phones.
+	generatedAtLabel := thaiShortDate(localGeneratedAt) + " " + localGeneratedAt.Format("15:04")
 	summaryLabel := flexReportSummary(input.Period, input.Reports, mixedPeriods, localGeneratedAt)
 
 	zeroReportCount := 0
@@ -148,7 +149,8 @@ func RenderFlexWithStats(input FlexInput) (result FlexRenderResult, err error) {
 			subtitle = input.TenantName + " · " + flexReportPeriodLabel(item.Key, reportPeriods[index], input.GeneratedAt.In(location))
 			contextNote = ""
 		}
-		bubbles = append(bubbles, buildExecutiveReportBubble(item, subtitle, generatedAtLabel, contextNote))
+		kicker := item.CategoryLabel + " · " + flexCadenceLabel(item.Key, reportPeriods[index])
+		bubbles = append(bubbles, buildExecutiveReportBubble(item, kicker, subtitle, generatedAtLabel, contextNote))
 	}
 
 	altText := flexAltTextLabel(input.TenantName, summaryLabel, len(presentations))
@@ -177,49 +179,56 @@ func RenderFlexWithStats(input FlexInput) (result FlexRenderResult, err error) {
 }
 
 // buildExecutiveReportBubble mirrors AI-BCC's buildExecutiveReportV2Bubble
-// (packages/reports/src/line-flex.ts) field for field: header kicker/title/
-// subtitle, a status + generated-at row, a primary-amount baseline, up to
-// four supporting metric rows, an insight block, an optional note, and a
-// footer button.
-func buildExecutiveReportBubble(item FlexReportPresentation, subtitle, generatedAtLabel, contextNote string) map[string]any {
+// (packages/reports/src/line-flex.ts): header kicker/title/subtitle, a status
+// + generated-at row, a primary amount with its unit, up to four supporting
+// rows, then only the context an owner needs (comparison with its reference
+// date, highlights, warnings). Everything else stays behind the button.
+func buildExecutiveReportBubble(item FlexReportPresentation, kicker, subtitle, generatedAtLabel, contextNote string) map[string]any {
 	statusText, statusColor := flexStatusFor(item)
-	insightLabel, insightValue := flexInsightFor(item)
 
 	headerContents := []any{
-		flexKickerText(item.CategoryLabel),
-		map[string]any{"type": "text", "text": item.Label, "weight": "bold", "size": "lg", "color": flexTitleColor, "wrap": true, "maxLines": 2, "margin": "xs"},
+		flexKickerText(kicker),
+		map[string]any{"type": "text", "text": flexShortTitle(item.Label), "weight": "bold", "size": "lg", "color": flexTitleColor, "wrap": true, "maxLines": 2, "margin": "xs"},
 		map[string]any{"type": "text", "text": subtitle, "size": "sm", "color": flexSubtitleColor, "margin": "sm", "wrap": true, "maxLines": 2},
 	}
 
 	bodyContents := []any{
 		map[string]any{
-			"type": "box", "layout": "horizontal",
+			"type": "box", "layout": "horizontal", "spacing": "sm",
 			"contents": []any{
-				map[string]any{"type": "text", "text": statusText, "size": "xs", "weight": "bold", "color": statusColor, "flex": 1, "maxLines": 1},
-				map[string]any{"type": "text", "text": "อัปเดต " + generatedAtLabel, "size": "xs", "color": flexMutedColor, "align": "end", "flex": 2, "maxLines": 1},
+				map[string]any{"type": "text", "text": statusText, "size": "xs", "weight": "bold", "color": statusColor, "flex": 0, "maxLines": 1},
+				map[string]any{"type": "text", "text": "อัปเดต " + generatedAtLabel, "size": "xs", "color": flexMutedColor, "align": "end", "flex": 1, "maxLines": 1},
 			},
 		},
-		flexPrimaryAmountBaseline(item.Primary.Value),
+		flexPrimaryAmountBaseline(item.Primary.Value, item.Primary.Unit),
 	}
-	if len(item.Supporting) > 0 {
+	if item.DataState != FlexDataZero && len(item.Supporting) > 0 {
 		metricRows := make([]any, 0, len(item.Supporting))
 		for _, metric := range item.Supporting[:min(4, len(item.Supporting))] {
-			metricRows = append(metricRows, flexMetricRow(metric.Label, metric.Value))
+			metricRows = append(metricRows, flexMetricRow(metric.Label, withUnit(metric.Value, metric.Unit)))
 		}
 		bodyContents = append(bodyContents, map[string]any{"type": "box", "layout": "vertical", "spacing": "sm", "contents": metricRows})
 	}
-	bodyContents = append(bodyContents,
-		map[string]any{"type": "separator", "margin": "md"},
-		flexInfoBlock(insightLabel, insightValue),
-	)
+
+	details := make([]any, 0, 4)
+	if item.DataState == FlexDataZero {
+		details = append(details, flexInfoBlock("สิ่งที่ควรดู", item.StateText))
+	}
 	if item.Comparison != nil {
-		bodyContents = append(bodyContents, flexInfoBlock("เทียบยอด", item.Comparison.Text))
+		details = append(details, flexInfoBlock("เทียบยอด", item.Comparison.Text))
+	}
+	for _, highlight := range item.Highlights {
+		details = append(details, flexInfoBlock(highlight.Label, withUnit(highlight.Value, highlight.Unit)))
 	}
 	if note, tone := flexNoteFor(item); note != "" {
-		bodyContents = append(bodyContents, flexNoteBlock(note, tone))
+		details = append(details, flexNoteBlock(note, tone))
 	}
 	if contextNote != "" {
-		bodyContents = append(bodyContents, flexNoteBlock(contextNote, "info"))
+		details = append(details, flexNoteBlock(contextNote, "info"))
+	}
+	if len(details) > 0 {
+		bodyContents = append(bodyContents, map[string]any{"type": "separator", "margin": "md"})
+		bodyContents = append(bodyContents, details...)
 	}
 
 	return map[string]any{
@@ -240,27 +249,41 @@ func flexKickerText(kicker string) map[string]any {
 	return map[string]any{"type": "text", "text": truncateRunes(kicker, 40), "weight": "bold", "size": "xs", "color": flexKickerColor, "maxLines": 1}
 }
 
-func flexStatusFor(item FlexReportPresentation) (text string, color string) {
-	if item.DataState == FlexDataZero {
-		return item.StateText, flexStatusNoticeColor
+func flexShortTitle(label string) string {
+	if short := strings.TrimSpace(strings.TrimPrefix(label, "รายงาน")); short != "" {
+		return short
 	}
-	if item.Attention != nil && item.Attention.Severity == FlexAttentionDanger {
-		return item.Attention.Text, flexStatusCriticalColor
-	}
-	if item.Attention != nil && item.Attention.Severity == FlexAttentionWarning {
-		return item.Attention.Text, flexStatusNoticeColor
-	}
-	return "พร้อมใช้งาน", flexStatusReadyColor
+	return label
 }
 
-func flexInsightFor(item FlexReportPresentation) (label string, value string) {
+func flexCadenceLabel(key report.Key, period report.Period) string {
+	if definition, ok := report.DefinitionFor(key); ok && definition.ParameterKind == report.CurrentOnly {
+		return "ณ เวลาส่ง"
+	}
+	if period.DateFrom != "" && period.DateFrom == period.DateTo {
+		return "รายวัน"
+	}
+	return "สะสม"
+}
+
+func withUnit(value, unit string) string {
+	if unit == "" {
+		return value
+	}
+	return value + " " + unit
+}
+
+func flexStatusFor(item FlexReportPresentation) (text string, color string) {
 	if item.DataState == FlexDataZero {
-		return "วันนี้ควรรู้อะไร", item.StateText
+		return "ไม่มีรายการ", flexStatusNoticeColor
 	}
-	if item.Comparison == nil && item.Attention != nil && item.Attention.Severity == FlexAttentionInfo {
-		return "วันนี้ควรรู้อะไร", item.Attention.Text
+	if item.Attention != nil && item.Attention.Severity == FlexAttentionDanger {
+		return "ควรตรวจสอบ", flexStatusCriticalColor
 	}
-	return "วันนี้ควรรู้อะไร", "กดปุ่มด้านล่างเพื่อดูรายละเอียดเพิ่มเติม"
+	if item.Attention != nil && item.Attention.Severity == FlexAttentionWarning {
+		return "ควรตรวจสอบ", flexStatusNoticeColor
+	}
+	return "พร้อมใช้", flexStatusReadyColor
 }
 
 func flexNoteFor(item FlexReportPresentation) (note string, tone string) {
@@ -272,10 +295,9 @@ func flexNoteFor(item FlexReportPresentation) (note string, tone string) {
 		return item.Attention.Text, "warning"
 	case FlexAttentionInfo:
 		if item.Comparison != nil {
-			// Already surfaced via the comparison block; avoid repeating it.
 			return "", ""
 		}
-		return "", ""
+		return item.Attention.Text, "neutral"
 	default:
 		return "", ""
 	}
@@ -295,17 +317,20 @@ func flexNoteBlock(value, tone string) map[string]any {
 	}
 }
 
-func flexPrimaryAmountBaseline(value string) map[string]any {
-	size := "xl"
+// flexPrimaryAmountBaseline follows AI-BCC's getPrimaryAmountSizes: the unit is
+// rendered smaller beside the number, and long numbers step down a size.
+func flexPrimaryAmountBaseline(value, unit string) map[string]any {
+	valueSize, unitSize := "xl", "md"
 	if utf8.RuneCountInString(strings.ReplaceAll(value, " ", "")) >= 14 {
-		size = "lg"
+		valueSize, unitSize = "lg", "sm"
 	}
-	return map[string]any{
-		"type": "box", "layout": "baseline", "spacing": "sm",
-		"contents": []any{
-			map[string]any{"type": "text", "text": value, "weight": "bold", "size": size, "color": flexValueColor, "flex": 0, "wrap": true, "maxLines": 2},
-		},
+	contents := []any{
+		map[string]any{"type": "text", "text": value, "weight": "bold", "size": valueSize, "color": flexValueColor, "flex": 0, "wrap": true, "maxLines": 2},
 	}
+	if unit != "" {
+		contents = append(contents, map[string]any{"type": "text", "text": unit, "weight": "bold", "size": unitSize, "color": flexValueColor, "flex": 1, "wrap": true, "maxLines": 1})
+	}
+	return map[string]any{"type": "box", "layout": "baseline", "spacing": "sm", "contents": contents}
 }
 
 func flexMetricRow(label, value string) map[string]any {
@@ -313,7 +338,7 @@ func flexMetricRow(label, value string) map[string]any {
 		"type": "box", "layout": "horizontal",
 		"contents": []any{
 			map[string]any{"type": "text", "text": label, "size": "sm", "color": flexMutedColor, "flex": 2, "wrap": true, "maxLines": 2},
-			map[string]any{"type": "text", "text": truncateRunes(value, 42), "size": "sm", "color": flexValueColor, "align": "end", "weight": "bold", "flex": 2, "wrap": true, "maxLines": 2},
+			map[string]any{"type": "text", "text": truncateRunes(value, 42), "size": "sm", "color": flexValueColor, "align": "end", "weight": "bold", "flex": 3, "wrap": true, "maxLines": 2},
 		},
 	}
 }
@@ -323,7 +348,7 @@ func flexInfoBlock(label, value string) map[string]any {
 		"type": "box", "layout": "vertical", "spacing": "xs",
 		"contents": []any{
 			map[string]any{"type": "text", "text": label, "size": "xs", "color": flexMutedColor, "weight": "bold", "maxLines": 1},
-			map[string]any{"type": "text", "text": truncateRunes(value, 84), "size": "sm", "color": flexValueColor, "wrap": true, "maxLines": 3},
+			map[string]any{"type": "text", "text": truncateRunes(value, 96), "size": "sm", "color": flexValueColor, "wrap": true, "maxLines": 3},
 		},
 	}
 }

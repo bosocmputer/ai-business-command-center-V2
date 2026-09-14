@@ -9,25 +9,34 @@ const payloadSize = computed(() => `${(props.preview.payloadBytes / 1024).toFixe
 const isExecutiveReport = computed(() => !!props.preview.presentationVersion && supportedPresentationVersions.has(props.preview.presentationVersion));
 const isUnsupportedVersion = computed(() => !!props.preview.presentationVersion && !isExecutiveReport.value);
 type PreviewReport = FlexPreview['reports'][number];
+type PreviewMetric = NonNullable<PreviewReport['primary']>;
 function primaryFor(report: PreviewReport) { return report.primary ?? report.metrics[1] ?? report.metrics[0]; }
 function supportingFor(report: PreviewReport) { return (report.supporting ?? report.metrics.filter((item) => item !== primaryFor(report))).slice(0, 4); }
 function isZero(report: PreviewReport) { return report.dataState === 'ZERO' && !!report.stateText; }
-function statusFor(report: PreviewReport) {
-  if (isZero(report)) return { text: report.stateText ?? '', severity: 'notice' as const };
-  if (report.attention?.severity === 'DANGER') return { text: report.attention.text, severity: 'critical' as const };
-  if (report.attention?.severity === 'WARNING') return { text: report.attention.text, severity: 'notice' as const };
-  return { text: 'พร้อมใช้งาน', severity: 'ready' as const };
+function withUnit(metric: PreviewMetric) { return metric.unit ? `${metric.value} ${metric.unit}` : metric.value; }
+function shortTitle(label: string) { return label.replace(/^รายงาน/, '').trim() || label; }
+// Mirrors backend flexCadenceLabel so the preview kicker matches the sent card.
+function kickerFor(report: PreviewReport) {
+  const periodLabel = report.periodLabel || props.preview.periodLabel;
+  let cadence = 'สะสม';
+  if (periodLabel.startsWith('สถานะ ณ เวลาส่ง')) cadence = 'ณ เวลาส่ง';
+  else if (props.preview.period.dateFrom === props.preview.period.dateTo) cadence = 'รายวัน';
+  return report.categoryLabel ? `${report.categoryLabel} · ${cadence}` : cadence;
 }
-function insightFor(report: PreviewReport) {
-  if (isZero(report)) return report.stateText ?? '';
-  if (report.attention?.severity === 'INFO' && !report.comparison) return report.attention.text;
-  return 'กดปุ่มด้านล่างเพื่อดูรายละเอียดเพิ่มเติม';
+function statusFor(report: PreviewReport) {
+  if (isZero(report)) return { text: 'ไม่มีรายการ', severity: 'notice' as const };
+  if (report.attention?.severity === 'DANGER') return { text: 'ควรตรวจสอบ', severity: 'critical' as const };
+  if (report.attention?.severity === 'WARNING') return { text: 'ควรตรวจสอบ', severity: 'notice' as const };
+  return { text: 'พร้อมใช้', severity: 'ready' as const };
 }
 function noteFor(report: PreviewReport) {
-  if (report.attention && (report.attention.severity === 'WARNING' || report.attention.severity === 'DANGER')) {
-    return report.attention.text;
-  }
-  return '';
+  if (!report.attention) return null;
+  if (report.attention.severity === 'WARNING' || report.attention.severity === 'DANGER') return { text: report.attention.text, tone: 'warning' };
+  if (!report.comparison) return { text: report.attention.text, tone: 'neutral' };
+  return null;
+}
+function hasDetails(report: PreviewReport) {
+  return isZero(report) || !!report.comparison || !!report.highlights?.length || !!noteFor(report);
 }
 function generatedAtLabel(value: string) {
   const date = new Date(value);
@@ -35,7 +44,7 @@ function generatedAtLabel(value: string) {
   const options = { timeZone: 'Asia/Bangkok' } as const;
   const day = new Intl.DateTimeFormat('th-TH', { ...options, day: 'numeric', month: 'short', year: 'numeric' }).format(date);
   const time = new Intl.DateTimeFormat('th-TH', { ...options, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date);
-  return `${day} · ${time} น.`;
+  return `${day} ${time}`;
 }
 </script>
 
@@ -59,8 +68,8 @@ function generatedAtLabel(value: string) {
     <div class="flex-preview-carousel" :data-presentation-version="preview.presentationVersion || 'legacy'">
       <article v-for="report in preview.reports" :key="report.key" class="flex-preview-card">
         <header class="flex-preview-header">
-          <span class="flex-preview-kicker">{{ report.categoryLabel }}</span>
-          <h3>{{ report.label }}</h3>
+          <span class="flex-preview-kicker">{{ kickerFor(report) }}</span>
+          <h3>{{ shortTitle(report.label) }}</h3>
           <p class="flex-preview-subtitle">{{ preview.tenantName }} · {{ report.periodLabel || preview.periodLabel }}</p>
         </header>
         <div class="flex-preview-body">
@@ -68,21 +77,30 @@ function generatedAtLabel(value: string) {
             <span class="flex-preview-status" :data-severity="statusFor(report).severity">{{ statusFor(report).text }}</span>
             <span class="flex-preview-updated">อัปเดต {{ generatedAtLabel(preview.generatedAt) }}</span>
           </div>
-          <strong v-if="!isZero(report) && primaryFor(report)" class="flex-preview-primary-amount">{{ primaryFor(report)?.value }}</strong>
+          <div v-if="primaryFor(report)" class="flex-preview-primary-amount">
+            <strong>{{ primaryFor(report)?.value }}</strong>
+            <span v-if="primaryFor(report)?.unit">{{ primaryFor(report)?.unit }}</span>
+          </div>
           <div v-for="metric in isZero(report) ? [] : supportingFor(report)" :key="metric.label" class="flex-preview-metric">
             <span>{{ metric.label }}</span>
-            <strong>{{ metric.value }}</strong>
+            <strong>{{ withUnit(metric) }}</strong>
           </div>
-          <hr class="flex-preview-separator" />
-          <div class="flex-preview-insight">
-            <span>วันนี้ควรรู้อะไร</span>
-            <p>{{ insightFor(report) }}</p>
-          </div>
-          <div v-if="report.comparison" class="flex-preview-insight">
-            <span>เทียบยอด</span>
-            <p>{{ report.comparison.text }}</p>
-          </div>
-          <p v-if="noteFor(report)" class="flex-preview-note" :data-severity="report.attention?.severity">{{ noteFor(report) }}</p>
+          <template v-if="hasDetails(report)">
+            <hr class="flex-preview-separator" />
+            <div v-if="isZero(report)" class="flex-preview-insight">
+              <span>สิ่งที่ควรดู</span>
+              <p>{{ report.stateText }}</p>
+            </div>
+            <div v-if="report.comparison" class="flex-preview-insight flex-preview-comparison">
+              <span>เทียบยอด</span>
+              <p>{{ report.comparison.text }}</p>
+            </div>
+            <div v-for="highlight in report.highlights ?? []" :key="highlight.label" class="flex-preview-insight flex-preview-highlight">
+              <span>{{ highlight.label }}</span>
+              <p>{{ withUnit(highlight) }}</p>
+            </div>
+            <p v-if="noteFor(report)" class="flex-preview-note" :data-tone="noteFor(report)?.tone">{{ noteFor(report)?.text }}</p>
+          </template>
         </div>
         <footer class="flex-preview-footer">
           <span role="button" aria-disabled="true">เปิดรายละเอียด</span>
@@ -144,7 +162,9 @@ function generatedAtLabel(value: string) {
 .flex-preview-status[data-severity='critical'] { color: #b42318; }
 .flex-preview-updated { color: #6b7280; }
 
-.flex-preview-primary-amount { font-size: 1.5rem; font-weight: 700; color: #111827; overflow-wrap: anywhere; }
+.flex-preview-primary-amount { display: flex; align-items: baseline; gap: 0.35rem; color: #111827; font-weight: 700; overflow-wrap: anywhere; }
+.flex-preview-primary-amount strong { font-size: 1.5rem; }
+.flex-preview-primary-amount span { font-size: 1rem; }
 
 .flex-preview-metric { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; align-items: baseline; font-size: 0.82rem; }
 .flex-preview-metric span { min-width: 0; color: #6b7280; overflow-wrap: anywhere; }
@@ -157,6 +177,7 @@ function generatedAtLabel(value: string) {
 .flex-preview-insight p { margin: 0; color: #111827; font-size: 0.82rem; overflow-wrap: anywhere; }
 
 .flex-preview-note { margin: 0; padding: 0.5rem 0.6rem; border-radius: 0.4rem; background: #fff7ed; color: #9a3412; font-size: 0.72rem; }
+.flex-preview-note[data-tone='neutral'] { background: #f8fafc; color: #475569; }
 
 .flex-preview-footer { padding: 0 1rem 1rem; }
 .flex-preview-footer span { display: block; padding: 0.6rem; border-radius: 0.45rem; background: #2563eb; color: #fff; text-align: center; font-size: 0.85rem; font-weight: 600; }

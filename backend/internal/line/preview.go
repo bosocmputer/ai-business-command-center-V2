@@ -43,6 +43,7 @@ type FlexPreviewReport struct {
 	Supporting    []FlexMetricPresentation    `json:"supporting"`
 	Comparison    *FlexComparisonPresentation `json:"comparison,omitempty"`
 	Attention     *FlexAttentionPresentation  `json:"attention,omitempty"`
+	Highlights    []FlexMetricPresentation    `json:"highlights,omitempty"`
 	DataState     FlexDataState               `json:"dataState,omitempty"`
 	StateText     string                      `json:"stateText,omitempty"`
 	PeriodLabel   string                      `json:"periodLabel"`
@@ -154,7 +155,7 @@ func (service *FlexPreviewService) Preview(ctx context.Context, tenantID uuid.UU
 		reports = append(reports, FlexPreviewReport{
 			Key: key, Label: definition.LabelTH, CategoryLabel: presentation.CategoryLabel, Metrics: metrics,
 			Primary: presentation.Primary, Supporting: presentation.Supporting, Comparison: presentation.Comparison,
-			Attention: presentation.Attention, DataState: presentation.DataState, StateText: presentation.StateText,
+			Attention: presentation.Attention, Highlights: presentation.Highlights, DataState: presentation.DataState, StateText: presentation.StateText,
 			PeriodLabel: previewPeriodLabel(definition.ParameterKind, effectivePeriod, exampleScheduledFor), ActionURL: presentation.ActionURL,
 		})
 		renderReports = append(renderReports, renderReport)
@@ -200,7 +201,28 @@ func previewDashboard(key report.Key, period report.Period) report.Dashboard {
 	if key == report.ARDebtReceipt {
 		metrics = append(metrics, report.DashboardMetric{Key: "payment_split_missing_count", Label: "เอกสารแยกวิธีชำระไม่ครบ", Value: "0", Unit: report.UnitCount})
 	}
-	return report.Dashboard{ReportKey: key, Version: "1.0.0", Period: period, Timezone: "Asia/Bangkok", KPIs: metrics, Visualizations: []report.DashboardVisualization{}, Quality: report.DashboardQuality{Status: "OK", Warnings: []string{}}}
+	comparisonPeriod, err := report.ResolveComparisonPeriod(period)
+	if err != nil {
+		comparisonPeriod = report.Period{}
+	}
+	return report.Dashboard{ReportKey: key, Version: "1.0.0", Period: period, ComparisonPeriod: comparisonPeriod, Timezone: "Asia/Bangkok", KPIs: metrics, Visualizations: previewVisualizations(key), Quality: report.DashboardQuality{Status: "OK", Warnings: []string{}}}
+}
+
+// previewVisualizations gives admin previews the same highlight shapes a real
+// run produces, using obviously fictional names.
+func previewVisualizations(key report.Key) []report.DashboardVisualization {
+	switch key {
+	case report.SalesGoodsServices:
+		return []report.DashboardVisualization{{Key: "top_products", Intent: report.IntentRanking, Unit: report.UnitTHB, Categories: []string{"สินค้าตัวอย่าง"}, Series: []report.VisualizationSeries{{Key: "value", Values: []string{"45000.00"}}}}}
+	case report.PurchaseGoodsPayables:
+		return []report.DashboardVisualization{{Key: "top_suppliers", Intent: report.IntentRanking, Unit: report.UnitTHB, Categories: []string{"ผู้จำหน่ายตัวอย่าง"}, Series: []report.VisualizationSeries{{Key: "value", Values: []string{"62500.00"}}}}}
+	case report.CashBankReceipts:
+		return []report.DashboardVisualization{{Key: "cash_receipt_methods", Intent: report.IntentComposition, Unit: report.UnitTHB, Categories: []string{"เงินสด", "เงินโอน"}, Series: []report.VisualizationSeries{{Key: "amount", Values: []string{"25000.00", "100000.00"}}}}}
+	case report.CashBankPayments:
+		return []report.DashboardVisualization{{Key: "cash_payment_methods", Intent: report.IntentComposition, Unit: report.UnitTHB, Categories: []string{"เงินสด", "เงินโอน"}, Series: []report.VisualizationSeries{{Key: "amount", Values: []string{"15000.00", "110000.00"}}}}}
+	default:
+		return []report.DashboardVisualization{}
+	}
 }
 
 func previewMetricMetadata(reportKey report.Key, key string) (string, report.MetricUnit) {

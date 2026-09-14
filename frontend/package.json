@@ -16,7 +16,7 @@
     "context:sync": "node scripts/context-sync.mjs --write",
     "context:verify": "bash scripts/context-verify.sh && node scripts/context-sync.mjs --check",
     "test:context": "python3 scripts/context-impact-test.py && node --test scripts/context-sync.node-test.mjs",
-    "openapi:generate": "openapi-typescript ../nextstep-dashboard-backend/api/openapi.yaml -o src/api/schema.d.ts && node scripts/update-contract.mjs",
+    "openapi:generate": "openapi-typescript ../backend/api/openapi.yaml -o src/api/schema.d.ts && node scripts/update-contract.mjs",
     "contract:verify": "node scripts/verify-contract.mjs"
   },
   "dependencies": {

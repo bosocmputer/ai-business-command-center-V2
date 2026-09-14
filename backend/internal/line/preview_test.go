@@ -70,7 +70,7 @@ func TestFlexPreviewUsesTenantTimezoneAndExactRenderedMessage(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(string(preview.Message), "11 ก.ค. 2569 · 08:00 น.") || strings.Contains(string(preview.Message), "UTC") || !strings.Contains(preview.ActionURL, "/app/tenant/"+tenantID.String()) {
+	if !strings.Contains(string(preview.Message), "อัปเดต 11 ก.ค. 2569 08:00") || strings.Contains(string(preview.Message), "UTC") || !strings.Contains(preview.ActionURL, "/app/tenant/"+tenantID.String()) {
 		t.Fatalf("preview timezone/action mismatch: %+v message=%s", preview, preview.Message)
 	}
 	var message struct {
