@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import { adminApi } from '@/api';
@@ -9,7 +9,8 @@ import { hasMinimumAdminPasswordLength, minimumAdminPasswordCharacters } from '@
 
 const router = useRouter();
 const toast = useToast();
-const { updateSession } = useAdminSession();
+const { state, updateSession } = useAdminSession();
+const mustRotate = computed(() => state.session?.mustRotateBootstrapPassword === true);
 const currentPassword = ref('');
 const newPassword = ref('');
 const confirmation = ref('');
@@ -36,7 +37,7 @@ async function submit() {
 
 <template>
   <div class="max-w-2xl mx-auto">
-    <AppPageHeader title="ตั้งรหัสผ่านใหม่" subtitle="ต้องเปลี่ยน bootstrap password ก่อนใช้งานส่วนอื่น" />
+    <AppPageHeader :title="mustRotate ? 'ตั้งรหัสผ่านใหม่' : 'เปลี่ยนรหัสผ่าน'" :subtitle="mustRotate ? 'ต้องเปลี่ยนรหัสผ่านเริ่มต้นก่อนใช้งานส่วนอื่น' : `บัญชี ${state.session?.username ?? ''} · session อื่นของบัญชีนี้จะออกจากระบบหลังเปลี่ยน`" />
     <div class="card">
       <Message severity="warn" :closable="false" class="mb-5">ใช้รหัสผ่านที่ไม่ซ้ำกับระบบอื่นและเก็บใน password manager</Message>
       <Message v-if="error" severity="error" :closable="false" class="mb-5">{{ error }}</Message>

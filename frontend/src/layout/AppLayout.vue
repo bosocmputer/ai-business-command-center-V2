@@ -33,6 +33,9 @@ const model = computed<NavigationItem[]>(() => [
     { label: 'การสร้างรายงาน', icon: 'pi pi-fw pi-database', to: '/admin/report-runs' },
     { label: 'การส่ง LINE', icon: 'pi pi-fw pi-send', to: '/admin/deliveries' },
     { label: 'ประวัติการใช้งาน', icon: 'pi pi-fw pi-history', to: '/admin/audit' }
+  ] },
+  { label: 'บัญชีของฉัน', items: [
+    { label: 'เปลี่ยนรหัสผ่าน', icon: 'pi pi-fw pi-key', to: '/admin/password' }
   ] }
 ]);
 

@@ -13,7 +13,7 @@ const router = createRouter({
       meta: { requiresAdmin: true },
       children: [
         { path: '', name: 'admin-dashboard', component: () => import('@/views/admin/AdminDashboard.vue'), meta: { pageTitle: 'ภาพรวมระบบ' } },
-        { path: 'password', name: 'admin-password', component: () => import('@/views/admin/AdminPassword.vue'), meta: { pageTitle: 'ตั้งรหัสผ่านใหม่' } },
+        { path: 'password', name: 'admin-password', component: () => import('@/views/admin/AdminPassword.vue'), meta: { pageTitle: 'เปลี่ยนรหัสผ่าน' } },
         { path: 'tenants', name: 'admin-tenants', component: () => import('@/views/admin/TenantList.vue'), meta: { pageTitle: 'ร้านค้า' } },
         { path: 'tenants/:tenantId/recipients/:recipientId/permissions', name: 'admin-recipient-permissions', component: () => import('@/views/admin/RecipientPermissions.vue'), meta: { pageTitle: 'กำหนดสิทธิ์รายงาน' } },
         { path: 'tenants/:tenantId/schedules/new', name: 'admin-schedule-new', component: () => import('@/views/admin/ScheduleEditor.vue'), meta: { pageTitle: 'เพิ่มตารางส่งรายงาน' } },
