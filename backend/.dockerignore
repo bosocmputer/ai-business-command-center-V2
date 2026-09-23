@@ -5,3 +5,8 @@
 docs
 tasks
 Dockerfile*
+# The Go build only needs source. Keep runtime secrets, env files and
+# database dumps out of the build context entirely.
+deploy
+backups
+graphify-out
