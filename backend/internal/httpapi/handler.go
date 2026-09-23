@@ -48,6 +48,7 @@ type Dependencies struct {
 	ViewerAuth      ViewerAPI
 	ViewerReports   ViewerReportAPI
 	RefreshPolicies RefreshPolicyAPI
+	LineWebhook     LineWebhookAPI
 	SecureCookies   bool
 	Logger          *slog.Logger
 }
@@ -108,6 +109,9 @@ func NewHandler(dependencies Dependencies) http.Handler {
 			}
 			writeJSON(response, httpStatus, status)
 		})
+	}
+	if dependencies.LineWebhook != nil {
+		registerLineWebhookRoutes(router, dependencies.LineWebhook)
 	}
 	if dependencies.AdminAuth != nil {
 		registerAdminAuthRoutes(router, dependencies.AdminAuth, dependencies.SecureCookies)

@@ -10,6 +10,7 @@ servers:
   - url: https://dashboard.nextstep-soft.com
 tags:
   - name: Health
+  - name: LINE
   - name: Admin authentication
   - name: Admin tenants
   - name: Admin configuration
@@ -1277,6 +1278,31 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/OperationalIncident'}}}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /api/v1/line/webhook:
+    post:
+      tags: [LINE]
+      operationId: receiveLineWebhook
+      description: 'LINE Messaging API webhook. Authenticated by X-Line-Signature (base64 HMAC-SHA256 of the raw body with the channel secret) instead of a session. Records follow/unfollow for known recipients; other events and unknown users are acknowledged and ignored.'
+      security: []
+      parameters:
+        - {name: X-Line-Signature, in: header, required: true, schema: {type: string, maxLength: 128}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                destination: {type: string, maxLength: 64}
+                events: {type: array, items: {type: object, additionalProperties: true}}
+      responses:
+        '200': {description: Delivery accepted.}
+        '400': {description: Webhook body is not valid JSON., content: {application/json: {schema: {$ref: '#/components/schemas/ProblemEnvelope'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '413': {description: Webhook body exceeds 1 MiB., content: {application/json: {schema: {$ref: '#/components/schemas/ProblemEnvelope'}}}}
+        '500': {description: Follow state could not be stored; LINE may redeliver., content: {application/json: {schema: {$ref: '#/components/schemas/ProblemEnvelope'}}}}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
 components:
   securitySchemes:
     AdminSession:

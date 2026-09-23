@@ -30,6 +30,7 @@ type Config struct {
 	EncryptionKeyID              string
 	LineLoginChannelID           string
 	LineMessagingAccessToken     string
+	LineMessagingChannelSecret   string
 	SMLAllowedPrefixes           []netip.Prefix
 	SMLAllowedHosts              []string
 	SMLAllowPublicEndpoints      bool
@@ -118,6 +119,11 @@ func Load(lookup LookupFunc) (Config, error) {
 	}
 	if lineMessagingAccessToken != "" && (len(lineMessagingAccessToken) < 32 || len(lineMessagingAccessToken) > 4096 || strings.ContainsAny(lineMessagingAccessToken, " \t\r\n")) {
 		return Config{}, errors.New("LINE_MESSAGING_CHANNEL_ACCESS_TOKEN must be a compact token containing 32 to 4096 characters")
+	}
+	lineMessagingChannelSecret, _ := lookup("LINE_MESSAGING_CHANNEL_SECRET")
+	lineMessagingChannelSecret = strings.TrimSpace(lineMessagingChannelSecret)
+	if lineMessagingChannelSecret != "" && !isLowerHex(lineMessagingChannelSecret, 32) {
+		return Config{}, errors.New("LINE_MESSAGING_CHANNEL_SECRET must be the 32-character hex channel secret")
 	}
 	allowedPrefixes, err := parseAllowedPrefixes(values["SML_ALLOWED_CIDRS"])
 	if err != nil {
@@ -243,6 +249,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		EncryptionKeyID:              values["ENCRYPTION_KEY_ID"],
 		LineLoginChannelID:           lineLoginChannelID,
 		LineMessagingAccessToken:     lineMessagingAccessToken,
+		LineMessagingChannelSecret:   lineMessagingChannelSecret,
 		SMLAllowedPrefixes:           allowedPrefixes,
 		SMLAllowedHosts:              allowedHosts,
 		SMLAllowPublicEndpoints:      allowPublicEndpoints,
@@ -458,4 +465,16 @@ func decodeKey(name, encoded string, minimumLength int, exact bool) ([]byte, err
 		return nil, fmt.Errorf("%s must decode to at least %d bytes", name, minimumLength)
 	}
 	return decoded, nil
+}
+
+func isLowerHex(value string, length int) bool {
+	if len(value) != length {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }

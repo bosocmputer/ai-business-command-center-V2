@@ -73,6 +73,7 @@ func main() {
 	}
 	scheduleService := schedule.NewService(database.NewScheduleStore(pool).ConfigureSmartPeriods(cfg.SmartSchedulePeriodsEnabled, cfg.SmartSchedulePeriodTenantIDs, periodObserver), cfg.LineMessagingAccessToken != "", time.Now)
 	scheduleTestService := schedule.NewTestSendService(database.NewScheduleStore(pool).ConfigureSmartPeriods(cfg.SmartSchedulePeriodsEnabled, cfg.SmartSchedulePeriodTenantIDs, periodObserver), cfg.LineMessagingAccessToken != "", time.Now)
+	lineWebhookService := recipient.NewWebhookService(cfg.LineMessagingChannelSecret, database.NewRecipientStore(pool), sessionManager, time.Now)
 	flexPreviewService := line.NewFlexPreviewService(tenantService, cfg.PublicBaseURL, time.Now).
 		ConfigureSmartPeriods(cfg.SmartSchedulePeriodsEnabled, cfg.SmartSchedulePeriodTenantIDs, periodObserver)
 
@@ -98,6 +99,7 @@ func main() {
 			ViewerAuth:      viewerService,
 			ViewerReports:   viewerReportService,
 			RefreshPolicies: refreshPolicyService,
+			LineWebhook:     lineWebhookService,
 			Schedules:       scheduleService,
 			FlexPreviews:    flexPreviewService,
 			ScheduleTests:   scheduleTestService,

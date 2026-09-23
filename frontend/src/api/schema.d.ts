@@ -1087,6 +1087,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/line/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description LINE Messaging API webhook. Authenticated by X-Line-Signature (base64 HMAC-SHA256 of the raw body with the channel secret) instead of a session. Records follow/unfollow for known recipients; other events and unknown users are acknowledged and ignored. */
+        post: operations["receiveLineWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4559,6 +4576,64 @@ export interface operations {
             };
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    receiveLineWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Line-Signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    destination?: string;
+                    events: {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Delivery accepted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Webhook body is not valid JSON. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemEnvelope"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Webhook body exceeds 1 MiB. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemEnvelope"];
+                };
+            };
+            /** @description Follow state could not be stored; LINE may redeliver. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemEnvelope"];
+                };
+            };
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
 }

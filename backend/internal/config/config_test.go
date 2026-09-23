@@ -248,3 +248,46 @@ func TestLoadRejectsUnsafeProductionValuesWithoutEchoingSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadValidatesOptionalLineChannelSecret(t *testing.T) {
+	secret := base64.StdEncoding.EncodeToString([]byte("01234567890123456789012345678901"))
+	base := map[string]string{
+		"APP_ENV":                             "production",
+		"DATABASE_URL":                        "postgres://nextstep@example.internal/nextstep?sslmode=verify-full",
+		"PUBLIC_BASE_URL":                     "https://dashboard.nextstep-soft.com",
+		"ADMIN_PASSWORD_HASH":                 "$argon2id$v=19$m=65536,t=3,p=2$c2FsdA$aGFzaA",
+		"SESSION_HMAC_KEY":                    secret,
+		"ENCRYPTION_MASTER_KEY":               secret,
+		"ENCRYPTION_KEY_ID":                   "key-2026-01",
+		"SML_ALLOWED_CIDRS":                   "10.0.0.0/8",
+		"LINE_LOGIN_CHANNEL_ID":               "2010662588",
+		"LINE_MESSAGING_CHANNEL_ACCESS_TOKEN": strings.Repeat("x", 64),
+	}
+	load := func(channelSecret string) (Config, error) {
+		return Load(func(key string) (string, bool) {
+			if key == "LINE_MESSAGING_CHANNEL_SECRET" {
+				return channelSecret, channelSecret != ""
+			}
+			value, ok := base[key]
+			return value, ok
+		})
+	}
+
+	cfg, err := load("")
+	if err != nil || cfg.LineMessagingChannelSecret != "" {
+		t.Fatalf("absent secret must stay optional: %q, %v", cfg.LineMessagingChannelSecret, err)
+	}
+	cfg, err = load("0123456789abcdef0123456789abcdef")
+	if err != nil || cfg.LineMessagingChannelSecret != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("valid secret rejected: %v", err)
+	}
+	for _, invalid := range []string{"short-secret-value", "0123456789ABCDEF0123456789ABCDEF", strings.Repeat("g", 32)} {
+		_, err := load(invalid)
+		if err == nil {
+			t.Fatalf("invalid secret %q accepted", invalid)
+		}
+		if strings.Contains(err.Error(), invalid) {
+			t.Fatalf("error echoes the secret: %v", err)
+		}
+	}
+}
