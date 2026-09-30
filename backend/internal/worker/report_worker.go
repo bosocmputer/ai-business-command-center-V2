@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/failure"
@@ -39,6 +40,46 @@ type HeavyChunkStore interface {
 	FailChunk(context.Context, uuid.UUID, string, int, string, time.Time) error
 }
 
+// ExecutionModeStore holds the per-tenant, per-report choice between one direct
+// query and chunked fetching. Without it the worker falls back to the
+// HEAVY_CHUNK_TENANT_REPORTS allowlist.
+type ExecutionModeStore interface {
+	Get(context.Context, uuid.UUID, report.Key) (report.ExecutionModeRecord, error)
+	SwitchToChunked(context.Context, uuid.UUID, report.Key, string, time.Time) (bool, error)
+	RecordDirectSuccess(context.Context, uuid.UUID, report.Key, int, time.Duration, time.Time) error
+	RecordMeasurement(context.Context, uuid.UUID, report.Key, int, time.Duration, time.Time) error
+	RecordDirectTimeout(context.Context, uuid.UUID, report.Key, time.Time) (int, error)
+}
+
+const (
+	modeCacheTTL              = time.Minute
+	timeoutStreakBeforeSwitch = 2
+	modeProbeTimeout          = 10 * time.Second
+	modeSwitchRetryDelay      = 5 * time.Second
+)
+
+type runStatsKey struct{}
+
+// runStats is filled while one run executes so the worker can record the size
+// and duration it observed. It belongs to a single ProcessOne call.
+type runStats struct {
+	rows        int
+	rowsSet     bool
+	units       int
+	modeDecided bool
+	chunked     bool
+}
+
+func statsFrom(ctx context.Context) *runStats {
+	stats, _ := ctx.Value(runStatsKey{}).(*runStats)
+	return stats
+}
+
+type cachedMode struct {
+	mode    report.ExecutionMode
+	expires time.Time
+}
+
 type SourceConsistencyStore interface {
 	SetSourceConsistency(context.Context, uuid.UUID, string, report.SourceConsistency, time.Time) error
 }
@@ -65,6 +106,9 @@ type ReportWorker struct {
 	heavyChunkEnabled     bool
 	scheduleChunkEnabled  bool
 	heavyChunkTargets     map[string]struct{}
+	modes                 ExecutionModeStore
+	modeMu                sync.Mutex
+	modeCache             map[string]cachedMode
 	heartbeatInterval     time.Duration
 }
 
@@ -100,6 +144,39 @@ func (worker *ReportWorker) ConfigureHeavyChunks(enabled, scheduleEnabled bool, 
 	return worker
 }
 
+// ConfigureExecutionModes makes the mode table, not the env allowlist, decide
+// which reports are fetched in chunks. HEAVY_CHUNK_ENABLED stays the master
+// switch: when it is off every report is fetched directly.
+func (worker *ReportWorker) ConfigureExecutionModes(store ExecutionModeStore) *ReportWorker {
+	worker.modes = store
+	worker.modeCache = map[string]cachedMode{}
+	return worker
+}
+
+func (worker *ReportWorker) modeFor(ctx context.Context, tenantID uuid.UUID, key report.Key) report.ExecutionMode {
+	cacheKey := tenantID.String() + "/" + string(key)
+	now := worker.now()
+	worker.modeMu.Lock()
+	cached, ok := worker.modeCache[cacheKey]
+	worker.modeMu.Unlock()
+	if ok && now.Before(cached.expires) {
+		return cached.mode
+	}
+	record, err := worker.modes.Get(ctx, tenantID, key)
+	if err != nil {
+		// Failing safe means DIRECT, which is what every report did before modes.
+		return report.ModeDirect
+	}
+	worker.rememberMode(cacheKey, record.Mode)
+	return record.Mode
+}
+
+func (worker *ReportWorker) rememberMode(cacheKey string, mode report.ExecutionMode) {
+	worker.modeMu.Lock()
+	worker.modeCache[cacheKey] = cachedMode{mode: mode, expires: worker.now().Add(modeCacheTTL)}
+	worker.modeMu.Unlock()
+}
+
 func (worker *ReportWorker) ProcessOne(ctx context.Context) error {
 	now := worker.now().UTC()
 	run, err := worker.store.Claim(ctx, worker.workerID, reportLeaseDuration, now)
@@ -124,6 +201,10 @@ func (worker *ReportWorker) ProcessOne(ctx context.Context) error {
 	go worker.keepLease(executionCtx, run.ID, stopExecution, leaseErrors)
 
 	recorder, evidenceCtx, recorderErr := sml.NewProtocolRecorder(executionCtx)
+	stats := &runStats{}
+	if recorderErr == nil {
+		evidenceCtx = context.WithValue(evidenceCtx, runStatsKey{}, stats)
+	}
 	var summary report.SummaryResult
 	var executionErr *executionFailure
 	if recorderErr != nil {
@@ -158,6 +239,9 @@ func (worker *ReportWorker) ProcessOne(ctx context.Context) error {
 	}
 	if executionErr != nil {
 		now = worker.now().UTC()
+		if handled, err := worker.adjustExecutionMode(ctx, run, stats, executionErr, now); handled || err != nil {
+			return err
+		}
 		evidence := buildFailureEvidence(run, *executionErr, startedAt, now)
 		if executionErr.RemoteStateUnknown {
 			// The remote PostgreSQL query may still be running after JavaWS has
@@ -182,7 +266,79 @@ func (worker *ReportWorker) ProcessOne(ctx context.Context) error {
 		return err
 	}
 	persistRows := run.Source == report.SourceDashboard && run.ResultKind != report.ResultSummary
-	return worker.store.Complete(ctx, run.ID, worker.workerID, summary, persistRows, worker.now().UTC())
+	if err := worker.store.Complete(ctx, run.ID, worker.workerID, summary, persistRows, worker.now().UTC()); err != nil {
+		return err
+	}
+	worker.recordModeSuccess(ctx, run, stats, worker.now().UTC().Sub(startedAt))
+	return nil
+}
+
+// adjustExecutionMode reacts to a failed run. A clear size signal in DIRECT mode
+// switches the report to CHUNKED and requeues the same run, so the card is late
+// rather than lost. A timeout only counts toward a switch when the shop still
+// answers a trivial query, because a dead shop is not a size problem. It reports
+// handled=true when the run was requeued.
+func (worker *ReportWorker) adjustExecutionMode(ctx context.Context, run report.Run, stats *runStats, execution *executionFailure, now time.Time) (bool, error) {
+	if worker.modes == nil || !worker.heavyChunkEnabled || !stats.modeDecided || stats.chunked {
+		return false, nil
+	}
+	definition, ok := report.DefinitionFor(run.ReportKey)
+	if !ok || !definition.ChunkSafe {
+		return false, nil
+	}
+	validation := ""
+	if execution.ProtocolEvidence != nil {
+		validation = string(execution.ProtocolEvidence.ResultValidationCode)
+	}
+	cacheKey := run.TenantID.String() + "/" + string(run.ReportKey)
+	if report.IsSizeSignal(execution.Code, validation) {
+		reason := execution.Code
+		if validation != "" {
+			reason += "/" + validation
+		}
+		if _, err := worker.modes.SwitchToChunked(ctx, run.TenantID, run.ReportKey, reason, now); err != nil {
+			return false, nil
+		}
+		worker.rememberMode(cacheKey, report.ModeChunked)
+		return true, worker.store.Retry(ctx, run.ID, worker.workerID, execution.Code, now.Add(modeSwitchRetryDelay), now)
+	}
+	if execution.Code == "SML_TIMEOUT" && execution.RemoteStateUnknown && !execution.PreRequestFailure {
+		streak, err := worker.modes.RecordDirectTimeout(ctx, run.TenantID, run.ReportKey, now)
+		if err != nil || streak < timeoutStreakBeforeSwitch || !worker.shopAnswers(ctx, run.TenantID) {
+			return false, nil
+		}
+		if _, err := worker.modes.SwitchToChunked(ctx, run.TenantID, run.ReportKey, fmt.Sprintf("SML_TIMEOUT x%d", streak), now); err == nil {
+			worker.rememberMode(cacheKey, report.ModeChunked)
+		}
+	}
+	return false, nil
+}
+
+// shopAnswers runs a trivial query to tell a slow report from an unreachable shop.
+func (worker *ReportWorker) shopAnswers(ctx context.Context, tenantID uuid.UUID) bool {
+	connection, err := worker.connections.Open(ctx, tenantID)
+	if err != nil {
+		return false
+	}
+	_, failed := worker.query(ctx, modeProbeTimeout, connection, report.Query{SQL: "select 1 as ok"})
+	return failed == nil
+}
+
+func (worker *ReportWorker) recordModeSuccess(ctx context.Context, run report.Run, stats *runStats, elapsed time.Duration) {
+	if worker.modes == nil || !stats.modeDecided {
+		return
+	}
+	definition, ok := report.DefinitionFor(run.ReportKey)
+	if !ok || !definition.ChunkSafe {
+		return
+	}
+	now := worker.now().UTC()
+	// Bookkeeping must never fail a run that already completed.
+	if stats.chunked {
+		_ = worker.modes.RecordMeasurement(ctx, run.TenantID, run.ReportKey, stats.units, elapsed, now)
+		return
+	}
+	_ = worker.modes.RecordDirectSuccess(ctx, run.TenantID, run.ReportKey, stats.rows, elapsed, now)
 }
 
 func (worker *ReportWorker) execute(ctx context.Context, run report.Run) (report.SummaryResult, *executionFailure) {
@@ -197,7 +353,8 @@ func (worker *ReportWorker) execute(ctx context.Context, run report.Run) (report
 	if projection == report.ResultSummary && !worker.summaryQueriesEnabled {
 		projection = report.ResultDetail
 	}
-	totalTimeout := worker.executionTimeout(run, definition, projection)
+	chunked := worker.chunkDecision(ctx, run, definition, projection)
+	totalTimeout := worker.executionTimeout(run, definition, chunked)
 	executionCtx, cancelExecution := context.WithTimeout(ctx, totalTimeout)
 	defer cancelExecution()
 	connection, err := worker.connections.Open(executionCtx, run.TenantID)
@@ -211,7 +368,10 @@ func (worker *ReportWorker) execute(ctx context.Context, run report.Run) (report
 		}
 		return report.SummaryResult{}, &executionFailure{Code: "SML_CONNECTION_LOAD_FAILED", Stage: failure.StageLoadConnection, Retryable: true}
 	}
-	if worker.shouldUseChunks(run, definition, projection) {
+	if stats := statsFrom(ctx); stats != nil {
+		stats.modeDecided, stats.chunked = true, chunked
+	}
+	if chunked {
 		return worker.executeChunked(executionCtx, run, definition, connection, projection)
 	}
 	plan, err := report.BuildQueryPlanForProjection(run.ReportKey, run.Period, projection)
@@ -285,7 +445,7 @@ func (worker *ReportWorker) execute(ctx context.Context, run report.Run) (report
 	return summary, nil
 }
 
-func (worker *ReportWorker) executionTimeout(run report.Run, definition report.Definition, projection report.ResultKind) time.Duration {
+func (worker *ReportWorker) executionTimeout(run report.Run, definition report.Definition, chunked bool) time.Duration {
 	usesSummaryBudget := run.Source == report.SourceSchedule || run.Source == report.SourceBackground || run.ResultKind == report.ResultSummary
 	totalTimeout := definition.DetailTotalTimeout
 	if usesSummaryBudget {
@@ -297,20 +457,36 @@ func (worker *ReportWorker) executionTimeout(run report.Run, definition report.D
 			totalTimeout = definition.SummaryTimeout
 		}
 	}
-	if worker.shouldUseChunks(run, definition, projection) && totalTimeout < chunkExecutionTimeout {
+	if chunked && totalTimeout < chunkExecutionTimeout {
 		return chunkExecutionTimeout
 	}
 	return totalTimeout
 }
 
-func (worker *ReportWorker) shouldUseChunks(run report.Run, definition report.Definition, projection report.ResultKind) bool {
-	if !worker.heavyChunkEnabled || !definition.ChunkSafe || len(worker.heavyChunkTargets) == 0 {
+// chunkDecision resolves the mode once per run so the time budget and the
+// execution path can never disagree.
+func (worker *ReportWorker) chunkDecision(ctx context.Context, run report.Run, definition report.Definition, projection report.ResultKind) bool {
+	if worker.modes != nil {
+		if !worker.chunkingAllowed(run, definition, projection) {
+			return false
+		}
+		return worker.modeFor(ctx, run.TenantID, run.ReportKey) == report.ModeChunked
+	}
+	return worker.shouldUseChunks(run, definition, projection)
+}
+
+func (worker *ReportWorker) chunkingAllowed(run report.Run, definition report.Definition, projection report.ResultKind) bool {
+	if !worker.heavyChunkEnabled || !definition.ChunkSafe {
 		return false
 	}
 	if run.Source == report.SourceSchedule && !worker.scheduleChunkEnabled {
 		return false
 	}
-	if projection != report.ResultSummary && projection != report.ResultDetail {
+	return projection == report.ResultSummary || projection == report.ResultDetail
+}
+
+func (worker *ReportWorker) shouldUseChunks(run report.Run, definition report.Definition, projection report.ResultKind) bool {
+	if len(worker.heavyChunkTargets) == 0 || !worker.chunkingAllowed(run, definition, projection) {
 		return false
 	}
 	_, enabled := worker.heavyChunkTargets[run.TenantID.String()+"/"+string(run.ReportKey)]
@@ -347,6 +523,9 @@ func (worker *ReportWorker) executeChunked(ctx context.Context, run report.Run, 
 	unitKeys, err := report.ChunkKeys(manifestRows)
 	if err != nil {
 		return report.SummaryResult{}, &executionFailure{Code: "REPORT_OUTPUT_INVALID", Stage: failure.StageBuildReport}
+	}
+	if stats := statsFrom(ctx); stats != nil {
+		stats.units = len(unitKeys)
 	}
 	if chunkSize < report.MinimumChunkSize {
 		chunkSize = report.MinimumChunkSize
@@ -516,6 +695,10 @@ func (worker *ReportWorker) executePlan(ctx context.Context, run report.Run, def
 			return nil, &executionFailure{Code: "REPORT_ROW_LIMIT_EXCEEDED", Stage: failure.StageBuildReport}
 		}
 		stepRows[step.Name] = rows
+	}
+	// The first plan of a run is the current period; later plans are comparison.
+	if stats := statsFrom(ctx); stats != nil && !stats.rowsSet {
+		stats.rows, stats.rowsSet = totalRows, true
 	}
 	return stepRows, nil
 }

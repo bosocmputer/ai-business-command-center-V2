@@ -575,6 +575,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tenants/{tenantId}/report-modes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description How each report is fetched from this shop's SML, one query (DIRECT) or in chunks (CHUNKED). Reports that cannot be chunked are listed with chunkable false. */
+        get: operations["listReportModes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants/{tenantId}/report-modes/{reportKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Sets the mode by hand. CHUNKED is rejected for reports that cannot be chunked. The change is audited. */
+        put: operations["setReportMode"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants/{tenantId}/report-modes/measure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Counts how many products or customers each chunkable report would split over and records the size. Reports nobody has decided yet take the recommended mode; others only receive a recommendation. Refused while a report is running for the shop. */
+        post: operations["measureReportModes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/monitor/current": {
         parameters: {
             query?: never;
@@ -2414,6 +2465,41 @@ export interface components {
             /** Format: date-time */
             syncedAt: string | null;
         };
+        ReportModeItem: {
+            reportKey: string;
+            label: string;
+            chunkable: boolean;
+            /** @enum {string} */
+            mode: "DIRECT" | "CHUNKED";
+            /** @enum {string} */
+            source: "DEFAULT" | "ENV_SEED" | "MEASURED" | "AUTO_SWITCHED" | "MANUAL";
+            reason: string;
+            /** @description Rows of the last direct run, or units of the last chunked run or measurement. */
+            lastRows: number | null;
+            /** Format: int64 */
+            lastDurationMs: number | null;
+            /** Format: date-time */
+            changedAt: string | null;
+        };
+        ReportModeList: {
+            data: components["schemas"]["ReportModeItem"][];
+        };
+        ReportModeInput: {
+            /** @enum {string} */
+            mode: "DIRECT" | "CHUNKED";
+            reason?: string;
+        };
+        ReportModeMeasurement: {
+            reportKey: string;
+            units: number | null;
+            /** @enum {string} */
+            recommendedMode: "DIRECT" | "CHUNKED" | "";
+            applied: boolean;
+            safeErrorCode?: string;
+        };
+        ReportModeMeasurementList: {
+            data: components["schemas"]["ReportModeMeasurement"][];
+        };
         MonitorContainerStats: {
             name: string;
             /** @description Percent of one CPU core; can exceed 100 on multi-core hosts. */
@@ -3815,6 +3901,86 @@ export interface operations {
                     "application/json": components["schemas"]["LineQuotaStatus"];
                 };
             };
+        };
+    };
+    listReportModes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One row per report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportModeList"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    setReportMode: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+                reportKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportModeInput"];
+            };
+        };
+        responses: {
+            /** @description The updated row. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportModeItem"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    measureReportModes: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One result per chunkable report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportModeMeasurementList"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     getMonitorCurrent: {

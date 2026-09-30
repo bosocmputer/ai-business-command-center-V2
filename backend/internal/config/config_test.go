@@ -201,7 +201,6 @@ func TestLoadRejectsUnsafeFeatureFlagCombinations(t *testing.T) {
 		{name: "generation without summary", flags: map[string]string{"SUMMARY_QUERY_ENABLED": "false", "GENERATION_CACHE_ENABLED": "true"}, message: "GENERATION_CACHE_ENABLED requires SUMMARY_QUERY_ENABLED"},
 		{name: "revalidation without generation", flags: map[string]string{"SUMMARY_QUERY_ENABLED": "true", "STALE_REVALIDATION_ENABLED": "true"}, message: "STALE_REVALIDATION_ENABLED requires GENERATION_CACHE_ENABLED"},
 		{name: "schedule chunk without heavy chunk", flags: map[string]string{"SCHEDULE_CHUNK_ENABLED": "true"}, message: "SCHEDULE_CHUNK_ENABLED requires HEAVY_CHUNK_ENABLED"},
-		{name: "heavy chunk without target", flags: map[string]string{"HEAVY_CHUNK_ENABLED": "true"}, message: "HEAVY_CHUNK_ENABLED requires at least one HEAVY_CHUNK_TENANT_REPORTS entry"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -217,6 +216,18 @@ func TestLoadRejectsUnsafeFeatureFlagCombinations(t *testing.T) {
 				t.Fatalf("Load() error = %v, want %q", err, test.message)
 			}
 		})
+	}
+
+	// The mode table decides what is chunked, so the master switch no longer
+	// needs an env allowlist; the list only seeds the table.
+	values := make(map[string]string, len(base)+1)
+	for key, value := range base {
+		values[key] = value
+	}
+	values["HEAVY_CHUNK_ENABLED"] = "true"
+	cfg, err := Load(func(key string) (string, bool) { value, ok := values[key]; return value, ok })
+	if err != nil || !cfg.HeavyChunkEnabled || len(cfg.HeavyChunkTenantReports) != 0 {
+		t.Fatalf("HEAVY_CHUNK_ENABLED without an allowlist: cfg=%+v err=%v", cfg.HeavyChunkEnabled, err)
 	}
 }
 

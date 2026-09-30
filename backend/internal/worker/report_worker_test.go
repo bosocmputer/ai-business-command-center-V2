@@ -339,12 +339,12 @@ func TestChunkedHeavySummaryUsesTenMinuteExecutionBudget(t *testing.T) {
 	worker := NewReportWorker(nil, nil, nil, "worker-a", time.Now).
 		ConfigureHeavyChunks(true, true, []string{tenantID.String() + "/stock_balance"})
 
-	if got := worker.executionTimeout(run, definition, report.ResultSummary); got != 10*time.Minute {
+	if got := worker.executionTimeout(run, definition, worker.chunkDecision(context.Background(), run, definition, report.ResultSummary)); got != 10*time.Minute {
 		t.Fatalf("chunked heavy execution timeout = %v, want 10m", got)
 	}
 
 	worker.ConfigureHeavyChunks(false, false, nil)
-	if got := worker.executionTimeout(run, definition, report.ResultSummary); got != 5*time.Minute {
+	if got := worker.executionTimeout(run, definition, worker.chunkDecision(context.Background(), run, definition, report.ResultSummary)); got != 5*time.Minute {
 		t.Fatalf("direct heavy execution timeout = %v, want 5m", got)
 	}
 }

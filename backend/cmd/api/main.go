@@ -14,6 +14,7 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/auth"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/config"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/database"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/executionmode"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/httpapi"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/line"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/monitor"
@@ -110,6 +111,7 @@ func main() {
 			FlexPreviews:    flexPreviewService,
 			ScheduleTests:   scheduleTestService,
 			Monitor:         monitorService,
+			ExecutionModes:  executionmode.NewService(database.NewReportModeStore(pool), smlService, smlClient, time.Now),
 			Operations:      operations.NewService(database.NewOperationsStore(pool), recipientService),
 			TableQueries:    tablequery.NewService(database.NewTableQueryStore(pool), recipientService, cfg.LineMessagingAccessToken != "", time.Now),
 			Incidents:       sentinel.NewAdminService(sentinelStore, time.Now),

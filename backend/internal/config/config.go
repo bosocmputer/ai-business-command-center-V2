@@ -212,9 +212,8 @@ func Load(lookup LookupFunc) (Config, error) {
 	if scheduleChunkEnabled && !heavyChunkEnabled {
 		return Config{}, errors.New("SCHEDULE_CHUNK_ENABLED requires HEAVY_CHUNK_ENABLED")
 	}
-	if heavyChunkEnabled && len(heavyChunkTenantReports) == 0 {
-		return Config{}, errors.New("HEAVY_CHUNK_ENABLED requires at least one HEAVY_CHUNK_TENANT_REPORTS entry")
-	}
+	// HEAVY_CHUNK_TENANT_REPORTS only seeds the report_execution_modes table now;
+	// the table decides which reports are chunked, so an empty list is valid.
 	watchdogEnabled, err := boolValue(lookup, "WATCHDOG_ENABLED", false)
 	if err != nil {
 		return Config{}, err

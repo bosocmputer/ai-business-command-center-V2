@@ -58,9 +58,16 @@ func main() {
 	hostname, _ := os.Hostname()
 	workerID := fmt.Sprintf("%s-%d", hostname, os.Getpid())
 	reportStore := database.NewReportStore(pool).ConfigureGenerationCache(cfg.GenerationCacheEnabled)
+	modeStore := database.NewReportModeStore(pool)
+	// The legacy env allowlist only seeds the table so nothing changes on rollout.
+	if err := modeStore.SeedFromTargets(ctx, cfg.HeavyChunkTenantReports, time.Now().UTC()); err != nil {
+		logger.Error("seed report execution modes", "error", "database write failed")
+		os.Exit(1)
+	}
 	reportWorker := worker.NewReportWorker(reportStore, connections, reportClient, workerID, time.Now).
 		ConfigureSummaryQueries(cfg.SummaryQueryEnabled).
-		ConfigureHeavyChunks(cfg.HeavyChunkEnabled, cfg.ScheduleChunkEnabled, cfg.HeavyChunkTenantReports)
+		ConfigureHeavyChunks(cfg.HeavyChunkEnabled, cfg.ScheduleChunkEnabled, cfg.HeavyChunkTenantReports).
+		ConfigureExecutionModes(modeStore)
 	schedulerID := workerID + "-scheduler"
 	periodObserver := func(preset report.Preset, mode report.ParameterKind, result string) {
 		logger.Info("schedule period resolved", "event", "schedule_period_resolution", "preset", preset, "mode", mode, "result", result, "schedulePeriodResolutionTotal", 1)

@@ -43,6 +43,7 @@ type Dependencies struct {
 	ScheduleTests   ScheduleTestSendAPI
 	Operations      OperationsAPI
 	Monitor         MonitorAPI
+	ExecutionModes  ExecutionModeAPI
 	TableQueries    any
 	Incidents       IncidentAPI
 	Watchdog        WatchdogAPI
@@ -134,6 +135,9 @@ func NewHandler(dependencies Dependencies) http.Handler {
 		}
 		if dependencies.Operations != nil {
 			registerOperationsRoutes(router, dependencies.AdminAuth, dependencies.Operations)
+		}
+		if dependencies.ExecutionModes != nil {
+			registerExecutionModeRoutes(router, dependencies.AdminAuth, dependencies.ExecutionModes)
 		}
 		if dependencies.Monitor != nil {
 			registerMonitorRoutes(router, dependencies.AdminAuth, dependencies.Monitor)

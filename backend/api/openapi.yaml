@@ -730,6 +730,61 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/LineQuotaStatus'}
+  /api/v1/admin/tenants/{tenantId}/report-modes:
+    get:
+      tags: [Admin operations]
+      operationId: listReportModes
+      description: How each report is fetched from this shop's SML, one query (DIRECT) or in chunks (CHUNKED). Reports that cannot be chunked are listed with chunkable false.
+      security: [{AdminSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/TenantID'}
+      responses:
+        '200':
+          description: One row per report.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReportModeList'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /api/v1/admin/tenants/{tenantId}/report-modes/{reportKey}:
+    put:
+      tags: [Admin operations]
+      operationId: setReportMode
+      description: Sets the mode by hand. CHUNKED is rejected for reports that cannot be chunked. The change is audited.
+      security: [{AdminSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CSRFToken'}
+        - {$ref: '#/components/parameters/TenantID'}
+        - {name: reportKey, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReportModeInput'}
+      responses:
+        '200':
+          description: The updated row.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReportModeItem'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /api/v1/admin/tenants/{tenantId}/report-modes/measure:
+    post:
+      tags: [Admin operations]
+      operationId: measureReportModes
+      description: Counts how many products or customers each chunkable report would split over and records the size. Reports nobody has decided yet take the recommended mode; others only receive a recommendation. Refused while a report is running for the shop.
+      security: [{AdminSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CSRFToken'}
+        - {$ref: '#/components/parameters/TenantID'}
+      responses:
+        '200':
+          description: One result per chunkable report.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReportModeMeasurementList'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /api/v1/admin/monitor/current:
     get:
       tags: [Admin operations]
@@ -2737,6 +2792,49 @@ components:
         locallyAccepted: {type: integer, minimum: 0, description: Push messages accepted from Nextstep Dashboard in the current month.}
         operationalReservePercent: {type: integer, minimum: 0, maximum: 50}
         syncedAt: {type: string, format: date-time, nullable: true}
+    ReportModeItem:
+      type: object
+      additionalProperties: false
+      required: [reportKey, label, chunkable, mode, source, reason, lastRows, lastDurationMs, changedAt]
+      properties:
+        reportKey: {type: string}
+        label: {type: string}
+        chunkable: {type: boolean}
+        mode: {type: string, enum: [DIRECT, CHUNKED]}
+        source: {type: string, enum: [DEFAULT, ENV_SEED, MEASURED, AUTO_SWITCHED, MANUAL]}
+        reason: {type: string}
+        lastRows: {type: integer, minimum: 0, nullable: true, description: "Rows of the last direct run, or units of the last chunked run or measurement."}
+        lastDurationMs: {type: integer, format: int64, minimum: 0, nullable: true}
+        changedAt: {type: string, format: date-time, nullable: true}
+    ReportModeList:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: {type: array, items: {$ref: '#/components/schemas/ReportModeItem'}}
+    ReportModeInput:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode: {type: string, enum: [DIRECT, CHUNKED]}
+        reason: {type: string, maxLength: 200}
+    ReportModeMeasurement:
+      type: object
+      additionalProperties: false
+      required: [reportKey, units, recommendedMode, applied]
+      properties:
+        reportKey: {type: string}
+        units: {type: integer, minimum: 0, nullable: true}
+        recommendedMode: {type: string, enum: [DIRECT, CHUNKED, '']}
+        applied: {type: boolean}
+        safeErrorCode: {type: string}
+    ReportModeMeasurementList:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: {type: array, items: {$ref: '#/components/schemas/ReportModeMeasurement'}}
     MonitorContainerStats:
       type: object
       additionalProperties: false
