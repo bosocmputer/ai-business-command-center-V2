@@ -42,6 +42,7 @@ type Dependencies struct {
 	FlexPreviews    SchedulePreviewAPI
 	ScheduleTests   ScheduleTestSendAPI
 	Operations      OperationsAPI
+	Monitor         MonitorAPI
 	TableQueries    any
 	Incidents       IncidentAPI
 	Watchdog        WatchdogAPI
@@ -133,6 +134,9 @@ func NewHandler(dependencies Dependencies) http.Handler {
 		}
 		if dependencies.Operations != nil {
 			registerOperationsRoutes(router, dependencies.AdminAuth, dependencies.Operations)
+		}
+		if dependencies.Monitor != nil {
+			registerMonitorRoutes(router, dependencies.AdminAuth, dependencies.Monitor)
 		}
 		if dependencies.TableQueries != nil {
 			registerTableQueryRoutes(router, dependencies.AdminAuth, dependencies.TableQueries)

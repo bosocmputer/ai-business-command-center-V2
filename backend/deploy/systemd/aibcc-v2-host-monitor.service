@@ -1,0 +1,20 @@
+[Unit]
+Description=AI-BCC V2 container stats for the admin Monitor page
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+Environment=SENTINEL_HOST_RUNTIME_DIR=/run/ai-bcc-v2
+ExecStart=/home/bosscatdog/deployments/ai-business-command-center-v2/backend/deploy/host-monitor.sh
+Restart=always
+RestartSec=5
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/run/ai-bcc-v2
+
+[Install]
+WantedBy=multi-user.target

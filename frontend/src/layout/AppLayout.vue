@@ -32,6 +32,7 @@ const model = computed<NavigationItem[]>(() => [
     { label: 'เหตุสำคัญ', icon: 'pi pi-fw pi-exclamation-triangle', to: '/admin/operational-incidents', activePrefix: '/admin/operational-incidents', badge: openP1Badge.value, badgeSeverity: 'danger' },
     { label: 'การสร้างรายงาน', icon: 'pi pi-fw pi-database', to: '/admin/report-runs' },
     { label: 'การส่ง LINE', icon: 'pi pi-fw pi-send', to: '/admin/deliveries' },
+    { label: 'สถานะเครื่อง', icon: 'pi pi-fw pi-server', to: '/admin/monitor' },
     { label: 'ประวัติการใช้งาน', icon: 'pi pi-fw pi-history', to: '/admin/audit' }
   ] },
   { label: 'บัญชีของฉัน', items: [

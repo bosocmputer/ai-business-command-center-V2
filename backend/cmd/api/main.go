@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/database"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/httpapi"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/line"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/monitor"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/operations"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/recipient"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
@@ -87,6 +89,10 @@ func main() {
 		}
 		watchdog = sentinel.NewWatchdog(cfg.SentinelRuntimeDirectory, time.Now).ConfigureBackupPolicy(backupPolicy)
 	}
+	monitorService := monitor.NewService(
+		monitor.NewCollector("/proc", filepath.Join(cfg.SentinelRuntimeDirectory, "host", "containers.json"), "/", time.Now),
+		database.NewMonitorStore(pool), time.Now, logger)
+	go monitorService.Run(ctx)
 	server := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpapi.NewHandler(httpapi.Dependencies{
@@ -103,6 +109,7 @@ func main() {
 			Schedules:       scheduleService,
 			FlexPreviews:    flexPreviewService,
 			ScheduleTests:   scheduleTestService,
+			Monitor:         monitorService,
 			Operations:      operations.NewService(database.NewOperationsStore(pool), recipientService),
 			TableQueries:    tablequery.NewService(database.NewTableQueryStore(pool), recipientService, cfg.LineMessagingAccessToken != "", time.Now),
 			Incidents:       sentinel.NewAdminService(sentinelStore, time.Now),

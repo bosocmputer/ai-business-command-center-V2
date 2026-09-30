@@ -575,6 +575,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/monitor/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Newest host and per-container resource sample, refreshed every 5 seconds. Container figures are unavailable when the host helper is not running. */
+        get: operations["getMonitorCurrent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/monitor/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Resource history averaged into at most 288 points, kept for 48 hours. */
+        get: operations["getMonitorHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/line-deliveries": {
         parameters: {
             query?: never;
@@ -2367,6 +2401,55 @@ export interface components {
             /** Format: date-time */
             syncedAt: string | null;
         };
+        MonitorContainerStats: {
+            name: string;
+            /** @description Percent of one CPU core; can exceed 100 on multi-core hosts. */
+            cpuPercent: number;
+            /** Format: int64 */
+            memoryUsedBytes: number;
+            /**
+             * Format: int64
+             * @description Container limit, or host memory when the container has none.
+             */
+            memoryLimitBytes: number;
+        };
+        MonitorHostStats: {
+            cores: number;
+            /** @description Whole-machine CPU use; 0 until a second sample exists. */
+            cpuPercent: number;
+            load1: number;
+            load5: number;
+            load15: number;
+            /** Format: int64 */
+            memoryTotalBytes: number;
+            /** Format: int64 */
+            memoryAvailableBytes: number;
+            /** Format: int64 */
+            diskTotalBytes: number;
+            /** Format: int64 */
+            diskUsedBytes: number;
+            /** Format: int64 */
+            uptimeSeconds: number;
+        };
+        MonitorSample: {
+            /** Format: date-time */
+            at: string;
+            host: components["schemas"]["MonitorHostStats"];
+            containersAvailable: boolean;
+            containers: components["schemas"]["MonitorContainerStats"][];
+        };
+        MonitorHistoryPoint: {
+            /** Format: date-time */
+            at: string;
+            cpuPercent: number;
+            memoryUsedPercent: number;
+            load1: number;
+            containers: components["schemas"]["MonitorContainerStats"][];
+        };
+        MonitorHistory: {
+            minutes: number;
+            data: components["schemas"]["MonitorHistoryPoint"][];
+        };
         DeliveryPage: {
             data: components["schemas"]["Delivery"][];
             page: components["schemas"]["PageInfo"];
@@ -3719,6 +3802,51 @@ export interface operations {
                     "application/json": components["schemas"]["LineQuotaStatus"];
                 };
             };
+        };
+    };
+    getMonitorCurrent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Latest resource sample. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorSample"];
+                };
+            };
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getMonitorHistory: {
+        parameters: {
+            query?: {
+                /** @description Window ending now, 5 to 1440 minutes. */
+                minutes?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description History points, oldest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorHistory"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
         };
     };
     listLineDeliveries: {

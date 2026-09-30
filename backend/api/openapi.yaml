@@ -730,6 +730,34 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/LineQuotaStatus'}
+  /api/v1/admin/monitor/current:
+    get:
+      tags: [Admin operations]
+      operationId: getMonitorCurrent
+      description: Newest host and per-container resource sample, refreshed every 5 seconds. Container figures are unavailable when the host helper is not running.
+      security: [{AdminSession: []}]
+      responses:
+        '200':
+          description: Latest resource sample.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MonitorSample'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /api/v1/admin/monitor/history:
+    get:
+      tags: [Admin operations]
+      operationId: getMonitorHistory
+      description: Resource history averaged into at most 288 points, kept for 48 hours.
+      security: [{AdminSession: []}]
+      parameters:
+        - {name: minutes, in: query, description: "Window ending now, 5 to 1440 minutes.", schema: {type: integer, minimum: 5, maximum: 1440, default: 60}}
+      responses:
+        '200':
+          description: History points, oldest first.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MonitorHistory'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /api/v1/admin/line-deliveries:
     get:
       tags: [Admin operations]
@@ -2701,6 +2729,56 @@ components:
         locallyAccepted: {type: integer, minimum: 0, description: Push messages accepted from Nextstep Dashboard in the current month.}
         operationalReservePercent: {type: integer, minimum: 0, maximum: 50}
         syncedAt: {type: string, format: date-time, nullable: true}
+    MonitorContainerStats:
+      type: object
+      additionalProperties: false
+      required: [name, cpuPercent, memoryUsedBytes, memoryLimitBytes]
+      properties:
+        name: {type: string}
+        cpuPercent: {type: number, minimum: 0, description: "Percent of one CPU core; can exceed 100 on multi-core hosts."}
+        memoryUsedBytes: {type: integer, format: int64, minimum: 0}
+        memoryLimitBytes: {type: integer, format: int64, minimum: 0, description: "Container limit, or host memory when the container has none."}
+    MonitorHostStats:
+      type: object
+      additionalProperties: false
+      required: [cores, cpuPercent, load1, load5, load15, memoryTotalBytes, memoryAvailableBytes, diskTotalBytes, diskUsedBytes, uptimeSeconds]
+      properties:
+        cores: {type: integer, minimum: 1}
+        cpuPercent: {type: number, minimum: 0, maximum: 100, description: "Whole-machine CPU use; 0 until a second sample exists."}
+        load1: {type: number, minimum: 0}
+        load5: {type: number, minimum: 0}
+        load15: {type: number, minimum: 0}
+        memoryTotalBytes: {type: integer, format: int64, minimum: 0}
+        memoryAvailableBytes: {type: integer, format: int64, minimum: 0}
+        diskTotalBytes: {type: integer, format: int64, minimum: 0}
+        diskUsedBytes: {type: integer, format: int64, minimum: 0}
+        uptimeSeconds: {type: integer, format: int64, minimum: 0}
+    MonitorSample:
+      type: object
+      additionalProperties: false
+      required: [at, host, containersAvailable, containers]
+      properties:
+        at: {type: string, format: date-time}
+        host: {$ref: '#/components/schemas/MonitorHostStats'}
+        containersAvailable: {type: boolean}
+        containers: {type: array, items: {$ref: '#/components/schemas/MonitorContainerStats'}}
+    MonitorHistoryPoint:
+      type: object
+      additionalProperties: false
+      required: [at, cpuPercent, memoryUsedPercent, load1, containers]
+      properties:
+        at: {type: string, format: date-time}
+        cpuPercent: {type: number, minimum: 0, maximum: 100}
+        memoryUsedPercent: {type: number, minimum: 0, maximum: 100}
+        load1: {type: number, minimum: 0}
+        containers: {type: array, items: {$ref: '#/components/schemas/MonitorContainerStats'}}
+    MonitorHistory:
+      type: object
+      additionalProperties: false
+      required: [minutes, data]
+      properties:
+        minutes: {type: integer, minimum: 5, maximum: 1440}
+        data: {type: array, items: {$ref: '#/components/schemas/MonitorHistoryPoint'}}
     DeliveryPage:
       type: object
       required: [data, page]

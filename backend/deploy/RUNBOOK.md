@@ -64,6 +64,14 @@ Install only the host-probe unit from `deploy/systemd/`. `host-probe.sh`
 inspects Compose services labelled for this project and writes bounded sanitized
 JSON under `/run/nextstep-dashboard/host`.
 
+The admin Monitor page (`/admin/monitor`) reads host CPU, memory, disk and load
+from `/proc` inside the API container. Per-container figures come from
+`host-monitor.sh`, a long-running root unit (`aibcc-v2-host-monitor.service`)
+that writes `docker stats` output to `host/containers.json` every 5 seconds. The
+API only reads that file; it never receives the Docker socket. If the unit is
+stopped the page still works and shows container figures as unavailable after 30
+seconds. History is kept for 48 hours in `monitor_samples`.
+
 ## Operational incident alerting
 
 Nextstep Sentinel runs independently from API/Worker and is rolled out in three

@@ -1,7 +1,7 @@
 import { apiRequest, newIdempotencyKey, queryString } from './client';
 import type {
   AdminReportCatalog, AdminSession, AuditPage, CreateReportRunInput, DataPage, DeliveryPage, Recipient, RecipientPage, ReportDefinition,
-  FlexPreview, FlexPreviewInput, LineQuotaStatus, NotificationExecution, ReportKey, ReportRowPage, ReportRowQueryInput, ReportRowQueryPage, ReportRun, ReportRunDetail, ReportRunPage, Schedule, ScheduleInput, SchedulePage, SchedulePatch,
+  FlexPreview, FlexPreviewInput, LineQuotaStatus, MonitorHistory, MonitorSample, NotificationExecution, ReportKey, ReportRowPage, ReportRowQueryInput, ReportRowQueryPage, ReportRun, ReportRunDetail, ReportRunPage, Schedule, ScheduleInput, SchedulePage, SchedulePatch,
   SMLConnectionInput, SMLConnectionStatus, SMLConnectionTestResult, Tenant, TenantInput, TenantPage, TenantPatch,
   DashboardRefresh, DashboardRefreshInput, DashboardRefreshResult, ExecutiveOverview, ReportDashboard, ViewerMe, ViewerTenant,
   DashboardRefreshPolicy, DashboardRefreshPolicyInput, ReportRevalidation, OverviewRevalidation, DashboardSnapshot,
@@ -52,6 +52,8 @@ export const adminApi = {
   restoreSchedule: (tenantId: string, scheduleId: string, version: number) => apiRequest<Schedule>(`${api}/admin/tenants/${tenantId}/schedules/${scheduleId}/restore${queryString({ version })}`, { method: 'POST', scope: 'admin' }),
   testSendSchedule: (tenantId: string, scheduleId: string, idempotencyKey = newIdempotencyKey('schedule-test-send')) => apiRequest<NotificationExecution>(`${api}/admin/tenants/${tenantId}/schedules/${scheduleId}/test-send`, { method: 'POST', scope: 'admin', idempotencyKey }),
   lineQuota: () => apiRequest<LineQuotaStatus>(`${api}/admin/line-quota`),
+  monitorCurrent: (signal?: AbortSignal) => apiRequest<MonitorSample>(`${api}/admin/monitor/current`, { signal }),
+  monitorHistory: (minutes: number, signal?: AbortSignal) => apiRequest<MonitorHistory>(`${api}/admin/monitor/history${queryString({ minutes })}`, { signal }),
   reportRuns: (filters: { cursor?: string; pageSize?: number; tenantId?: string; status?: string; reportKey?: ReportKey; source?: string; dateFrom?: string; dateTo?: string } = {}, signal?: AbortSignal) => apiRequest<ReportRunPage>(`${api}/admin/report-runs${queryString({ ...filters, pageSize: filters.pageSize ?? 25 })}`, { signal }),
   queryReportRuns: (input: ReportRunsTableQueryInput, signal?: AbortSignal) => apiRequest<ReportRunsTableQueryResult>(`${api}/admin/report-runs/query`, { method: 'POST', scope: 'admin', body: input, signal }),
   reportRun: (runId: string, signal?: AbortSignal) => apiRequest<ReportRunDetail>(`${api}/admin/report-runs/${runId}`, { signal }),
