@@ -66,8 +66,33 @@ export function transportPhaseLabel(value?: string): string {
   return ({
     BEFORE_REQUEST_SENT: 'ยังไม่เริ่มส่งคำขอไปยัง Server ลูกค้า',
     REQUEST_SENT_RESULT_UNKNOWN: 'ส่งคำขอแล้ว แต่ยังไม่ทราบผลจาก Server ลูกค้า',
-    RESPONSE_STARTED: 'เริ่มรับคำตอบแล้ว แต่รับข้อมูลไม่ครบ'
+    RESPONSE_STARTED: 'Server เริ่มตอบกลับแล้ว และปัญหาเกิดหลังเริ่มรับคำตอบ'
   } as Record<string, string>)[value ?? ''] ?? 'ไม่มีรายละเอียดการรับส่งข้อมูลเพิ่มเติม';
+}
+
+export function resultValidationLabel(value?: string): string {
+  return ({
+    PARSER_CONFIGURATION_INVALID: 'การตั้งค่าตัวอ่านผลลัพธ์ไม่ถูกต้อง',
+    XML_MALFORMED: 'XML ไม่สมบูรณ์หรือมีโครงสร้างที่อ่านต่อไม่ได้',
+    RESULT_SET_MISSING: 'ไม่พบ ResultSet ในผลลัพธ์',
+    ROW_LIMIT_EXCEEDED: 'จำนวนแถวเกินขีดจำกัดความปลอดภัย',
+    ROW_MALFORMED: 'โครงสร้างของแถวไม่สมบูรณ์',
+    FIELD_MALFORMED: 'โครงสร้างของค่าภายในแถวไม่สมบูรณ์',
+    FIELD_VALUE_TOO_LARGE: 'ค่าภายในแถวมีขนาดเกินขีดจำกัดความปลอดภัย'
+  } as Record<string, string>)[value ?? ''] ?? 'ไม่มีรายละเอียดการตรวจสอบผลลัพธ์เพิ่มเติม';
+}
+
+export function formatByteCount(value?: number): string {
+  if (value === undefined || value < 0) return 'ไม่ทราบ';
+  if (value < 1024) return `${value.toLocaleString('th-TH')} ไบต์`;
+  const kibibytes = value / 1024;
+  if (kibibytes < 1024) return `${kibibytes.toLocaleString('th-TH', { maximumFractionDigits: 1 })} KiB`;
+  return `${(kibibytes / 1024).toLocaleString('th-TH', { maximumFractionDigits: 1 })} MiB`;
+}
+
+export function evidenceBooleanLabel(value?: boolean): string {
+  if (value === undefined) return 'ไม่ทราบ';
+  return value ? 'ผ่าน / พบ' : 'ไม่ผ่าน / ไม่พบ';
 }
 
 export function reportImpactLabel(impact?: FailureImpact): string {

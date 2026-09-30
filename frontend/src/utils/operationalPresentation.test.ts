@@ -8,6 +8,7 @@ import {
   incidentLifecycleSeverity,
   lineImpactLabel,
   reportImpactLabel,
+  resultValidationLabel,
   transportPhaseLabel
 } from './operationalPresentation';
 
@@ -25,6 +26,13 @@ it('อธิบายระยะเวลาและผลกระทบเ�
   expect(reportImpactLabel(impact)).toContain('ยกเลิก 9');
   expect(lineImpactLabel(impact.notificationOutcome)).toContain('ไม่ได้ส่ง LINE');
   expect(transportPhaseLabel('REQUEST_SENT_RESULT_UNKNOWN')).toContain('ยังไม่ทราบผล');
+});
+
+it('อธิบาย parser diagnostic โดยไม่แสดงข้อมูลดิบ', () => {
+  expect(resultValidationLabel('XML_MALFORMED')).toContain('XML');
+  expect(resultValidationLabel('RESULT_SET_MISSING')).toContain('ResultSet');
+  expect(resultValidationLabel('FIELD_VALUE_TOO_LARGE')).toContain('ขนาด');
+  expect(resultValidationLabel(undefined)).toContain('ไม่มีรายละเอียด');
 });
 
 it('แสดงสถานะการเชื่อมต่อเป็นภาษาภาพที่ตรงกับหลักฐาน', () => {

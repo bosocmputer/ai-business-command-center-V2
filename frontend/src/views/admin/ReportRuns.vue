@@ -9,7 +9,7 @@ import { useSakaiFilterMenu } from '@/composables/useSakaiFilterMenu';
 import { loadAdminReportCatalog } from '@/stores/reportCatalog';
 import { errorMessage, formatDateTime, formatDateTimeWithMilliseconds } from '@/utils/format';
 import { statusLabel } from '@/utils/status';
-import { evidenceLevelLabel, formatDurationMs, lineImpactLabel, reportImpactLabel, transportPhaseLabel, triggerKindLabel } from '@/utils/operationalPresentation';
+import { evidenceBooleanLabel, evidenceLevelLabel, formatByteCount, formatDurationMs, lineImpactLabel, reportImpactLabel, resultValidationLabel, transportPhaseLabel, triggerKindLabel } from '@/utils/operationalPresentation';
 import { toDateFilter } from '@/utils/adminTableFilters';
 const statuses = ['QUEUED', 'CLAIMED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED', 'EXPIRED'].map((value) => ({ value, label: statusLabel(value) }));
 const sources = [
@@ -24,6 +24,7 @@ const detailLoading = ref(false);
 const detailError = ref('');
 const reportDefinitions = ref<AdminReportDefinition[]>([]);
 const reportDefinitionByKey = computed(() => new Map(reportDefinitions.value.map((item) => [item.reportKey, item])));
+const protocolEvidence = computed(() => detail.value?.failureSummary?.protocolEvidence);
 let detailController: AbortController | undefined;
 let detailGeneration = 0;
 
@@ -160,6 +161,21 @@ onBeforeUnmount(() => { detailController?.abort('unmounted'); });
         <p class="font-semibold mb-0">{{ lineImpactLabel(detail.impact.notificationOutcome) }}</p>
       </section>
 
+      <section v-if="protocolEvidence?.resultValidationCode" class="failure-section">
+        <h3>รายละเอียดจากคำตอบ Java Web Service</h3>
+        <Message severity="warn" :closable="false" class="mb-4">
+          <div class="font-semibold">{{ resultValidationLabel(protocolEvidence.resultValidationCode) }}</div>
+          <div class="mt-1">ระบบได้รับคำตอบและแตก ZIP แล้ว แต่ตรวจสอบโครงสร้าง XML ไม่ผ่าน ข้อมูลด้านล่างเป็น metadata เท่านั้น ไม่เก็บ SQL หรือข้อมูลลูกค้า</div>
+        </Message>
+        <dl class="failure-facts">
+          <dt>จุดที่ตัวอ่านหยุด</dt><dd>ประมาณไบต์ที่ {{ (protocolEvidence.resultValidationOffsetBytes ?? 0).toLocaleString('th-TH') }}</dd>
+          <dt>ความคืบหน้าก่อนล้ม</dt><dd>อ่านสำเร็จก่อนล้ม {{ (protocolEvidence.resultRowsDecoded ?? 0).toLocaleString('th-TH') }} แถว</dd>
+          <dt>พบ ResultSet</dt><dd>{{ protocolEvidence.resultSetSeen === undefined ? 'ไม่ทราบ' : protocolEvidence.resultSetSeen ? 'พบ' : 'ไม่พบ' }}</dd>
+          <dt>ขนาด XML หลังแตก ZIP</dt><dd>{{ formatByteCount(protocolEvidence.resultXmlBytes) }}</dd>
+          <dt>Request Ref</dt><dd>{{ protocolEvidence.requestRef }}</dd>
+        </dl>
+      </section>
+
       <section v-if="detail.failureSummary" class="failure-section">
         <h3>หลักฐานจากระบบและสิ่งที่ควรตรวจสอบ</h3>
         <p v-if="detail.failureSummary.presentation.evidenceNoteTh" class="text-muted-color">{{ detail.failureSummary.presentation.evidenceNoteTh }}</p>
@@ -177,6 +193,27 @@ onBeforeUnmount(() => { detailController?.abort('unmounted'); });
               <dt>Stage</dt><dd>{{ detail.failureSummary?.stage || 'UNKNOWN' }}</dd>
               <dt>Transport phase</dt><dd>{{ detail.failureSummary?.transportPhase || 'UNKNOWN' }}</dd>
               <dt>Remote state</dt><dd>{{ detail.failureSummary?.remoteStateUnknown ? 'UNKNOWN' : 'CONFIRMED TERMINAL' }}</dd>
+              <template v-if="protocolEvidence">
+                <dt>Request Ref</dt><dd>{{ protocolEvidence.requestRef }}</dd>
+                <dt>HTTP status</dt><dd>{{ protocolEvidence.httpStatus ?? 'ไม่ทราบ' }}</dd>
+                <dt>Content-Type</dt><dd>{{ protocolEvidence.responseContentType || 'ไม่ทราบ' }}</dd>
+                <dt>ขนาด HTTP response</dt><dd>{{ formatByteCount(protocolEvidence.responseBodyBytes) }}</dd>
+                <dt>SOAP</dt><dd>{{ evidenceBooleanLabel(protocolEvidence.soapValid) }}</dd>
+                <dt>Base64</dt><dd>{{ evidenceBooleanLabel(protocolEvidence.base64Valid) }}</dd>
+                <dt>ZIP signature</dt><dd>{{ evidenceBooleanLabel(protocolEvidence.zipSignatureValid) }}</dd>
+                <dt>ขนาด payload หลัง Base64</dt><dd>{{ formatByteCount(protocolEvidence.decodedPayloadBytes) }}</dd>
+                <dt>ขนาด XML หลังแตก ZIP</dt><dd>{{ formatByteCount(protocolEvidence.resultXmlBytes) }}</dd>
+                <dt>Result validation</dt><dd>{{ protocolEvidence.resultValidationCode || 'ไม่พบข้อผิดพลาดในตัวอ่าน XML' }}</dd>
+                <dt>Parser offset</dt><dd>{{ protocolEvidence.resultValidationOffsetBytes?.toLocaleString('th-TH') ?? 'ไม่ทราบ' }} ไบต์</dd>
+                <dt>Rows decoded</dt><dd>{{ protocolEvidence.resultRowsDecoded?.toLocaleString('th-TH') ?? 'ไม่ทราบ' }}</dd>
+                <dt>ResultSet seen</dt><dd>{{ evidenceBooleanLabel(protocolEvidence.resultSetSeen) }}</dd>
+                <dt>ส่งคำขอเมื่อ</dt><dd>{{ formatDateTime(protocolEvidence.requestSentAt) }}</dd>
+                <dt>ได้รับ byte แรกเมื่อ</dt><dd>{{ formatDateTime(protocolEvidence.firstResponseByteAt) }}</dd>
+                <dt>รับคำตอบครบเมื่อ</dt><dd>{{ formatDateTime(protocolEvidence.responseCompletedAt) }}</dd>
+                <dt>จำนวน request / retry</dt><dd>{{ protocolEvidence.requestCount.toLocaleString('th-TH') }} / {{ protocolEvidence.retryCount.toLocaleString('th-TH') }}</dd>
+                <dt>งานพร้อมกัน ร้าน / Host</dt><dd>{{ protocolEvidence.tenantConcurrentQueries.toLocaleString('th-TH') }} / {{ protocolEvidence.hostConcurrentQueries.toLocaleString('th-TH') }}</dd>
+                <dt>Response SHA-256</dt><dd>{{ protocolEvidence.responseSha256 || 'ไม่ทราบ' }}</dd>
+              </template>
             </dl>
           </AccordionContent>
         </AccordionPanel>

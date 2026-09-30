@@ -225,16 +225,24 @@ test('admin operation tables identify the tenant and LINE recipient', async ({ p
     id: '77777777-7777-4777-8777-777777777777', tenantId, tenantName: 'ร้านตัวอย่าง',
     reportKey: 'stock_balance', status: 'FAILED', periodPreset: 'YESTERDAY', dateFrom: '2026-07-10', dateTo: '2026-07-10',
     rowCount: 0, isTruncated: false, queuedAt: '2026-07-10T15:00:00Z', startedAt: '2026-07-10T15:00:01Z',
-    finishedAt: '2026-07-10T15:00:04Z', expiresAt: '2026-07-11T15:00:04Z', safeErrorCode: 'SML_UNREACHABLE',
+    finishedAt: '2026-07-10T15:00:04Z', expiresAt: '2026-07-11T15:00:04Z', safeErrorCode: 'SML_RESULT_INVALID',
     failureSummary: {
-      version: 1, level: 'CONFIRMED', category: 'JAVA_WS_CONNECTIVITY', stage: 'CONNECT_JAVA_WS',
-      transportPhase: 'BEFORE_REQUEST_SENT', occurredAt: '2026-07-10T15:00:04Z', durationMs: 3000,
-      attempt: 1, retryable: true, remoteStateUnknown: false, connectionVersion: 2, safeErrorCode: 'SML_UNREACHABLE',
+      version: 3, level: 'CONFIRMED', category: 'JAVA_WS_RESPONSE', stage: 'VALIDATE_RESPONSE',
+      transportPhase: 'RESPONSE_STARTED', occurredAt: '2026-07-10T15:00:04Z', durationMs: 3000,
+      attempt: 1, retryable: false, remoteStateUnknown: false, connectionVersion: 2, safeErrorCode: 'SML_RESULT_INVALID',
+      protocolEvidence: {
+        requestRef: 'NXR-ABCDEFGHIJKLMNOP', requestCount: 1, retryCount: 0,
+        requestSentAt: '2026-07-10T15:00:01Z', firstResponseByteAt: '2026-07-10T15:00:02Z', responseCompletedAt: '2026-07-10T15:00:04Z',
+        httpStatus: 200, responseContentType: 'text/xml; charset=utf-8', responseBodyBytes: 2048,
+        soapValid: true, soapReturnCharacters: 1024, base64Valid: true, decodedPayloadBytes: 768, zipSignatureValid: true,
+        resultXmlBytes: 4096, resultValidationCode: 'XML_MALFORMED', resultValidationOffsetBytes: 311,
+        resultRowsDecoded: 6, resultSetSeen: true, responseSha256: 'a'.repeat(64), tenantConcurrentQueries: 1, hostConcurrentQueries: 1
+      },
       presentation: {
-        titleTh: 'ติดต่อ Java Web Service ของร้านไม่สำเร็จ',
-        summaryTh: 'ระบบไม่สามารถเริ่มส่งคำขอไปยัง Server ลูกค้าได้',
-        stageTh: 'เชื่อมต่อ Java Web Service',
-        nextActionsTh: ['ตรวจสอบ Java Web Service', 'ตรวจสอบ Network และ Port']
+        titleTh: 'ผลลัพธ์จาก Java Web Service ไม่ถูกต้อง',
+        summaryTh: 'ระบบได้รับคำตอบแล้วแต่ตรวจสอบโครงสร้างข้อมูลไม่ผ่าน',
+        stageTh: 'ตรวจสอบผลลัพธ์จาก Java Web Service',
+        nextActionsTh: ['ตรวจสอบ Java Web Service log ด้วย Request Ref']
       }
     }
   };
@@ -253,11 +261,14 @@ test('admin operation tables identify the tenant and LINE recipient', async ({ p
   await page.goto('/admin/report-runs');
   await expect(page.getByRole('columnheader', { name: 'ร้านค้า' })).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: 'ร้านตัวอย่าง' })).toBeVisible();
-  await expect(page.getByRole('row').filter({ hasText: 'ติดต่อ Java Web Service ของร้านไม่สำเร็จ' })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: 'ผลลัพธ์จาก Java Web Service ไม่ถูกต้อง' })).toBeVisible();
   await page.getByLabel('ดูสาเหตุและหลักฐาน').click();
-  await expect(page.getByRole('dialog')).toContainText('เชื่อมต่อ Java Web Service');
+  await expect(page.getByRole('dialog')).toContainText('ตรวจสอบผลลัพธ์จาก Java Web Service');
   await expect(page.getByRole('dialog')).toContainText('ยกเลิก 9');
   await expect(page.getByRole('dialog')).toContainText('ไม่ได้ส่ง LINE');
+  await expect(page.getByRole('dialog')).toContainText('XML ไม่สมบูรณ์');
+  await expect(page.getByRole('dialog')).toContainText('อ่านสำเร็จก่อนล้ม 6 แถว');
+  await expect(page.getByRole('dialog')).toContainText('NXR-ABCDEFGHIJKLMNOP');
   await page.keyboard.press('Escape');
 
   await page.goto('/admin/deliveries');

@@ -1761,6 +1761,19 @@ export interface components {
             base64Valid?: boolean;
             decodedPayloadBytes?: number;
             zipSignatureValid?: boolean;
+            /** @description Size of the decompressed result XML; the XML content is never retained. */
+            resultXmlBytes?: number;
+            /**
+             * @description Safe parser failure classification without field names or values.
+             * @enum {string}
+             */
+            resultValidationCode?: "PARSER_CONFIGURATION_INVALID" | "XML_MALFORMED" | "RESULT_SET_MISSING" | "ROW_LIMIT_EXCEEDED" | "ROW_MALFORMED" | "FIELD_MALFORMED" | "FIELD_VALUE_TOO_LARGE";
+            /** @description Approximate byte offset reached by the XML parser. */
+            resultValidationOffsetBytes?: number;
+            /** @description Number of complete rows decoded before failure. */
+            resultRowsDecoded?: number;
+            /** @description Whether a ResultSet element was observed before failure. */
+            resultSetSeen?: boolean;
             responseSha256?: string;
             tenantConcurrentQueries: number;
             hostConcurrentQueries: number;

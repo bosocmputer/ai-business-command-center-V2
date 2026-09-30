@@ -1,6 +1,6 @@
 ---
 status: current
-last_verified: 2026-07-21
+last_verified: 2026-09-22
 source_of_truth: [internal/worker/report_worker.go, internal/database/report_store.go, internal/database/schedule_execution_store.go, internal/notification/worker.go, internal/delivery/worker.go, internal/failure/catalog.go]
 tags: [backend, reports, queue, line]
 ---
@@ -30,6 +30,19 @@ Due schedule
 
 `Work.Partial` causes `REPORT_SET_INCOMPLETE` before recipient selection or rendering. No LINE delivery or outbox payload is created from an incomplete report set. `ALL_REPORTS_FAILED` and `NO_ELIGIBLE_RECIPIENTS` remain distinct failure causes.
 
+## Safe JavaWS Result Diagnostics
+
+Failure Evidence V3 extends the bounded JavaWS protocol metadata for
+`SML_RESULT_INVALID`. It records the decompressed XML byte count, a fixed parser
+classification, the approximate parser byte offset, complete rows decoded, and
+whether `ResultSet` was observed. This evidence is persisted with the report run
+and may be shown to authenticated Admins without contacting JavaWS again.
+
+The diagnostic must never retain SQL, XML or SOAP bodies, row/field names,
+field values, KPI values, credentials, tokens, or customer identifiers. Existing
+V1/V2 evidence remains readable; only failures with the complete parser
+diagnostic are promoted to V3.
+
 Notification occurrences are classified at materialization time: due schedules
 write `SCHEDULED`, manual test sends write `TEST`, and historical rows remain
 `UNKNOWN`. Sentinel may alert terminal `SCHEDULED` failures but must never infer
@@ -39,6 +52,7 @@ that an old or test occurrence was a scheduled customer delivery.
 
 - Default priorities are Schedule 100, Viewer Dashboard 90, and Background FAST/STANDARD/HEAVY 30/25/20.
 - An active/recent compatible request may be joined where the store explicitly permits it; schedule occurrences retain their own materialization.
+- Allowlisted chunked heavy reports receive a ten-minute total execution window while every JavaWS query remains bounded by the report's per-query timeout. Direct heavy reports retain their five-minute total window.
 - A lease-lost worker cannot publish a result.
 - Recovery marks abandoned work with safe codes and protects incomplete notification sets.
 - Browser cancellation only stops tracking; only queued work is safely cancellable through the report API.
