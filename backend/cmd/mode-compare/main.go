@@ -250,10 +250,12 @@ func summaryDifferences(direct, chunked report.SummaryResult) []string {
 	return differences
 }
 
-// describeRowDifference matches rows by customer code and document sort and says
+// describeRowDifference matches rows by customer, document sort and item code and says
 // how many rows exist on one side only and which fields differ on the rest.
 func describeRowDifference(direct, chunked []map[string]string) string {
-	identity := func(row map[string]string) string { return row["cust_code"] + "|" + row["doc_sort"] }
+	identity := func(row map[string]string) string {
+		return row["cust_code"] + "|" + row["doc_sort"] + "|" + row["ic_code"] + "|" + row["item_code"]
+	}
 	right := make(map[string]map[string]string, len(chunked))
 	for _, row := range chunked {
 		right[identity(row)] = row
