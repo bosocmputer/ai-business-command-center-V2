@@ -283,6 +283,11 @@ func canonicalRows(rows []map[string]string) []map[string]string {
 	for index, row := range rows {
 		copied := make(map[string]string, len(row))
 		for name, value := range row {
+			// The marker only says which row carries the metrics; the metrics
+			// themselves are compared through Metrics and the dashboard.
+			if name == "_summary_metric_row" {
+				continue
+			}
 			// Only decimals are rewritten: codes such as 001 are text and must stay as is.
 			if number, ok := new(big.Rat).SetString(value); ok && strings.Contains(value, ".") {
 				copied[name] = number.RatString()
