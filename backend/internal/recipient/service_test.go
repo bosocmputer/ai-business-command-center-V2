@@ -57,6 +57,14 @@ func (store *memoryRecipientStore) ReplacePermissions(_ context.Context, _ []byt
 	return store.stored, nil
 }
 
+func (store *memoryRecipientStore) SetAIChat(_ context.Context, _ []byte, _ string, tenantID, recipientID uuid.UUID, enabled bool, _ time.Time) (StoredRecipient, error) {
+	if store.stored.TenantID != tenantID || store.stored.ID != recipientID {
+		return StoredRecipient{}, ErrRecipientNotFound
+	}
+	store.stored.AIChatEnabled = enabled
+	return store.stored, nil
+}
+
 func (store *memoryRecipientStore) Revoke(_ context.Context, _ []byte, _ string, tenantID, recipientID uuid.UUID, _ time.Time) error {
 	if store.stored.TenantID != tenantID || store.stored.ID != recipientID {
 		return ErrRecipientNotFound
@@ -236,6 +244,31 @@ func TestServiceUsesOptimisticPermissionVersioning(t *testing.T) {
 	}
 	if _, err := service.ReplacePermissions(context.Background(), []byte("admin"), "request-3", store.stored.TenantID, created.ID, nil, created.PermissionsVersion); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale permission version error = %v", err)
+	}
+}
+
+func TestServiceSetsAIChatIndependentlyOfReportPermissions(t *testing.T) {
+	now := time.Date(2026, 9, 30, 9, 0, 0, 0, time.UTC)
+	box, _ := secret.NewBox(bytes.Repeat([]byte{1}, 32), "key-1", bytes.NewReader(bytes.Repeat([]byte{2}, 12)))
+	tokens, _ := auth.NewSessionManager(bytes.Repeat([]byte{3}, 32), bytes.NewReader(nil), func() time.Time { return now })
+	store := &memoryRecipientStore{}
+	service := NewService(store, box, tokens, bytes.NewReader(bytes.Repeat([]byte{4}, 32)), "https://dashboard.nextstep-soft.com", func() time.Time { return now })
+	created, err := service.CreateInvitation(context.Background(), []byte("admin"), "request-1", "recipient-ai-chat", uuid.New(), "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.AIChatEnabled {
+		t.Fatal("a new recipient must not be able to chat with the assistant")
+	}
+	enabled, err := service.SetAIChat(context.Background(), []byte("admin"), "request-2", store.stored.TenantID, created.ID, true)
+	if err != nil || !enabled.AIChatEnabled || enabled.PermissionsVersion != created.PermissionsVersion || len(enabled.ReportKeys) != len(created.ReportKeys) {
+		t.Fatalf("SetAIChat(true) = %+v, %v (permissions must be untouched)", enabled, err)
+	}
+	if _, err := service.SetAIChat(context.Background(), []byte("admin"), "request-3", uuid.New(), created.ID, false); !errors.Is(err, ErrRecipientNotFound) {
+		t.Fatalf("other tenant error = %v", err)
+	}
+	if _, err := service.SetAIChat(context.Background(), []byte("admin"), "request-4", uuid.Nil, created.ID, true); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("nil tenant error = %v", err)
 	}
 }
 

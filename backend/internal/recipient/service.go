@@ -59,6 +59,7 @@ type StoredRecipient struct {
 	PermissionsVersion int
 	VerifiedAt         *time.Time
 	CreatedAt          time.Time
+	AIChatEnabled      bool
 }
 
 type Recipient struct {
@@ -67,6 +68,7 @@ type Recipient struct {
 	DisplayName        string       `json:"displayName"`
 	ReportKeys         []report.Key `json:"reportKeys"`
 	PermissionsVersion int          `json:"permissionsVersion"`
+	AIChatEnabled      bool         `json:"aiChatEnabled"`
 	VerifiedAt         *time.Time   `json:"verifiedAt"`
 	CreatedAt          time.Time    `json:"createdAt"`
 	InvitationURL      string       `json:"invitationUrl,omitempty"`
@@ -156,6 +158,7 @@ type Store interface {
 	PermissionDependencies(context.Context, uuid.UUID, uuid.UUID) (PermissionDependencies, error)
 	ListScheduleCandidates(context.Context, uuid.UUID, int) ([]StoredRecipient, error)
 	ReplacePermissions(context.Context, []byte, string, uuid.UUID, uuid.UUID, []report.Key, int, time.Time) (StoredRecipient, error)
+	SetAIChat(context.Context, []byte, string, uuid.UUID, uuid.UUID, bool, time.Time) (StoredRecipient, error)
 	Revoke(context.Context, []byte, string, uuid.UUID, uuid.UUID, time.Time) error
 	RedeemInvitation(context.Context, []byte, []byte, StoredRecipient, time.Time) (StoredRecipient, error)
 	FindByLineHash(context.Context, []byte) (StoredRecipient, error)
@@ -534,6 +537,20 @@ func (service *Service) ReplacePermissions(ctx context.Context, actorHash []byte
 	return service.publicRecipient(stored)
 }
 
+// SetAIChat turns the assistant-chat permission on or off for one recipient.
+// It is independent of report permissions and needs no version check: the
+// value is a single flag, and setting it to its current value is a no-op.
+func (service *Service) SetAIChat(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID, enabled bool) (Recipient, error) {
+	if tenantID == uuid.Nil || recipientID == uuid.Nil {
+		return Recipient{}, ErrInvalidInput
+	}
+	stored, err := service.store.SetAIChat(ctx, actorHash, requestID, tenantID, recipientID, enabled, service.now().UTC())
+	if err != nil {
+		return Recipient{}, err
+	}
+	return service.publicRecipient(stored)
+}
+
 func (service *Service) Revoke(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID) error {
 	if tenantID == uuid.Nil || recipientID == uuid.Nil {
 		return ErrInvalidInput
@@ -593,7 +610,7 @@ func (service *Service) publicRecipient(stored StoredRecipient) (Recipient, erro
 	copy(reportKeys, stored.ReportKeys)
 	return Recipient{
 		ID: stored.ID, Status: stored.Status, DisplayName: string(displayName),
-		ReportKeys: reportKeys, PermissionsVersion: stored.PermissionsVersion, VerifiedAt: stored.VerifiedAt, CreatedAt: stored.CreatedAt,
+		ReportKeys: reportKeys, PermissionsVersion: stored.PermissionsVersion, AIChatEnabled: stored.AIChatEnabled, VerifiedAt: stored.VerifiedAt, CreatedAt: stored.CreatedAt,
 	}, nil
 }
 

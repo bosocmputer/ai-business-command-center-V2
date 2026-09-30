@@ -216,9 +216,16 @@ func (store *RecipientStore) List(ctx context.Context, tenantID uuid.UUID, pageS
 		}
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		return recipient.Page{}, fmt.Errorf("read recipients: %w", err)
+	}
+	rows.Close()
 	hasMore := len(items) > pageSize
 	if hasMore {
 		items = items[:pageSize]
+	}
+	if err := attachAIChat(ctx, store.pool, tenantID, items); err != nil {
+		return recipient.Page{}, err
 	}
 	nextCursor := ""
 	if hasMore && len(items) > 0 {
@@ -649,7 +656,11 @@ func (store *RecipientStore) GetForTenant(ctx context.Context, tenantID, recipie
 	if err != nil {
 		return recipient.StoredRecipient{}, fmt.Errorf("get recipient for tenant: %w", err)
 	}
-	return item, nil
+	one := []recipient.StoredRecipient{item}
+	if err := attachAIChat(ctx, store.pool, tenantID, one); err != nil {
+		return recipient.StoredRecipient{}, err
+	}
+	return one[0], nil
 }
 
 func loadRecipientForTenant(ctx context.Context, tx pgx.Tx, tenantID, recipientID uuid.UUID) (recipient.StoredRecipient, error) {
@@ -669,7 +680,11 @@ func loadRecipientForTenant(ctx context.Context, tx pgx.Tx, tenantID, recipientI
 	if err != nil {
 		return recipient.StoredRecipient{}, fmt.Errorf("load bound recipient: %w", err)
 	}
-	return item, nil
+	one := []recipient.StoredRecipient{item}
+	if err := attachAIChat(ctx, tx, tenantID, one); err != nil {
+		return recipient.StoredRecipient{}, err
+	}
+	return one[0], nil
 }
 
 func loadRecipientForTenantAny(ctx context.Context, tx pgx.Tx, tenantID, recipientID uuid.UUID) (recipient.StoredRecipient, error) {
@@ -692,7 +707,11 @@ func loadRecipientForTenantAny(ctx context.Context, tx pgx.Tx, tenantID, recipie
 	if err != nil {
 		return recipient.StoredRecipient{}, fmt.Errorf("load recipient idempotent replay: %w", err)
 	}
-	return item, nil
+	one := []recipient.StoredRecipient{item}
+	if err := attachAIChat(ctx, tx, tenantID, one); err != nil {
+		return recipient.StoredRecipient{}, err
+	}
+	return one[0], nil
 }
 
 func scanRecipient(row rowScanner) (recipient.StoredRecipient, error) {
@@ -712,4 +731,83 @@ func scanRecipient(row rowScanner) (recipient.StoredRecipient, error) {
 		item.ReportKeys[index] = report.Key(key)
 	}
 	return item, err
+}
+
+type membershipQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// attachAIChat fills AIChatEnabled for recipients read through the shared
+// column list, which deliberately does not carry the flag. One extra query per
+// call keeps every existing recipient SELECT and scan unchanged.
+func attachAIChat(ctx context.Context, db membershipQuerier, tenantID uuid.UUID, items []recipient.StoredRecipient) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, len(items))
+	for index := range items {
+		ids[index] = items[index].ID
+	}
+	rows, err := db.Query(ctx, `select recipient_id, ai_chat_enabled from tenant_memberships where tenant_id = $1 and recipient_id = any($2)`, tenantID, ids)
+	if err != nil {
+		return fmt.Errorf("load recipient AI chat flags: %w", err)
+	}
+	defer rows.Close()
+	flags := make(map[uuid.UUID]bool, len(items))
+	for rows.Next() {
+		var id uuid.UUID
+		var enabled bool
+		if err := rows.Scan(&id, &enabled); err != nil {
+			return fmt.Errorf("scan recipient AI chat flag: %w", err)
+		}
+		flags[id] = enabled
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read recipient AI chat flags: %w", err)
+	}
+	for index := range items {
+		items[index].AIChatEnabled = flags[items[index].ID]
+	}
+	return nil
+}
+
+// SetAIChat switches the assistant-chat permission for one recipient. A change
+// writes an audit row; setting the current value again changes nothing.
+func (store *RecipientStore) SetAIChat(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID, enabled bool, now time.Time) (recipient.StoredRecipient, error) {
+	tx, err := store.pool.Begin(ctx)
+	if err != nil {
+		return recipient.StoredRecipient{}, fmt.Errorf("begin recipient AI chat update: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var current bool
+	err = tx.QueryRow(ctx, `
+		select ai_chat_enabled from tenant_memberships
+		where tenant_id = $1 and recipient_id = $2 and status <> 'REVOKED'
+		for update`, tenantID, recipientID).Scan(&current)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return recipient.StoredRecipient{}, recipient.ErrRecipientNotFound
+	}
+	if err != nil {
+		return recipient.StoredRecipient{}, fmt.Errorf("lock recipient membership: %w", err)
+	}
+	if current != enabled {
+		if _, err := tx.Exec(ctx, `
+			update tenant_memberships set ai_chat_enabled = $3, ai_chat_updated_at = $4, updated_at = $4
+			where tenant_id = $1 and recipient_id = $2`, tenantID, recipientID, enabled, now); err != nil {
+			return recipient.StoredRecipient{}, fmt.Errorf("update recipient AI chat: %w", err)
+		}
+		beforeJSON, _ := json.Marshal(map[string]any{"aiChatEnabled": current})
+		afterJSON, _ := json.Marshal(map[string]any{"aiChatEnabled": enabled})
+		if err := insertAudit(ctx, tx, tenantID, actorHash, "RECIPIENT_AI_CHAT_UPDATED", "LINE_RECIPIENT", recipientID.String(), requestID, beforeJSON, afterJSON, now); err != nil {
+			return recipient.StoredRecipient{}, err
+		}
+	}
+	updated, err := loadRecipientForTenantAny(ctx, tx, tenantID, recipientID)
+	if err != nil {
+		return recipient.StoredRecipient{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return recipient.StoredRecipient{}, fmt.Errorf("commit recipient AI chat update: %w", err)
+	}
+	return updated, nil
 }

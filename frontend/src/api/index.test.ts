@@ -30,6 +30,18 @@ describe('adminApi recipients', () => {
     expect((options?.headers as Headers).get('X-CSRF-Token')).toBe('csrf-value');
   });
 
+  it('sets the AI chat permission with Admin CSRF protection and only the enabled flag', async () => {
+    document.cookie = 'aibcc_admin_csrf=csrf-value; path=/';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ id: 'recipient-1', aiChatEnabled: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const updated = await adminApi.setRecipientAiChat('tenant-1', 'recipient-1', true);
+    const [url, options] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('/api/v1/admin/tenants/tenant-1/recipients/recipient-1/ai-chat');
+    expect(options?.method).toBe('PUT');
+    expect((options?.headers as Headers).get('X-CSRF-Token')).toBe('csrf-value');
+    expect(JSON.parse(String(options?.body))).toEqual({ enabled: true });
+    expect(updated.aiChatEnabled).toBe(true);
+  });
+
   it('queries permission dependencies without mutating recipient state', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ recipientId: 'recipient-1', permissionsVersion: 2, items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     await adminApi.permissionDependencies('tenant-1', 'recipient-1');

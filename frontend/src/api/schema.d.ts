@@ -287,6 +287,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/ai-chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Turns the assistant-chat permission on or off for one recipient. Independent of report permissions and needs no version. Setting the current value again is a no-op that writes no audit row. */
+        put: operations["setRecipientAiChat"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/invitation": {
         parameters: {
             query?: never;
@@ -1413,6 +1430,8 @@ export interface components {
             displayName: string;
             reportKeys: components["schemas"]["ReportKey"][];
             permissionsVersion: number;
+            /** @description Whether this recipient may talk to the AI assistant. Stored ahead of the assistant and not enforced anywhere yet. Off for every recipient by default. */
+            aiChatEnabled: boolean;
             /** Format: date-time */
             verifiedAt?: string | null;
             /** Format: date-time */
@@ -3121,6 +3140,39 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    setRecipientAiChat: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+                recipientId: components["parameters"]["RecipientID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The recipient with the updated switch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Recipient"];
+                };
+            };
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
         };
     };

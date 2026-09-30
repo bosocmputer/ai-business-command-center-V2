@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/auth"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/recipient"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
 	"github.com/google/uuid"
@@ -18,6 +19,9 @@ type fakeRecipientAPI struct {
 	revokeCalls  int
 	reissueCalls int
 	queryInput   recipient.QueryInput
+	aiChatCalls  int
+	aiChatValue  bool
+	aiChatErr    error
 }
 
 func (fake *fakeRecipientAPI) CreateInvitation(context.Context, []byte, string, string, uuid.UUID, string) (recipient.Recipient, error) {
@@ -67,6 +71,17 @@ func TestAdminQueriesRecipientsWithExactPaginationAndFilters(t *testing.T) {
 
 func (fake *fakeRecipientAPI) ReplacePermissions(context.Context, []byte, string, uuid.UUID, uuid.UUID, []report.Key, int) (recipient.Recipient, error) {
 	return fake.item, nil
+}
+
+func (fake *fakeRecipientAPI) SetAIChat(_ context.Context, _ []byte, _ string, _ uuid.UUID, _ uuid.UUID, enabled bool) (recipient.Recipient, error) {
+	fake.aiChatCalls++
+	fake.aiChatValue = enabled
+	if fake.aiChatErr != nil {
+		return recipient.Recipient{}, fake.aiChatErr
+	}
+	updated := fake.item
+	updated.AIChatEnabled = enabled
+	return updated, nil
 }
 
 func (fake *fakeRecipientAPI) Revoke(context.Context, []byte, string, uuid.UUID, uuid.UUID) error {
@@ -127,6 +142,69 @@ func TestAdminRecipientRevokeReturnsActiveScheduleDependencies(t *testing.T) {
 	handler.ServeHTTP(response, request)
 
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"RECIPIENT_IN_USE"`) || !strings.Contains(response.Body.String(), "รายงานเช้า") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func aiChatRequest(tenantID, recipientID uuid.UUID, body string, csrf bool) *http.Request {
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/admin/tenants/"+tenantID.String()+"/recipients/"+recipientID.String()+"/ai-chat", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(&http.Cookie{Name: adminSessionCookie, Value: "admin-session"})
+	if csrf {
+		request.Header.Set("X-CSRF-Token", "admin-csrf")
+	}
+	return request
+}
+
+func TestAdminSetsRecipientAIChatWithMutationGuards(t *testing.T) {
+	tenantID, recipientID := uuid.New(), uuid.New()
+	api := &fakeRecipientAPI{item: recipient.Recipient{ID: recipientID, DisplayName: "เจ้าของร้าน"}}
+	handler := NewHandler(Dependencies{Readiness: readinessFunc(func(context.Context) error { return nil }), AdminAuth: &fakeAdminAuth{}, Recipients: api})
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, aiChatRequest(tenantID, recipientID, `{"enabled":true}`, true))
+	if response.Code != http.StatusOK || api.aiChatCalls != 1 || !api.aiChatValue || !strings.Contains(response.Body.String(), `"aiChatEnabled":true`) {
+		t.Fatalf("enable: status=%d calls=%d body=%s", response.Code, api.aiChatCalls, response.Body.String())
+	}
+
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, aiChatRequest(tenantID, recipientID, `{"enabled":false}`, true))
+	if response.Code != http.StatusOK || api.aiChatValue || !strings.Contains(response.Body.String(), `"aiChatEnabled":false`) {
+		t.Fatalf("disable: status=%d value=%v body=%s", response.Code, api.aiChatValue, response.Body.String())
+	}
+
+	before := api.aiChatCalls
+	for name, request := range map[string]*http.Request{
+		"missing enabled":     aiChatRequest(tenantID, recipientID, `{}`, true),
+		"non-boolean enabled": aiChatRequest(tenantID, recipientID, `{"enabled":"yes"}`, true),
+		"unknown field":       aiChatRequest(tenantID, recipientID, `{"enabled":true,"role":"admin"}`, true),
+	} {
+		response = httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code == http.StatusOK || api.aiChatCalls != before {
+			t.Fatalf("%s: status=%d, service called=%v", name, response.Code, api.aiChatCalls != before)
+		}
+	}
+}
+
+func TestAdminAIChatRejectsInvalidCSRF(t *testing.T) {
+	tenantID, recipientID := uuid.New(), uuid.New()
+	api := &fakeRecipientAPI{}
+	handler := NewHandler(Dependencies{Readiness: readinessFunc(func(context.Context) error { return nil }), AdminAuth: &fakeAdminAuth{csrfErr: auth.ErrInvalidCSRF}, Recipients: api})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, aiChatRequest(tenantID, recipientID, `{"enabled":true}`, true))
+	if response.Code != http.StatusForbidden || api.aiChatCalls != 0 {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, api.aiChatCalls, response.Body.String())
+	}
+}
+
+func TestAdminAIChatReportsUnknownRecipient(t *testing.T) {
+	tenantID, recipientID := uuid.New(), uuid.New()
+	api := &fakeRecipientAPI{aiChatErr: recipient.ErrRecipientNotFound}
+	handler := NewHandler(Dependencies{Readiness: readinessFunc(func(context.Context) error { return nil }), AdminAuth: &fakeAdminAuth{}, Recipients: api})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, aiChatRequest(tenantID, recipientID, `{"enabled":true}`, true))
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), "RECIPIENT_NOT_FOUND") {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }

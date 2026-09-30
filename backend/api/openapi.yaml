@@ -371,6 +371,34 @@ paths:
         '409': {$ref: '#/components/responses/Conflict'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/ai-chat:
+    put:
+      tags: [Admin configuration]
+      operationId: setRecipientAiChat
+      description: 'Turns the assistant-chat permission on or off for one recipient. Independent of report permissions and needs no version. Setting the current value again is a no-op that writes no audit row.'
+      security: [{AdminSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/TenantID'}
+        - {$ref: '#/components/parameters/RecipientID'}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '200':
+          description: The recipient with the updated switch.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Recipient'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/invitation:
     post:
       tags: [Admin configuration]
@@ -1672,13 +1700,14 @@ components:
       properties: {invitationLabel: {type: string, minLength: 1, maxLength: 160}}
     Recipient:
       type: object
-      required: [id, status, displayName, reportKeys, permissionsVersion, createdAt]
+      required: [id, status, displayName, reportKeys, permissionsVersion, aiChatEnabled, createdAt]
       properties:
         id: {type: string, format: uuid}
         status: {type: string, enum: [PENDING, ACTIVE, REVOKED]}
         displayName: {type: string}
         reportKeys: {type: array, uniqueItems: true, items: {$ref: '#/components/schemas/ReportKey'}}
         permissionsVersion: {type: integer, minimum: 1}
+        aiChatEnabled: {type: boolean, description: 'Whether this recipient may talk to the AI assistant. Stored ahead of the assistant and not enforced anywhere yet. Off for every recipient by default.'}
         verifiedAt: {type: string, format: date-time, nullable: true}
         createdAt: {type: string, format: date-time}
         invitationUrl: {type: string, format: uri, nullable: true, description: Returned only when a pending invitation is created.}

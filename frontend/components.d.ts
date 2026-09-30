@@ -42,6 +42,7 @@ declare module 'vue' {
     Password: typeof import('primevue/password')['default']
     ProgressBar: typeof import('primevue/progressbar')['default']
     ProgressSpinner: typeof import('primevue/progressspinner')['default']
+    RecipientAiChatCard: typeof import('./src/components/admin/RecipientAiChatCard.vue')['default']
     ReportPeriodToolbar: typeof import('./src/components/dashboard/ReportPeriodToolbar.vue')['default']
     ReportPickerPanel: typeof import('./src/components/admin/ReportPickerPanel.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
@@ -58,6 +59,7 @@ declare module 'vue' {
     TenantFilterSelect: typeof import('./src/components/admin/TenantFilterSelect.vue')['default']
     Textarea: typeof import('primevue/textarea')['default']
     Toast: typeof import('primevue/toast')['default']
+    ToggleSwitch: typeof import('primevue/toggleswitch')['default']
     Toolbar: typeof import('primevue/toolbar')['default']
   }
   export interface GlobalDirectives {

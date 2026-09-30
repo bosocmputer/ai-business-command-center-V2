@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import { adminApi, ApiError, type AdminReportCatalog, type PermissionDependencies, type Recipient, type ReportKey, type Tenant } from '@/api';
+import RecipientAiChatCard from '@/components/admin/RecipientAiChatCard.vue';
 import ReportPickerPanel from '@/components/admin/ReportPickerPanel.vue';
 import { beginAdminTenantContext, setAdminTenantContext } from '@/stores/adminTenantContext';
 import { loadAdminReportCatalog } from '@/stores/reportCatalog';
@@ -27,6 +28,8 @@ const dependencySchedules = ref<string[]>([]);
 const dependencies = ref<PermissionDependencies>();
 const dependencyLoading = ref(false);
 const dependencyError = ref('');
+const aiChatEnabled = ref(false);
+const aiChatSaving = ref(false);
 const controller = new AbortController();
 
 const selectedSet = computed(() => new Set(selected.value));
@@ -59,6 +62,7 @@ async function load() {
     catalog.value = catalogResult;
     selected.value = [...recipientResult.reportKeys];
     baseline.value = [...recipientResult.reportKeys];
+    aiChatEnabled.value = recipientResult.aiChatEnabled;
     await loadDependencies(controller.signal);
   } catch (cause) { error.value = errorMessage(cause); }
   finally { loading.value = false; }
@@ -106,6 +110,20 @@ async function save() {
   } finally { saving.value = false; }
 }
 
+async function setAiChat(enabled: boolean) {
+  if (!recipient.value || aiChatSaving.value) return;
+  aiChatSaving.value = true;
+  aiChatEnabled.value = enabled;
+  try {
+    const updated = await adminApi.setRecipientAiChat(tenantId, recipientId, enabled);
+    aiChatEnabled.value = updated.aiChatEnabled;
+    toast.add({ severity: 'success', summary: updated.aiChatEnabled ? 'เปิดสิทธิ์คุยกับผู้ช่วย AI แล้ว' : 'ปิดสิทธิ์คุยกับผู้ช่วย AI แล้ว', life: 3000 });
+  } catch (cause) {
+    aiChatEnabled.value = !enabled;
+    toast.add({ severity: 'error', summary: 'บันทึกสิทธิ์คุยกับผู้ช่วย AI ไม่สำเร็จ', detail: errorMessage(cause), life: 6000 });
+  } finally { aiChatSaving.value = false; }
+}
+
 function back() { void router.push({ name: 'admin-tenant-detail', params: { tenantId }, query: { tab: 'recipients' } }); }
 function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value) { event.preventDefault(); event.returnValue = ''; } }
 onBeforeRouteLeave(() => !dirty.value || window.confirm('มีสิทธิ์ที่ยังไม่ได้บันทึก ต้องการออกจากหน้านี้หรือไม่'));
@@ -127,5 +145,6 @@ onBeforeUnmount(() => { controller.abort('unmount'); window.removeEventListener(
       <ReportPickerPanel v-model="selected" :definitions="catalog.data" :locked-keys="lockedKeys" />
       <div v-if="dependencies?.items.length" class="mt-5 grid gap-2"><div class="font-semibold">ตาราง Active ที่ใช้สิทธิ์นี้</div><div v-for="item in dependencies.items" :key="item.reportKey" class="text-sm text-muted-color"><strong>{{ catalog.data.find((definition) => definition.reportKey === item.reportKey)?.label ?? item.reportKey }}</strong>: {{ item.schedules.map((schedule) => schedule.name).join(', ') }}<span v-if="item.additionalCount"> และอีก {{ item.additionalCount }} ตาราง</span></div></div>
     </div>
+    <RecipientAiChatCard class="mt-4" :enabled="aiChatEnabled" :status="recipient.status" :saving="aiChatSaving" @change="setAiChat" />
   </template>
 </template>

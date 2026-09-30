@@ -21,6 +21,7 @@ type RecipientAPI interface {
 	ScheduleRecipientOptions(context.Context, uuid.UUID, recipient.ScheduleRecipientOptionsInput) (recipient.ScheduleRecipientOptions, error)
 	Query(context.Context, uuid.UUID, recipient.QueryInput) (recipient.QueryResult, error)
 	ReplacePermissions(context.Context, []byte, string, uuid.UUID, uuid.UUID, []report.Key, int) (recipient.Recipient, error)
+	SetAIChat(context.Context, []byte, string, uuid.UUID, uuid.UUID, bool) (recipient.Recipient, error)
 	Revoke(context.Context, []byte, string, uuid.UUID, uuid.UUID) error
 }
 
@@ -200,6 +201,34 @@ func registerRecipientRoutes(router chi.Router, adminAuth AdminAuthenticator, re
 			return
 		}
 		updated, err := recipients.ReplacePermissions(request.Context(), admin.TokenHash, requestID(request), tenantID, recipientID, input.ReportKeys, input.Version)
+		if handleRecipientError(response, request, err) {
+			return
+		}
+		writeJSON(response, http.StatusOK, updated)
+	})
+
+	router.Put("/api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/ai-chat", func(response http.ResponseWriter, request *http.Request) {
+		admin, ok := operationalAdmin(response, request, adminAuth, true)
+		if !ok {
+			return
+		}
+		tenantID, ok := parseTenantID(response, request)
+		if !ok {
+			return
+		}
+		recipientID, err := uuid.Parse(chi.URLParam(request, "recipientId"))
+		if err != nil {
+			writeProblem(response, request, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "Recipient ID must be a UUID.", false)
+			return
+		}
+		var input struct {
+			Enabled *bool `json:"enabled"`
+		}
+		if err := decodeJSON(response, request, &input); err != nil || input.Enabled == nil {
+			writeProblem(response, request, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "AI chat input is invalid.", false)
+			return
+		}
+		updated, err := recipients.SetAIChat(request.Context(), admin.TokenHash, requestID(request), tenantID, recipientID, *input.Enabled)
 		if handleRecipientError(response, request, err) {
 			return
 		}
