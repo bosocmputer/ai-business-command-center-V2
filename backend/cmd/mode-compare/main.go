@@ -224,20 +224,16 @@ func summaryDifferences(direct, chunked report.SummaryResult) []string {
 		}
 		if name == "Rows" {
 			var leftRows, rightRows []map[string]string
-			if json.Unmarshal(value, &leftRows) == nil && json.Unmarshal(right[name], &rightRows) == nil {
-				if sameRows(leftRows, rightRows) {
-					differences = append(differences, "summary.Rows (same rows, different order)")
-					continue
-				}
-				if sameRows(canonicalRows(leftRows), canonicalRows(rightRows)) {
-					differences = append(differences, "summary.Rows (same numbers, different formatting)")
-					continue
-				}
-			}
-			var leftRows, rightRows []map[string]string
 			detail := "different rows"
 			if json.Unmarshal(value, &leftRows) == nil && json.Unmarshal(right[name], &rightRows) == nil {
-				detail = describeRowDifference(leftRows, rightRows)
+				switch {
+				case sameRows(leftRows, rightRows):
+					detail = "same rows, different order"
+				case sameRows(canonicalRows(leftRows), canonicalRows(rightRows)):
+					detail = "same numbers, different formatting"
+				default:
+					detail = describeRowDifference(leftRows, rightRows)
+				}
 			}
 			differences = append(differences, "summary.Rows ("+detail+")")
 			continue
