@@ -194,9 +194,7 @@ func compare(key report.Key, period report.Period, projection report.ResultKind,
 	if err1 != nil || err2 != nil {
 		return append(differences, "summary could not be built")
 	}
-	if !sameJSON(directSummary, chunkedSummary) {
-		differences = append(differences, "summary")
-	}
+	differences = append(differences, summaryDifferences(directSummary, chunkedSummary)...)
 	comparison, err := report.ResolveComparisonPeriod(period)
 	if err == nil {
 		empty := stepRows{"rows": {}}
@@ -206,6 +204,35 @@ func compare(key report.Key, period report.Period, projection report.ResultKind,
 			differences = append(differences, "dashboard")
 		}
 	}
+	return differences
+}
+
+// summaryDifferences names which top-level summary fields differ and, for the
+// row list, whether only the order differs. Values are never returned.
+func summaryDifferences(direct, chunked report.SummaryResult) []string {
+	var left, right map[string]json.RawMessage
+	leftBytes, _ := json.Marshal(direct)
+	rightBytes, _ := json.Marshal(chunked)
+	if json.Unmarshal(leftBytes, &left) != nil || json.Unmarshal(rightBytes, &right) != nil {
+		return []string{"summary"}
+	}
+	var differences []string
+	for name, value := range left {
+		if string(value) == string(right[name]) {
+			continue
+		}
+		if name == "Rows" {
+			var leftRows, rightRows []map[string]string
+			if json.Unmarshal(value, &leftRows) == nil && json.Unmarshal(right[name], &rightRows) == nil && sameRows(leftRows, rightRows) {
+				differences = append(differences, "summary.Rows (same rows, different order)")
+				continue
+			}
+			differences = append(differences, "summary.Rows (different rows)")
+			continue
+		}
+		differences = append(differences, "summary."+name)
+	}
+	sort.Strings(differences)
 	return differences
 }
 
