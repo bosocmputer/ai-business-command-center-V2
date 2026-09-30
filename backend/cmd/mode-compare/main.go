@@ -296,6 +296,10 @@ func canonicalRows(rows []map[string]string) []map[string]string {
 			if name == "_summary_metric_row" {
 				continue
 			}
+			// The merge deliberately drops the SQL ranking columns; nothing reads them.
+			if strings.HasSuffix(name, "_rank") {
+				continue
+			}
 			// Only decimals are rewritten: codes such as 001 are text and must stay as is.
 			if number, ok := new(big.Rat).SetString(value); ok && strings.Contains(value, ".") {
 				copied[name] = number.RatString()
