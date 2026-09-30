@@ -234,13 +234,50 @@ func summaryDifferences(direct, chunked report.SummaryResult) []string {
 					continue
 				}
 			}
-			differences = append(differences, "summary.Rows (different rows)")
+			var leftRows, rightRows []map[string]string
+			detail := "different rows"
+			if json.Unmarshal(value, &leftRows) == nil && json.Unmarshal(right[name], &rightRows) == nil {
+				detail = describeRowDifference(leftRows, rightRows)
+			}
+			differences = append(differences, "summary.Rows ("+detail+")")
 			continue
 		}
 		differences = append(differences, "summary."+name)
 	}
 	sort.Strings(differences)
 	return differences
+}
+
+// describeRowDifference matches rows by customer code and document sort and says
+// how many rows exist on one side only and which fields differ on the rest.
+func describeRowDifference(direct, chunked []map[string]string) string {
+	identity := func(row map[string]string) string { return row["cust_code"] + "|" + row["doc_sort"] }
+	right := make(map[string]map[string]string, len(chunked))
+	for _, row := range chunked {
+		right[identity(row)] = row
+	}
+	onlyDirect, matched := 0, 0
+	fields := map[string]bool{}
+	for _, row := range direct {
+		other, ok := right[identity(row)]
+		if !ok {
+			onlyDirect++
+			continue
+		}
+		matched++
+		delete(right, identity(row))
+		for name, value := range row {
+			if other[name] != value {
+				fields[name] = true
+			}
+		}
+	}
+	names := make([]string, 0, len(fields))
+	for name := range fields {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return fmt.Sprintf("only in direct: %d, only in chunked: %d, matched: %d, differing fields on matched: %v", onlyDirect, len(right), matched, names)
 }
 
 // canonicalRows rewrites every numeric value in a canonical form, so 12.50 and
