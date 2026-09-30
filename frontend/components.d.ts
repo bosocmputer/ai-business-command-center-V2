@@ -43,6 +43,7 @@ declare module 'vue' {
     ProgressBar: typeof import('primevue/progressbar')['default']
     ProgressSpinner: typeof import('primevue/progressspinner')['default']
     RecipientAiChatCard: typeof import('./src/components/admin/RecipientAiChatCard.vue')['default']
+    ReportModesPanel: typeof import('./src/components/admin/ReportModesPanel.vue')['default']
     ReportPeriodToolbar: typeof import('./src/components/dashboard/ReportPeriodToolbar.vue')['default']
     ReportPickerPanel: typeof import('./src/components/admin/ReportPickerPanel.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

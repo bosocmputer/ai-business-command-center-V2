@@ -1,6 +1,6 @@
 ---
 status: current
-last_verified: 2026-09-22
+last_verified: 2026-09-30
 source_of_truth: [internal/worker/report_worker.go, internal/database/report_store.go, internal/database/schedule_execution_store.go, internal/notification/worker.go, internal/delivery/worker.go, internal/failure/catalog.go]
 tags: [backend, reports, queue, line]
 ---
@@ -52,7 +52,11 @@ that an old or test occurrence was a scheduled customer delivery.
 
 - Default priorities are Schedule 100, Viewer Dashboard 90, and Background FAST/STANDARD/HEAVY 30/25/20.
 - An active/recent compatible request may be joined where the store explicitly permits it; schedule occurrences retain their own materialization.
-- Allowlisted chunked heavy reports receive a ten-minute total execution window while every JavaWS query remains bounded by the report's per-query timeout. Direct heavy reports retain their five-minute total window.
+- Chunked heavy reports receive a ten-minute total execution window while every JavaWS query remains bounded by the report's per-query timeout. Direct heavy reports retain their five-minute total window.
+- `report_execution_modes` (migration 000034) holds DIRECT or CHUNKED per tenant and report; a missing row is DIRECT. `HEAVY_CHUNK_ENABLED` stays the master switch and `HEAVY_CHUNK_TENANT_REPORTS` only seeds the table. Only `ChunkSafe` reports can be CHUNKED.
+- In DIRECT mode a size signal (`SML_RESPONSE_TOO_LARGE`, `SML_ZIP_TOO_LARGE`, or `SML_RESULT_INVALID` with `XML_MALFORMED`, `ROW_LIMIT_EXCEEDED` or `FIELD_VALUE_TOO_LARGE`) switches the report to CHUNKED, audits `REPORT_MODE_AUTO_SWITCHED` and requeues the same run. A failure after chunking is never switched back or retried this way.
+- `SML_TIMEOUT` after the request was sent keeps its unknown remote state and is still not retried. It only counts toward a switch: two in a row plus a trivial probe query that succeeds. A dead shop is not a size problem.
+- Admin API `/api/v1/admin/tenants/{tenantId}/report-modes` lists, sets and measures modes (`internal/executionmode`). Measuring counts the chunk units per chunkable report, refuses while a run is active for the shop, and only applies a mode to reports nobody has decided yet (`ChunkUnitThreshold` = 3,000 is a starting guess).
 - A lease-lost worker cannot publish a result.
 - Recovery marks abandoned work with safe codes and protects incomplete notification sets.
 - Browser cancellation only stops tracking; only queued work is safely cancellable through the report API.
