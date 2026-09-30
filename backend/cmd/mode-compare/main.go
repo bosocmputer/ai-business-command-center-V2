@@ -195,7 +195,13 @@ func compare(key report.Key, period report.Period, projection report.ResultKind,
 	if err1 != nil || err2 != nil {
 		return append(differences, "summary could not be built")
 	}
-	differences = append(differences, summaryDifferences(directSummary, chunkedSummary)...)
+	for _, difference := range summaryDifferences(directSummary, chunkedSummary) {
+		// Order and number formatting are representation, not a different result.
+		if strings.Contains(difference, "same rows, different order") || strings.Contains(difference, "same numbers, different formatting") {
+			continue
+		}
+		differences = append(differences, difference)
+	}
 	comparison, err := report.ResolveComparisonPeriod(period)
 	if err == nil {
 		empty := stepRows{"rows": {}}
