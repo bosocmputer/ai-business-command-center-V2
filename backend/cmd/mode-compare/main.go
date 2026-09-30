@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"os"
 	"os/signal"
 	"sort"
@@ -223,9 +224,15 @@ func summaryDifferences(direct, chunked report.SummaryResult) []string {
 		}
 		if name == "Rows" {
 			var leftRows, rightRows []map[string]string
-			if json.Unmarshal(value, &leftRows) == nil && json.Unmarshal(right[name], &rightRows) == nil && sameRows(leftRows, rightRows) {
-				differences = append(differences, "summary.Rows (same rows, different order)")
-				continue
+			if json.Unmarshal(value, &leftRows) == nil && json.Unmarshal(right[name], &rightRows) == nil {
+				if sameRows(leftRows, rightRows) {
+					differences = append(differences, "summary.Rows (same rows, different order)")
+					continue
+				}
+				if sameRows(canonicalRows(leftRows), canonicalRows(rightRows)) {
+					differences = append(differences, "summary.Rows (same numbers, different formatting)")
+					continue
+				}
 			}
 			differences = append(differences, "summary.Rows (different rows)")
 			continue
@@ -234,6 +241,25 @@ func summaryDifferences(direct, chunked report.SummaryResult) []string {
 	}
 	sort.Strings(differences)
 	return differences
+}
+
+// canonicalRows rewrites every numeric value in a canonical form, so 12.50 and
+// 12.5000 compare equal. Non-numeric values are left untouched.
+func canonicalRows(rows []map[string]string) []map[string]string {
+	canonical := make([]map[string]string, len(rows))
+	for index, row := range rows {
+		copied := make(map[string]string, len(row))
+		for name, value := range row {
+			// Only decimals are rewritten: codes such as 001 are text and must stay as is.
+			if number, ok := new(big.Rat).SetString(value); ok && strings.Contains(value, ".") {
+				copied[name] = number.RatString()
+			} else {
+				copied[name] = value
+			}
+		}
+		canonical[index] = copied
+	}
+	return canonical
 }
 
 func sortedRows(steps stepRows) stepRows {

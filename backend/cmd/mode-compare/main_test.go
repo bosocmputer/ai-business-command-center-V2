@@ -39,3 +39,16 @@ func TestCompareReportsOnlyNamesOfDifferences(t *testing.T) {
 		t.Fatalf("a changed value must be reported by name: %v", diff)
 	}
 }
+
+func TestCanonicalRowsTreatsTrailingZerosAsEqualButNotDifferentNumbers(t *testing.T) {
+	left := []map[string]string{{"code": "001", "amount": "12.50"}}
+	if !sameRows(canonicalRows(left), canonicalRows([]map[string]string{{"code": "001", "amount": "12.5000"}})) {
+		t.Fatal("12.50 and 12.5000 must be equal once canonical")
+	}
+	if sameRows(canonicalRows(left), canonicalRows([]map[string]string{{"code": "001", "amount": "12.51"}})) {
+		t.Fatal("different numbers must stay different")
+	}
+	if sameRows(canonicalRows(left), canonicalRows([]map[string]string{{"code": "1", "amount": "12.50"}})) {
+		t.Fatal("codes like 001 and 1 are text keys, not numbers to be merged")
+	}
+}
