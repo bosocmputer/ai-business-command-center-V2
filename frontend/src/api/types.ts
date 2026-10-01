@@ -19,6 +19,7 @@ export type ScheduleRecipientOption = components['schemas']['ScheduleRecipientOp
 export type ScheduleRecipientOptions = components['schemas']['ScheduleRecipientOptions'];
 export type ReportKey = components['schemas']['ReportKey'];
 export type ReportDefinition = components['schemas']['ReportDefinition'];
+export type ReportDrillLink = components['schemas']['ReportDrillLink'];
 export type AdminReportDefinition = components['schemas']['AdminReportDefinition'];
 export type AdminReportCatalog = components['schemas']['AdminReportCatalog'];
 export type ScheduleInput = components['schemas']['ScheduleInput'];

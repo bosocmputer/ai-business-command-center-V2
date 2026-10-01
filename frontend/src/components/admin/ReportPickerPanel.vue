@@ -33,7 +33,42 @@ const categories = computed(() => {
   return Array.from(labels, ([, label]) => ({ value: label, label }));
 });
 const tableSource = computed(() => selectedOnly.value ? props.definitions.filter((item) => selectedSet.value.has(item.reportKey)) : props.definitions);
+// Reports are shown under their category, in the order the categories first
+// appear in the catalog. The table needs the rows of one category together.
+const categoryOrder = computed(() => {
+  const order = new Map<string, number>();
+  props.definitions.forEach((item) => { if (!order.has(item.categoryLabel)) order.set(item.categoryLabel, order.size); });
+  return order;
+});
+const groupedSource = computed(() => tableSource.value
+  .map((item, index) => ({ item, index }))
+  .sort((left, right) => (categoryOrder.value.get(left.item.categoryLabel) ?? 0) - (categoryOrder.value.get(right.item.categoryLabel) ?? 0) || left.index - right.index)
+  .map(({ item }) => item));
 const visibleFiltered = computed(() => filteredResult.value ?? tableSource.value);
+function categorySummary(label: string) {
+  const items = props.definitions.filter((item) => item.categoryLabel === label);
+  return { total: items.length, selected: items.filter((item) => selectedSet.value.has(item.reportKey)).length };
+}
+// Selecting a whole category adds every active report of it that is not chosen
+// yet, up to the limit; clearing it removes the ones that are not locked.
+function toggleCategory(label: string) {
+  if (props.disabled) return;
+  const items = props.definitions.filter((item) => item.categoryLabel === label);
+  const everyChosen = items.filter((item) => item.status === 'ACTIVE').every((item) => selectedSet.value.has(item.reportKey));
+  if (everyChosen) {
+    const removing = new Set(items.map((item) => item.reportKey));
+    setSelection(props.modelValue.filter((key) => !removing.has(key) || lockedSet.value.has(key)));
+    return;
+  }
+  const next = [...props.modelValue];
+  limitMessage.value = '';
+  for (const item of items) {
+    if (item.status !== 'ACTIVE' || selectedSet.value.has(item.reportKey)) continue;
+    if (props.maxSelected > 0 && next.length >= props.maxSelected) { limitMessage.value = `เลือกได้สูงสุด ${props.maxSelected} รายงาน`; break; }
+    next.push(item.reportKey);
+  }
+  emit('update:modelValue', next);
+}
 const globalSearch = computed({ get: () => tableFilters.value.global.value ?? '', set: (value: string) => { tableFilters.value.global.value = value || null; } });
 const hasFilters = computed(() => Boolean(globalSearch.value || tableFilters.value.categoryLabel.value?.length || selectedOnly.value));
 const selectedDefinitions = computed(() => props.modelValue
@@ -101,8 +136,9 @@ function move(index: number, direction: -1 | 1) {
   <div class="flex flex-col gap-4">
     <Message v-if="limitMessage" severity="warn" :closable="false">{{ limitMessage }}</Message>
     <div class="grid grid-cols-1 gap-5" :class="ordered ? 'xl:grid-cols-[minmax(0,1fr)_22rem]' : ''">
-      <DataTable v-model:filters="tableFilters" :value="tableSource" data-key="reportKey" :global-filter-fields="['label', 'categoryLabel']" filter-display="menu" row-hover show-gridlines paginator :rows="25" :rows-per-page-options="[25, 50, 100]" paginator-template="RowsPerPageDropdown FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport" current-page-report-template="หน้า {currentPage} จาก {totalPages} · ทั้งหมด {totalRecords} รายการ" striped-rows responsive-layout="scroll" @filter="captureFiltered">
+      <DataTable v-model:filters="tableFilters" :value="groupedSource" data-key="reportKey" row-group-mode="subheader" group-rows-by="categoryLabel" :global-filter-fields="['label', 'categoryLabel']" filter-display="menu" row-hover show-gridlines paginator :rows="25" :rows-per-page-options="[25, 50, 100]" paginator-template="RowsPerPageDropdown FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport" current-page-report-template="หน้า {currentPage} จาก {totalPages} · ทั้งหมด {totalRecords} รายการ" striped-rows responsive-layout="scroll" @filter="captureFiltered">
         <template #header><SakaiTableHeader v-model:global-search="globalSearch" :has-filters="hasFilters" search-label="ค้นหารายงาน" search-placeholder="ค้นหารายงาน" @clear="clearFilters"><template #start><div class="flex items-center gap-2"><Checkbox v-model="selectedOnly" input-id="selected-only" binary :disabled="disabled" /><label for="selected-only">เฉพาะที่เลือก</label></div><Button label="เลือกผลที่กรอง" icon="pi pi-check-square" outlined class="touch-action" :disabled="disabled" @click="selectFiltered" /><Button label="ล้างที่เลือก" icon="pi pi-times" text severity="secondary" class="touch-action" :disabled="disabled || !modelValue.length" @click="setSelection([])" /></template></SakaiTableHeader></template>
+        <template #groupheader="{ data }"><div class="flex flex-wrap items-center justify-between gap-2"><span class="font-semibold">{{ data.categoryLabel }} <span class="text-muted-color font-normal">· เลือก {{ categorySummary(data.categoryLabel).selected }}/{{ categorySummary(data.categoryLabel).total }}</span></span><Button :label="categorySummary(data.categoryLabel).selected === categorySummary(data.categoryLabel).total ? 'ล้างทั้งหมวด' : 'เลือกทั้งหมวด'" :icon="categorySummary(data.categoryLabel).selected === categorySummary(data.categoryLabel).total ? 'pi pi-times' : 'pi pi-check-square'" text size="small" severity="secondary" class="touch-action" :disabled="disabled" @click="toggleCategory(data.categoryLabel)" /></div></template>
         <Column header="เลือก" style="width: 5rem" header-class="table-select-column" body-class="table-select-column">
           <template #body="{ data }"><Checkbox :model-value="selectedSet.has(data.reportKey)" binary :disabled="disabled || lockedSet.has(data.reportKey) || (data.status === 'DEPRECATED' && !selectedSet.has(data.reportKey))" :aria-label="lockedSet.has(data.reportKey) ? `${data.label} ถูกใช้โดยตารางส่ง LINE ที่กำลังใช้งาน` : `เลือก ${data.label}`" @update:model-value="toggle(data, $event)" /></template>
         </Column>

@@ -35,6 +35,7 @@ declare module 'vue' {
     InputMask: typeof import('primevue/inputmask')['default']
     InputText: typeof import('primevue/inputtext')['default']
     LineFlexPreview: typeof import('./src/components/LineFlexPreview.vue')['default']
+    Menu: typeof import('primevue/menu')['default']
     Message: typeof import('primevue/message')['default']
     MobileExecutiveChart: typeof import('./src/components/dashboard/MobileExecutiveChart.vue')['default']
     MultiSelect: typeof import('primevue/multiselect')['default']

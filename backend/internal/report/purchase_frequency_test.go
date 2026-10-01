@@ -169,7 +169,7 @@ func TestFrequencyQueriesShareOneBaseAndStayReadOnly(t *testing.T) {
 
 func TestFrequencyIsAStandardUnchunkedDateRangeReport(t *testing.T) {
 	definition, ok := DefinitionFor(PurchaseFrequency)
-	if !ok || definition.ChunkSafe || definition.ParameterKind != DateRange || !definition.Sensitive || definition.Category != "SALES" {
+	if !ok || definition.ChunkSafe || definition.ParameterKind != DateRange || !definition.Sensitive || definition.Category != "CUSTOMER" {
 		t.Fatalf("definition = %+v", definition)
 	}
 	if ComparisonSupported(PurchaseFrequency, Period{Preset: Custom}) || ComparisonSupported(PurchaseFrequency, Period{Preset: Yesterday}) {

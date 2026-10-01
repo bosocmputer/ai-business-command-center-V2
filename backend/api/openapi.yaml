@@ -1904,6 +1904,24 @@ components:
         category: {type: string}
         isSensitive: {type: boolean}
         periodMode: {type: string, enum: [DATE_RANGE, AS_OF_DATE, CURRENT_ONLY]}
+        drillLinks:
+          type: array
+          description: Other reports a row of this report can open, limited to reports the viewer may also open.
+          items: {$ref: '#/components/schemas/ReportDrillLink'}
+    ReportDrillLink:
+      type: object
+      additionalProperties: false
+      required: [column, kind, targetReport, targetColumn]
+      description: A row's identifier column opens the target report filtered to the same customer, item or document by an equality row filter on the target's stored rows.
+      properties:
+        column: {type: string, pattern: '^[a-z][a-z0-9_]*$'}
+        kind: {type: string, enum: [CUSTOMER, ITEM, DOCUMENT]}
+        targetReport: {$ref: '#/components/schemas/ReportKey'}
+        targetColumn: {type: string, pattern: '^[a-z][a-z0-9_]*$'}
+        labelColumn:
+          type: string
+          pattern: '^[a-z][a-z0-9_]*$'
+          description: The name column shown for the same customer or item, used to offer the link when the identifier column is hidden.
     AdminReportDefinition:
       type: object
       required: [reportKey, version, label, category, categoryLabel, status, periodMode]

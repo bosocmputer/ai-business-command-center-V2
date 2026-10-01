@@ -47,6 +47,14 @@ This block is generated from `report.Definitions()`. Do not edit it manually.
 
 The catalog owns labels, version, status, selection policy, period mode, metrics, timeout, range, refresh, and chunk eligibility. Never derive these rules from frontend metadata.
 
+## Drill-down Links
+
+- `internal/report/drill.go` is the single list of how reports open each other: a row's identifier column (customer, item or document code) opens another report filtered to the same value. Each link names the source column, the target report and column, and the name column to offer it from when the code is hidden.
+- A drill-down is only an equality row filter on the target report's own stored rows. It needs the target report's permission like any other entry, and it never contacts SML. The target report may therefore have no snapshot for the period yet; the viewer then sees the usual "no snapshot" message and can fetch it.
+- `GET /viewer/tenants/{id}/reports` returns `drillLinks` per report, limited to links whose target the viewer may also open (`viewer.permittedDrillLinks`). The destination endpoints still check permission on every call.
+- `viewer/drill_test.go` fails when a link points at a column the row filter would refuse, at a missing report, or lacks a name column. Add a link there when two reports answer one question together.
+- The category `CUSTOMER` ("ลูกค้า/CRM", migration 000040) groups customer reports; `customer_rfm` and `purchase_frequency` moved into it. The permission page groups reports by category.
+
 ## Period Rules
 
 - Backend resolves presets against `Asia/Bangkok` and validates a maximum 366-day range.

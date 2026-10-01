@@ -1606,6 +1606,18 @@ export interface components {
             isSensitive: boolean;
             /** @enum {string} */
             periodMode?: "DATE_RANGE" | "AS_OF_DATE" | "CURRENT_ONLY";
+            /** @description Other reports a row of this report can open, limited to reports the viewer may also open. */
+            drillLinks?: components["schemas"]["ReportDrillLink"][];
+        };
+        /** @description A row's identifier column opens the target report filtered to the same customer, item or document by an equality row filter on the target's stored rows. */
+        ReportDrillLink: {
+            column: string;
+            /** @enum {string} */
+            kind: "CUSTOMER" | "ITEM" | "DOCUMENT";
+            targetReport: components["schemas"]["ReportKey"];
+            targetColumn: string;
+            /** @description The name column shown for the same customer or item, used to offer the link when the identifier column is hidden. */
+            labelColumn?: string;
         };
         AdminReportDefinition: {
             reportKey: components["schemas"]["ReportKey"];

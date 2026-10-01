@@ -167,7 +167,7 @@ func TestRFMQueriesShareOneBaseAndStayReadOnly(t *testing.T) {
 
 func TestRFMIsAStandardUnchunkedDateRangeReport(t *testing.T) {
 	definition, ok := DefinitionFor(CustomerRFM)
-	if !ok || definition.ChunkSafe || definition.ParameterKind != DateRange || !definition.Sensitive || definition.Category != "SALES" {
+	if !ok || definition.ChunkSafe || definition.ParameterKind != DateRange || !definition.Sensitive || definition.Category != "CUSTOMER" {
 		t.Fatalf("definition = %+v", definition)
 	}
 	if ComparisonSupported(CustomerRFM, Period{Preset: Custom}) || ComparisonSupported(CustomerRFM, Period{Preset: Yesterday}) {

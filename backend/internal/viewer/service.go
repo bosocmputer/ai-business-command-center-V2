@@ -42,6 +42,9 @@ type ReportAccess struct {
 	Category    string               `json:"category"`
 	IsSensitive bool                 `json:"isSensitive"`
 	PeriodMode  report.ParameterKind `json:"periodMode"`
+	// DrillLinks lists the other reports a row can open. Only links whose target
+	// the viewer may also open are included.
+	DrillLinks []report.DrillLink `json:"drillLinks"`
 }
 
 type Store interface {
@@ -185,14 +188,32 @@ func (service *Service) ListReports(ctx context.Context, recipientID, tenantID u
 	if err != nil {
 		return nil, err
 	}
+	permitted := make(map[report.Key]struct{}, len(items))
+	for _, item := range items {
+		permitted[item.Key] = struct{}{}
+	}
 	for index := range items {
 		definition, ok := report.DefinitionFor(items[index].Key)
 		if !ok {
 			return nil, ErrReportForbidden
 		}
 		items[index].PeriodMode = definition.ParameterKind
+		items[index].DrillLinks = permittedDrillLinks(items[index].Key, permitted)
 	}
 	return items, nil
+}
+
+// permittedDrillLinks keeps the drill links of a report whose target the viewer
+// is also permitted to open. The target report checks permission again when it is
+// opened, so this only keeps buttons from appearing that would lead nowhere.
+func permittedDrillLinks(key report.Key, permitted map[report.Key]struct{}) []report.DrillLink {
+	links := make([]report.DrillLink, 0)
+	for _, link := range report.DrillLinksFor(key) {
+		if _, ok := permitted[link.TargetReport]; ok {
+			links = append(links, link)
+		}
+	}
+	return links
 }
 
 func (service *Service) CanAccessReport(ctx context.Context, recipientID, tenantID uuid.UUID, reportKey report.Key) (bool, error) {
