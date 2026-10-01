@@ -7,6 +7,7 @@ type Key string
 const (
 	SalesGoodsServices      Key = "sales_goods_services"
 	CustomerRFM             Key = "customer_rfm"
+	PurchaseFrequency       Key = "purchase_frequency"
 	PurchaseGoodsPayables   Key = "purchase_goods_payables"
 	GrossProfitByProduct    Key = "gross_profit_by_product"
 	GrossProfitByARCustomer Key = "gross_profit_by_ar_customer"
@@ -84,6 +85,7 @@ type Definition struct {
 var orderedDefinitions = []Definition{
 	definition(SalesGoodsServices, "รายงานขายสินค้าและบริการ", "SALES", false, DateRange, "document_count", "เอกสาร", "total_amount", "ยอดขาย"),
 	definition(CustomerRFM, "รายงานลูกค้าตามความถี่และมูลค่าการซื้อ (RFM)", "SALES", true, DateRange, "customer_count", "ลูกค้า", "at_risk_amount", "ยอดลูกค้าเสี่ยงหาย"),
+	definition(PurchaseFrequency, "รายงานความถี่การซื้อของลูกค้า", "SALES", true, DateRange, "customer_count", "ลูกค้าที่ซื้อซ้ำ", "overdue_count", "ลูกค้าเงียบเกินรอบ"),
 	definition(PurchaseGoodsPayables, "รายงานซื้อสินค้าและตั้งหนี้", "PURCHASE", true, DateRange, "document_count", "เอกสาร", "total_amount", "ยอดซื้อ"),
 	definition(GrossProfitByProduct, "กำไรขั้นต้นตามสินค้า", "GROSS_PROFIT", true, DateRange, "gross_profit_amount", "กำไรขั้นต้น", "gross_margin_percent", "อัตรากำไร"),
 	definition(GrossProfitByARCustomer, "กำไรขั้นต้นตามลูกหนี้", "GROSS_PROFIT", true, DateRange, "gross_profit_amount", "กำไรขั้นต้น", "gross_margin_percent", "อัตรากำไร"),

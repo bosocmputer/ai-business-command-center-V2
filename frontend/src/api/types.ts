@@ -109,6 +109,7 @@ export interface DataPage<T> {
 export const reportDefinitions: ReportDefinition[] = [
   { reportKey: 'sales_goods_services', version: '1.0.0', label: 'รายงานขายสินค้าและบริการ', category: 'SALES', isSensitive: false, periodMode: 'DATE_RANGE' },
   { reportKey: 'customer_rfm', version: '1.0.0', label: 'รายงานลูกค้าตามความถี่และมูลค่าการซื้อ (RFM)', category: 'SALES', isSensitive: true, periodMode: 'DATE_RANGE' },
+  { reportKey: 'purchase_frequency', version: '1.0.0', label: 'รายงานความถี่การซื้อของลูกค้า', category: 'SALES', isSensitive: true, periodMode: 'DATE_RANGE' },
   { reportKey: 'purchase_goods_payables', version: '1.0.0', label: 'รายงานซื้อสินค้าและตั้งหนี้', category: 'PURCHASE', isSensitive: true, periodMode: 'DATE_RANGE' },
   { reportKey: 'gross_profit_by_product', version: '1.0.0', label: 'กำไรขั้นต้นตามสินค้า', category: 'GROSS_PROFIT', isSensitive: true, periodMode: 'DATE_RANGE' },
   { reportKey: 'gross_profit_by_ar_customer', version: '1.0.0', label: 'กำไรขั้นต้นตามลูกหนี้', category: 'GROSS_PROFIT', isSensitive: true, periodMode: 'DATE_RANGE' },

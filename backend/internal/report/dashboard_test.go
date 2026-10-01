@@ -91,7 +91,7 @@ func TestBuildDashboardCoversEveryApprovedReport(t *testing.T) {
 				if metric.Key == "" || metric.Label == "" || metric.Unit == "" || metric.Value == "" {
 					t.Fatalf("invalid KPI = %+v", metric)
 				}
-				if key == StockReorder || key == ARAging || key == CustomerRFM {
+				if key == StockReorder || key == ARAging || key == CustomerRFM || key == PurchaseFrequency {
 					if metric.Comparison.Availability != ComparisonUnavailable || metric.Comparison.PreviousValue != "" {
 						t.Fatalf("unsupported comparison leaked for KPI = %+v", metric)
 					}
@@ -233,6 +233,9 @@ func dashboardFixture(key Key) (map[string][]map[string]string, map[string][]map
 	case ARCustomerMovement:
 		return map[string][]map[string]string{"rows": {{"cust_code": "C1", "cust_name": "ลูกค้า 1", "doc_sort": "1", "amount": "300.00"}, {"cust_code": "C1", "cust_name": "ลูกค้า 1", "doc_sort": "2", "amount": "100.00"}}},
 			map[string][]map[string]string{"rows": {{"cust_code": "C1", "cust_name": "ลูกค้า 1", "doc_sort": "1", "amount": "150.00"}}}
+	case PurchaseFrequency:
+		rows := frequencyDetailFixture()
+		return map[string][]map[string]string{"rows": rows}, map[string][]map[string]string{"rows": rows}
 	case CustomerRFM:
 		rows := rfmDetailFixture()
 		return map[string][]map[string]string{"rows": rows}, map[string][]map[string]string{"rows": rows}

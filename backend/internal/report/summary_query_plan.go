@@ -22,6 +22,8 @@ func buildSummaryQueryPlan(key Key, period Period) (QueryPlan, error) {
 		}
 	case CustomerRFM:
 		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: customerRFMSummarySQL, Args: dateRangeArgs}}}
+	case PurchaseFrequency:
+		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: purchaseFrequencySummarySQL, Args: dateRangeArgs}}}
 	case PurchaseGoodsPayables:
 		plan.Steps = []QueryStep{{Name: "headers", Query: Query{SQL: summaryDocumentTrendSQL(purchaseHeaderSQL, period, true), Args: dateRangeArgs}}}
 	case GrossProfitByProduct:

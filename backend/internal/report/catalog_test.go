@@ -10,6 +10,7 @@ func TestCatalogKeepsStableReportContract(t *testing.T) {
 	want := []Key{
 		SalesGoodsServices,
 		CustomerRFM,
+		PurchaseFrequency,
 		PurchaseGoodsPayables,
 		GrossProfitByProduct,
 		GrossProfitByARCustomer,

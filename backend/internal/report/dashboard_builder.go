@@ -68,7 +68,7 @@ func BuildDashboard(key Key, period, comparisonPeriod Period, currentSteps, prev
 // ComparisonSupported prevents unlike time windows and current-only reports
 // from being presented as historical comparisons.
 func ComparisonSupported(key Key, period Period) bool {
-	if _, ok := DefinitionFor(key); !ok || key == StockReorder || key == ARAging || key == CustomerRFM || period.Preset == TodayToNow {
+	if _, ok := DefinitionFor(key); !ok || key == StockReorder || key == ARAging || key == CustomerRFM || key == PurchaseFrequency || period.Preset == TodayToNow {
 		return false
 	}
 	if period.Preset == AsOfRun {
@@ -166,6 +166,13 @@ func buildDashboardMetrics(key Key, current, previous SummaryResult, currentStep
 		}, nil
 	case StockReorder:
 		return []dashboardMetricInput{metric("reorder_item_count", "สินค้าที่ต้องสั่ง", UnitCount), metric("shortage_qty", "จำนวนขาดรวม", UnitQuantity)}, nil
+	case PurchaseFrequency:
+		return []dashboardMetricInput{
+			metric("customer_count", "ลูกค้าที่ซื้อซ้ำ", UnitCount), metric("average_gap_days", "รอบซื้อเฉลี่ย (วัน)", UnitQuantity),
+			metric("overdue_count", "ลูกค้าเงียบเกินรอบมาก", UnitCount), metric("overdue_amount", "ยอดที่เคยซื้อของลูกค้าที่เงียบ", UnitTHB),
+			metric("late_count", "ลูกค้าช้ากว่ารอบ", UnitCount),
+			metric("single_count", "ซื้อครั้งเดียว", UnitCount),
+		}, nil
 	case CustomerRFM:
 		return []dashboardMetricInput{
 			metric("customer_count", "ลูกค้าที่ซื้อ", UnitCount), metric("total_amount", "ยอดซื้อสุทธิรวม", UnitTHB),
@@ -282,6 +289,8 @@ func buildDashboardVisualizations(key Key, period, comparisonPeriod Period, curr
 	case StockReorder:
 		reorder, err := buildReorderExceptions(currentSteps["rows"])
 		return compactVisualizations(reorder), err
+	case PurchaseFrequency:
+		return buildFrequencyVisualizations(currentSteps)
 	case CustomerRFM:
 		return buildRFMVisualizations(currentSteps)
 	case ARAging:

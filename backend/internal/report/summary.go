@@ -123,6 +123,15 @@ func Summarize(key Key, steps map[string][]map[string]string) (SummaryResult, er
 			}
 		}
 		result.Metrics["shortage_qty"] = shortage.FloatString(4)
+	case PurchaseFrequency:
+		totals, frequencyErr := frequencyTotalsFromSteps(steps)
+		if frequencyErr != nil {
+			return SummaryResult{}, frequencyErr
+		}
+		for name, value := range totals.metrics() {
+			result.Metrics[name] = value
+		}
+		result.RowCount = totals.rows
 	case CustomerRFM:
 		totals, rfmErr := rfmTotalsFromSteps(steps)
 		if rfmErr != nil {

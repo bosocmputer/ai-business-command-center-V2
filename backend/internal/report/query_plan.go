@@ -94,6 +94,8 @@ func detailQueryTemplates(key Key) []string {
 		return []string{salesHeaderSQL, salesDetailSQL}
 	case CustomerRFM:
 		return []string{customerRFMSQL}
+	case PurchaseFrequency:
+		return []string{purchaseFrequencySQL}
 	case PurchaseGoodsPayables:
 		return []string{purchaseHeaderSQL, purchaseDetailSQL}
 	case GrossProfitByProduct:
@@ -146,6 +148,8 @@ func BuildQueryPlanForProjection(key Key, period Period, projection ResultKind) 
 		}
 	case CustomerRFM:
 		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: customerRFMSQL, Args: dateRangeArgs}}}
+	case PurchaseFrequency:
+		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: purchaseFrequencySQL, Args: dateRangeArgs}}}
 	case PurchaseGoodsPayables:
 		plan.Steps = []QueryStep{
 			{Name: "headers", Query: Query{SQL: purchaseHeaderSQL, Args: dateRangeArgs}},

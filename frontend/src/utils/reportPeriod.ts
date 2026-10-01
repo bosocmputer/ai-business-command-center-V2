@@ -27,6 +27,7 @@ const reportPeriodModes: Record<ReportKey, ReportPeriodMode> = {
   ar_customer_movement: 'AS_OF_DATE',
   ar_aging: 'AS_OF_DATE',
   customer_rfm: 'DATE_RANGE',
+  purchase_frequency: 'DATE_RANGE',
   ar_debt_receipt: 'DATE_RANGE',
   cash_bank_receipts: 'DATE_RANGE',
   cash_bank_payments: 'DATE_RANGE'
