@@ -171,3 +171,23 @@ func TestAgingIsHeavyUnchunkedAndHasNoComparison(t *testing.T) {
 		t.Fatal("aging as of a date has no meaningful previous period")
 	}
 }
+
+// Aging and the receivable movement report must count the same document types,
+// or their totals drift apart on a shop that uses the rarer ones. Each rule is
+// written the same way in both queries.
+func TestAgingCountsTheSameDocumentTypesAsMovement(t *testing.T) {
+	for _, rule := range []string{
+		"t.trans_flag in (44, 250) and t.inquiry_type in (0, 2)",
+		"t.trans_flag = 48 and t.inquiry_type in (0, 2, 4)",
+		"t.trans_flag = 262 and t.inquiry_type not in (1, 3)",
+		"t.trans_flag in (93, 99, 95, 101, 254, 418)",
+		"t.trans_flag in (97, 103)",
+	} {
+		if !strings.Contains(arAgingBaseSQL, rule) {
+			t.Errorf("aging lost %q", rule)
+		}
+		if !strings.Contains(arCustomerMovementSQL, rule) {
+			t.Errorf("movement no longer has %q, so aging and movement may disagree", rule)
+		}
+	}
+}

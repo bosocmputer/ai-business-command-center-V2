@@ -13,6 +13,12 @@ import (
 // in its own bucket and is never aged from its document date, as decided by the
 // shop owner. See docs/sml/numbers-dictionary.md.
 //
+// The documents counted are the same ic_trans document types the receivable
+// movement report counts, so the two reports agree on a shop. The one type of
+// movement left out is fixed-asset receipts (as_trans code 1802): they live in
+// another table whose due date and payment matching have not been checked on any
+// shop, and the pilot shop has none.
+//
 // The query is not chunked: balances need every payment of a document, so a
 // chunk key would have to be a customer and no merge has been written. The first
 // shop measured it in under a second for 674 open documents. If a shop ever fails
@@ -66,7 +72,7 @@ open_docs as (
     ), 0) as paid_amount
   from ic_trans t
   where coalesce(t.last_status, 0) = 0 and t.doc_date <= $1::date and coalesce(t.cust_code, '') <> ''
-    and ((t.trans_flag = 44 and t.inquiry_type in (0, 2)) or t.trans_flag in (46, 93, 99, 95, 101))
+    and ((t.trans_flag in (44, 250) and t.inquiry_type in (0, 2)) or t.trans_flag in (46) or t.trans_flag in (93, 99, 95, 101, 254, 418))
   union all
   select t.cust_code, t.doc_no, t.doc_date, t.due_date, t.trans_flag as doc_type_code,
     -1 as direction, coalesce(t.total_amount, 0) as amount,
@@ -77,7 +83,7 @@ open_docs as (
     ), 0) as paid_amount
   from ic_trans t
   where coalesce(t.last_status, 0) = 0 and t.doc_date <= $1::date and coalesce(t.cust_code, '') <> ''
-    and ((t.trans_flag = 48 and t.inquiry_type in (0, 2, 4)) or t.trans_flag in (97, 103))
+    and ((t.trans_flag = 48 and t.inquiry_type in (0, 2, 4)) or t.trans_flag in (97, 103) or (t.trans_flag = 262 and t.inquiry_type not in (1, 3)))
 ),
 aged as (
   select d.cust_code, d.doc_no, d.doc_date, d.due_date, d.doc_type_code, d.direction * d.amount as amount, d.paid_amount,
