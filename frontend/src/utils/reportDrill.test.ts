@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReportDrillLink } from '@/api';
-import { drillAnchors, drillQuery, drillRequestFromQuery, drillValueOf, withoutDrillQuery } from './reportDrill';
+import { drillAnchors, drillPeriodFor, drillQuery, drillRequestFromQuery, drillValueOf, withoutDrillQuery } from './reportDrill';
 
 const link = (column: string, targetReport: ReportDrillLink['targetReport']): ReportDrillLink => ({ column, labelColumn: 'cust_name', kind: 'CUSTOMER', targetReport, targetColumn: 'cust_code' });
 
@@ -55,5 +55,50 @@ describe('report drill-down', () => {
 
   it('removes only the drill keys from the address', () => {
     expect(withoutDrillQuery({ drillColumn: 'cust_code', drillValue: 'C1', drillFrom: 'ar_aging', runId: 'abc' })).toEqual({ runId: 'abc' });
+  });
+
+  describe('the period a drill opens the target for', () => {
+    const now = new Date('2026-10-01T05:00:00Z');
+    const customer = link('cust_code', 'sales_goods_services');
+    const document: ReportDrillLink = { column: 'doc_no', dateColumn: 'doc_date', kind: 'DOCUMENT', targetReport: 'sales_goods_services', targetColumn: 'doc_no' };
+
+    it('opens a date-range target for the document\'s own day', () => {
+      expect(drillPeriodFor(document, 'DATE_RANGE', 'AS_OF_DATE', { dateFrom: '2026-10-01', dateTo: '2026-10-01' }, { doc_date: '2022-03-11' }, now)).toEqual({ dateFrom: '2022-03-11', dateTo: '2022-03-11' });
+    });
+
+    it('leaves an as-of target alone for a document, and ignores a missing or future document date', () => {
+      expect(drillPeriodFor({ ...document, targetReport: 'ar_customer_movement' }, 'AS_OF_DATE', 'AS_OF_DATE', undefined, { doc_date: '2022-03-11' }, now)).toBeUndefined();
+      expect(drillPeriodFor(document, 'DATE_RANGE', 'AS_OF_DATE', undefined, {}, now)).toBeUndefined();
+      expect(drillPeriodFor(document, 'DATE_RANGE', 'AS_OF_DATE', undefined, { doc_date: '2027-01-01' }, now)).toBeUndefined();
+    });
+
+    it('hands a date-range source\'s range to a date-range target and its last day to an as-of target', () => {
+      const source = { dateFrom: '2026-04-03', dateTo: '2026-09-30' };
+      expect(drillPeriodFor(customer, 'DATE_RANGE', 'DATE_RANGE', source, {}, now)).toEqual(source);
+      expect(drillPeriodFor(link('cust_code', 'ar_aging'), 'AS_OF_DATE', 'DATE_RANGE', source, {}, now)).toEqual({ dateFrom: '2026-09-30', dateTo: '2026-09-30' });
+    });
+
+    it('opens a date-range target for the 90 days up to an as-of source\'s date', () => {
+      expect(drillPeriodFor(customer, 'DATE_RANGE', 'AS_OF_DATE', { dateFrom: '2026-10-01', dateTo: '2026-10-01' }, {}, now)).toEqual({ dateFrom: '2026-07-04', dateTo: '2026-10-01' });
+    });
+
+    it('leaves the selection alone when the target has no period or the source has none to give', () => {
+      expect(drillPeriodFor(customer, 'CURRENT_ONLY', 'DATE_RANGE', { dateFrom: '2026-04-03', dateTo: '2026-09-30' }, {}, now)).toBeUndefined();
+      expect(drillPeriodFor(customer, undefined, 'DATE_RANGE', { dateFrom: '2026-04-03', dateTo: '2026-09-30' }, {}, now)).toBeUndefined();
+      expect(drillPeriodFor(customer, 'DATE_RANGE', 'DATE_RANGE', undefined, {}, now)).toBeUndefined();
+      expect(drillPeriodFor(customer, 'AS_OF_DATE', 'AS_OF_DATE', { dateFrom: '2026-10-01', dateTo: '2026-10-01' }, {}, now)).toBeUndefined();
+    });
+
+    it('carries the period through the address and drops one that is malformed', () => {
+      const period = { dateFrom: '2026-04-03', dateTo: '2026-09-30' };
+      const query = drillQuery(customer, 'C001', 'customer_rfm', period);
+      expect(drillRequestFromQuery(query, new Set(['cust_code']))).toEqual({ column: 'cust_code', value: 'C001', from: 'customer_rfm', ...period });
+      const columns = new Set(['cust_code']);
+      expect(drillRequestFromQuery({ ...query, drillDateTo: '2026-02-30' }, columns)?.dateFrom).toBeUndefined();
+      expect(drillRequestFromQuery({ ...query, drillDateFrom: '2026-10-01', drillDateTo: '2026-09-30' }, columns)?.dateFrom).toBeUndefined();
+      expect(drillRequestFromQuery({ ...query, drillDateFrom: '2024-01-01' }, columns)?.dateFrom).toBeUndefined();
+      expect(drillRequestFromQuery({ drillColumn: 'cust_code', drillValue: 'C1', drillDateFrom: '2026-04-03' }, columns)?.dateFrom).toBeUndefined();
+      expect(Object.keys(withoutDrillQuery({ ...query, runId: 'r' }))).toEqual(['runId']);
+    });
   });
 });

@@ -40,6 +40,12 @@ func TestEveryDrillLinkPointsAtRealIdentifierColumns(t *testing.T) {
 			if link.Kind != report.DrillDocument && link.LabelColumn == "" {
 				t.Errorf("%s -> %s: a customer or item link needs the name column it is offered from", source, link.TargetReport)
 			}
+			if link.DateColumn != "" && reportRowFilterColumns[source][link.DateColumn] != rowColumnDate {
+				t.Errorf("%s: date column %s is not a date column of the source report", source, link.DateColumn)
+			}
+			if link.Kind == report.DrillDocument && link.DateColumn == "" {
+				t.Errorf("%s -> %s: a document link needs the date column so the target opens for a period that contains the document", source, link.TargetReport)
+			}
 			switch link.Kind {
 			case report.DrillCustomer, report.DrillItem, report.DrillDocument:
 			default:

@@ -1618,6 +1618,8 @@ export interface components {
             targetColumn: string;
             /** @description The name column shown for the same customer or item, used to offer the link when the identifier column is hidden. */
             labelColumn?: string;
+            /** @description For a document link, the date column of the source row; the target report is opened for that day. */
+            dateColumn?: string;
         };
         AdminReportDefinition: {
             reportKey: components["schemas"]["ReportKey"];

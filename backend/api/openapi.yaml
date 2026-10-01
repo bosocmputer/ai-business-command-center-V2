@@ -1922,6 +1922,10 @@ components:
           type: string
           pattern: '^[a-z][a-z0-9_]*$'
           description: The name column shown for the same customer or item, used to offer the link when the identifier column is hidden.
+        dateColumn:
+          type: string
+          pattern: '^[a-z][a-z0-9_]*$'
+          description: For a document link, the date column of the source row; the target report is opened for that day.
     AdminReportDefinition:
       type: object
       required: [reportKey, version, label, category, categoryLabel, status, periodMode]

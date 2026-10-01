@@ -13,11 +13,11 @@ import { newIdempotencyKey } from '@/api/client';
 import { useViewerSession } from '@/stores/viewer';
 import { comparisonPeriodText, formatDashboardValue, formatPeriodRange, periodLabel } from '@/utils/dashboard';
 import { errorMessage, formatDateTime, formatSourceCollection } from '@/utils/format';
-import { periodModeForReport, selectionForMode, selectionFromReportPeriod, selectionToRunInput, type ReportPeriodSelection } from '@/utils/reportPeriod';
+import { periodModeForReport, selectionForMode, selectionFromReportPeriod, selectionToRunInput, validatePeriodSelection, type ReportPeriodSelection } from '@/utils/reportPeriod';
 import { formatReportCell, presentationFor, reportColumnClass, visibleReportColumns, type ReportColumnDefinition } from '@/utils/reportPresentation';
 import { cleanViewerQuery, validSnapshotRunId, validViewerRunId } from '@/utils/viewerSnapshot';
 import { freshnessPresentation, progressPresentation, typicalDurationText } from '@/utils/freshness';
-import { drillAnchors, drillQuery, drillRequestFromQuery, drillValueOf, withoutDrillQuery, type DrillRequest } from '@/utils/reportDrill';
+import { drillAnchors, drillPeriodFor, drillQuery, drillRequestFromQuery, drillValueOf, withoutDrillQuery, type DrillRequest } from '@/utils/reportDrill';
 
 const route = useRoute();
 const router = useRouter();
@@ -132,14 +132,17 @@ function drillValue(columnKey: string, row: Record<string, unknown>): string | u
   return anchor ? drillValueOf(row[anchor.valueColumn]) : undefined;
 }
 
-function openDrillMenu(event: Event, columnKey: string, value: string) {
+function openDrillMenu(event: Event, columnKey: string, value: string, row: Record<string, unknown>) {
   const links = drillAnchorMap.value.get(columnKey)?.links ?? [];
   drillMenuItems.value = [{
     label: value,
     items: links.map((link) => ({
       label: reportDefinitionByKey.get(link.targetReport)?.label ?? link.targetReport,
       icon: 'pi pi-external-link',
-      command: () => { void router.push({ name: 'viewer-report', params: { tenantId: tenantId.value, reportKey: link.targetReport }, query: drillQuery(link, value, reportKey.value) }); }
+      command: () => {
+        const period = drillPeriodFor(link, reportDefinitionByKey.get(link.targetReport)?.periodMode, periodMode.value, dashboard.value?.period, row);
+        void router.push({ name: 'viewer-report', params: { tenantId: tenantId.value, reportKey: link.targetReport }, query: drillQuery(link, value, reportKey.value, period) });
+      }
     }))
   }];
   drillMenu.value?.toggle(event);
@@ -167,6 +170,10 @@ async function resolveSnapshot(selection: ReportPeriodSelection) {
   const selectedReportKey = reportKey.value;
   initializeController?.abort('new-period'); initializeController = new AbortController(); stopPolling(); resetRows();
   loading.value = !dashboard.value; cacheLoading.value = true; backgroundRefreshing.value = false; error.value = '';
+  // A drill-down is an explicit request for one customer, item or document, so
+  // when the target has no usable snapshot for the period it is fetched at once
+  // instead of asking the viewer to press the refresh button.
+  let fetchFresh = false;
   try {
     const snapshot = await viewerApi.exactSnapshot(selectedTenantId, selectedReportKey, payload, initializeController.signal);
     if (!isCurrent(context, selectedTenantId, selectedReportKey)) return;
@@ -176,6 +183,7 @@ async function resolveSnapshot(selection: ReportPeriodSelection) {
     if (snapshot.freshnessStatus === 'EXPIRED') {
       expiredSnapshot.value = snapshot;
       dashboard.value = undefined; cachedSnapshot.value = undefined; run.value = undefined;
+      fetchFresh = true;
     } else {
       applyCachedSnapshot(snapshot);
       try { run.value = await viewerApi.run(selectedTenantId, selectedReportKey, snapshot.runId, initializeController.signal); }
@@ -186,6 +194,7 @@ async function resolveSnapshot(selection: ReportPeriodSelection) {
     if (!isCancelled(cause) && isCurrent(context, selectedTenantId, selectedReportKey)) {
       selectedPeriod.value = { ...selection }; setPeriodSelection(selectedTenantId, selection);
       if (cause instanceof ApiError && cause.status === 404) {
+        fetchFresh = true;
         error.value = 'ยังไม่มี Snapshot สำหรับช่วงนี้ หากต้องการข้อมูลใหม่ให้กด “ดึงใหม่จาก SML”';
       } else error.value = errorMessage(cause);
     }
@@ -193,6 +202,7 @@ async function resolveSnapshot(selection: ReportPeriodSelection) {
   } finally {
     if (isCurrent(context, selectedTenantId, selectedReportKey)) cacheLoading.value = false;
   }
+  if (fetchFresh && drillRequest.value && isCurrent(context, selectedTenantId, selectedReportKey)) void startRun(selection);
 }
 
 function applyCachedSnapshot(snapshot: DashboardSnapshot) {
@@ -563,6 +573,10 @@ async function initialize() {
     }
     selectedPeriod.value = selectionForMode(periodMode.value, periodSelection(selectedTenantId));
     drillRequest.value = drillRequestFromQuery(route.query, drillAcceptedColumns.value);
+    const drillSelection = drillRequest.value?.dateFrom && drillRequest.value.dateTo
+      ? selectionFromReportPeriod(periodMode.value, { preset: 'CUSTOM', dateFrom: drillRequest.value.dateFrom, dateTo: drillRequest.value.dateTo })
+      : undefined;
+    if (drillSelection && periodMode.value !== 'CURRENT_ONLY' && validatePeriodSelection(drillSelection).valid) selectedPeriod.value = drillSelection;
     if (route.query.snapshotRunId !== undefined && !snapshotRunId.value) {
       error.value = 'ลิงก์ Snapshot ไม่ถูกต้อง กรุณาเปิดจากข้อความ LINE อีกครั้ง'; loading.value = false; return;
     }
@@ -631,8 +645,8 @@ onBeforeUnmount(() => { document.removeEventListener('visibilitychange', handleV
             <small v-if="rowFilterError" class="block text-red-600 mt-2" role="alert">{{ rowFilterError }}</small>
             <small class="block text-muted-color mt-2">การกรองและเปลี่ยนหน้าอ่านจาก Snapshot ที่บันทึกไว้เท่านั้น ไม่ดึงข้อมูลใหม่จาก SML</small>
             <Message v-if="drillActive" severity="info" :closable="false" class="mt-3"><div class="flex flex-wrap items-center justify-between gap-3"><span>กำลังดูเฉพาะ {{ drillActiveLabel }}</span><Button label="ดูทั้งหมด" icon="pi pi-filter-slash" text size="small" @click="clearRowFilter" /></div></Message>
-            <div class="hidden md:block mt-4"><DataTable v-model:filters="rowPrimeFilters" :value="rows" :loading="loadingRows" data-key="__rowKey" lazy paginator :first="rowPage * rowPageSize" :rows="rowPageSize" :total-records="rowTotal" :rows-per-page-options="[25, 50, 100]" filter-display="menu" row-hover show-gridlines scrollable striped-rows current-page-report-template="หน้า {currentPage} จาก {totalPages} · ทั้งหมด {totalRecords} รายการ" paginator-template="RowsPerPageDropdown FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport" @page="changeRowsPage" @filter="applyRowFilters"><template #header><SakaiTableHeader v-model:global-search="rowGlobalSearch" :loading="loadingRows" :has-filters="rowHasFilters" mobile-filters @clear="clearRowFilter" @open-mobile-filters="openMobileRowFilters" /></template><Column v-for="column in displayedColumns" :key="column.key" :field="column.key" :header="column.label" :frozen="column.frozen" align-frozen="left" :header-class="reportColumnClass(column)" :body-class="reportColumnClass(column)" :show-filter-menu="rowCapabilityByKey.has(column.key)" :show-filter-match-modes="false"><template #body="{ data }"><Button v-if="drillValue(column.key, data)" :label="formatReportCell(data[column.key], column)" icon="pi pi-external-link" icon-pos="right" link size="small" class="drill-cell safe-wrap" :aria-label="`เปิดข้อมูลของ ${formatReportCell(data[column.key], column)} ในรายงานอื่น`" @click="openDrillMenu($event, column.key, drillValue(column.key, data)!)" /><span v-else class="safe-wrap" :class="{ 'metric-value': column.dataType === 'NUMBER' }">{{ formatReportCell(data[column.key], column) }}</span></template><template v-if="rowCapabilityByKey.has(column.key)" #filter="{ filterModel }"><DatePicker v-if="rowCapabilityByKey.get(column.key)?.dataType === 'DATE'" v-model="filterModel.value" selection-mode="range" date-format="dd/mm/yy" placeholder="เลือกช่วงวันที่" /><div v-else class="grid gap-2"><Select v-model="rowFilterOperators[column.key]" :options="rowOperatorOptions(rowCapabilityByKey.get(column.key)!)" option-label="label" option-value="value" aria-label="เงื่อนไขตัวกรอง" /><InputText v-model="filterModel.value" :placeholder="rowCapabilityByKey.get(column.key)?.dataType === 'NUMBER' ? 'กรอกตัวเลข' : 'กรอกคำค้นหา'" /></div></template></Column><template #empty><div class="py-8 text-center text-muted-color">{{ loadingRows ? 'กำลังโหลดข้อมูล' : 'ไม่พบข้อมูลที่ตรงกับตัวกรอง' }} <Button v-if="rowHasFilters" label="ล้างตัวกรอง" text size="small" @click="clearRowFilter" /></div></template></DataTable></div>
-            <div class="md:hidden grid gap-3 mt-4" aria-label="รายละเอียดรายงานแบบมือถือ"><article v-for="row in rows" :key="String(row.__rowKey)" class="mobile-row"><div v-for="column in mobileColumns(row)" :key="column.key" class="flex items-start justify-between gap-4"><span class="text-xs text-muted-color safe-wrap">{{ column.label }}</span><strong class="text-sm safe-wrap" :class="column.dataType === 'NUMBER' ? 'text-right metric-value' : 'text-left'">{{ formatReportCell(row[column.key], column) }}</strong><Button v-if="drillValue(column.key, row)" icon="pi pi-external-link" text rounded size="small" class="touch-action" :aria-label="`เปิดข้อมูลของ ${formatReportCell(row[column.key], column)} ในรายงานอื่น`" @click="openDrillMenu($event, column.key, drillValue(column.key, row)!)" /></div><Button v-if="displayedColumns.length > mobileSummaryColumns.length" :label="expandedMobileRows.has(String(row.__rowKey)) ? 'แสดงน้อยลง' : 'ดูรายละเอียดเพิ่ม'" :icon="expandedMobileRows.has(String(row.__rowKey)) ? 'pi pi-angle-up' : 'pi pi-angle-down'" text size="small" class="justify-self-start" @click="toggleMobileRow(row)" /></article><div v-if="!loadingRows && !rows.length" class="py-8 text-center text-muted-color">ไม่พบข้อมูลที่ตรงกับตัวกรอง</div></div>
+            <div class="hidden md:block mt-4"><DataTable v-model:filters="rowPrimeFilters" :value="rows" :loading="loadingRows" data-key="__rowKey" lazy paginator :first="rowPage * rowPageSize" :rows="rowPageSize" :total-records="rowTotal" :rows-per-page-options="[25, 50, 100]" filter-display="menu" row-hover show-gridlines scrollable striped-rows current-page-report-template="หน้า {currentPage} จาก {totalPages} · ทั้งหมด {totalRecords} รายการ" paginator-template="RowsPerPageDropdown FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport" @page="changeRowsPage" @filter="applyRowFilters"><template #header><SakaiTableHeader v-model:global-search="rowGlobalSearch" :loading="loadingRows" :has-filters="rowHasFilters" mobile-filters @clear="clearRowFilter" @open-mobile-filters="openMobileRowFilters" /></template><Column v-for="column in displayedColumns" :key="column.key" :field="column.key" :header="column.label" :frozen="column.frozen" align-frozen="left" :header-class="reportColumnClass(column)" :body-class="reportColumnClass(column)" :show-filter-menu="rowCapabilityByKey.has(column.key)" :show-filter-match-modes="false"><template #body="{ data }"><Button v-if="drillValue(column.key, data)" :label="formatReportCell(data[column.key], column)" icon="pi pi-external-link" icon-pos="right" link size="small" class="drill-cell safe-wrap" :aria-label="`เปิดข้อมูลของ ${formatReportCell(data[column.key], column)} ในรายงานอื่น`" @click="openDrillMenu($event, column.key, drillValue(column.key, data)!, data)" /><span v-else class="safe-wrap" :class="{ 'metric-value': column.dataType === 'NUMBER' }">{{ formatReportCell(data[column.key], column) }}</span></template><template v-if="rowCapabilityByKey.has(column.key)" #filter="{ filterModel }"><DatePicker v-if="rowCapabilityByKey.get(column.key)?.dataType === 'DATE'" v-model="filterModel.value" selection-mode="range" date-format="dd/mm/yy" placeholder="เลือกช่วงวันที่" /><div v-else class="grid gap-2"><Select v-model="rowFilterOperators[column.key]" :options="rowOperatorOptions(rowCapabilityByKey.get(column.key)!)" option-label="label" option-value="value" aria-label="เงื่อนไขตัวกรอง" /><InputText v-model="filterModel.value" :placeholder="rowCapabilityByKey.get(column.key)?.dataType === 'NUMBER' ? 'กรอกตัวเลข' : 'กรอกคำค้นหา'" /></div></template></Column><template #empty><div class="py-8 text-center text-muted-color">{{ loadingRows ? 'กำลังโหลดข้อมูล' : 'ไม่พบข้อมูลที่ตรงกับตัวกรอง' }} <Button v-if="rowHasFilters" label="ล้างตัวกรอง" text size="small" @click="clearRowFilter" /></div></template></DataTable></div>
+            <div class="md:hidden grid gap-3 mt-4" aria-label="รายละเอียดรายงานแบบมือถือ"><article v-for="row in rows" :key="String(row.__rowKey)" class="mobile-row"><div v-for="column in mobileColumns(row)" :key="column.key" class="flex items-start justify-between gap-4"><span class="text-xs text-muted-color safe-wrap">{{ column.label }}</span><strong class="text-sm safe-wrap" :class="column.dataType === 'NUMBER' ? 'text-right metric-value' : 'text-left'">{{ formatReportCell(row[column.key], column) }}</strong><Button v-if="drillValue(column.key, row)" icon="pi pi-external-link" text rounded size="small" class="touch-action" :aria-label="`เปิดข้อมูลของ ${formatReportCell(row[column.key], column)} ในรายงานอื่น`" @click="openDrillMenu($event, column.key, drillValue(column.key, row)!, row)" /></div><Button v-if="displayedColumns.length > mobileSummaryColumns.length" :label="expandedMobileRows.has(String(row.__rowKey)) ? 'แสดงน้อยลง' : 'ดูรายละเอียดเพิ่ม'" :icon="expandedMobileRows.has(String(row.__rowKey)) ? 'pi pi-angle-up' : 'pi pi-angle-down'" text size="small" class="justify-self-start" @click="toggleMobileRow(row)" /></article><div v-if="!loadingRows && !rows.length" class="py-8 text-center text-muted-color">ไม่พบข้อมูลที่ตรงกับตัวกรอง</div></div>
             <div class="md:hidden mt-3"><SakaiTableHeader v-model:global-search="rowGlobalSearch" :loading="loadingRows" :has-filters="rowHasFilters" mobile-filters @clear="clearRowFilter" @open-mobile-filters="openMobileRowFilters" /><Paginator :first="rowPage * rowPageSize" :rows="rowPageSize" :total-records="rowTotal" :rows-per-page-options="[25, 50, 100]" template="RowsPerPageDropdown PrevPageLink CurrentPageReport NextPageLink" current-page-report-template="หน้า {currentPage} จาก {totalPages} · ทั้งหมด {totalRecords} รายการ" @page="changeRowsPage" /></div>
           </div>
         </template>

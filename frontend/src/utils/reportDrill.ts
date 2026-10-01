@@ -1,4 +1,5 @@
 import type { ReportDrillLink, ReportKey } from '@/api';
+import { bangkokToday, type ReportPeriodMode } from '@/utils/reportPeriod';
 
 // A drill-down opens another report filtered to one customer, item or document.
 // The filter travels in the address as drillColumn and drillValue, so the link
@@ -7,6 +8,8 @@ import type { ReportDrillLink, ReportKey } from '@/api';
 export const drillColumnQueryKey = 'drillColumn';
 export const drillValueQueryKey = 'drillValue';
 export const drillFromQueryKey = 'drillFrom';
+export const drillDateFromQueryKey = 'drillDateFrom';
+export const drillDateToQueryKey = 'drillDateTo';
 
 const columnPattern = /^[a-z][a-z0-9_]*$/;
 const maximumValueLength = 160;
@@ -15,6 +18,58 @@ export interface DrillRequest {
   column: string;
   value: string;
   from?: ReportKey;
+  // The period the target should open for, when the source knows one that makes
+  // sense. Without it a drill into a date-range report would open for whatever
+  // period was last selected, which may not contain the customer or document.
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export interface DrillPeriod {
+  dateFrom: string;
+  dateTo: string;
+}
+
+const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
+const defaultLookbackDays = 90;
+
+function shiftDays(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function validDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !dateOnlyPattern.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+// drillPeriodFor chooses the period the target report should open for, or
+// undefined to leave the viewer's own selection alone:
+//   - a document link opens a date-range target for the document's own day;
+//   - a date-range source hands its range to a date-range target, and its last day
+//     to an as-of target;
+//   - an as-of source opens a date-range target for the 90 days up to that date.
+export function drillPeriodFor(
+  link: ReportDrillLink,
+  targetMode: ReportPeriodMode | undefined,
+  sourceMode: ReportPeriodMode,
+  sourcePeriod: { dateFrom: string; dateTo: string } | undefined,
+  row: Record<string, unknown>,
+  now = new Date()
+): DrillPeriod | undefined {
+  if (targetMode !== 'DATE_RANGE' && targetMode !== 'AS_OF_DATE') return undefined;
+  if (link.dateColumn) {
+    const day = row[link.dateColumn];
+    return targetMode === 'DATE_RANGE' && validDate(day) && day <= bangkokToday(now) ? { dateFrom: day, dateTo: day } : undefined;
+  }
+  if (!sourcePeriod || !validDate(sourcePeriod.dateFrom) || !validDate(sourcePeriod.dateTo)) return undefined;
+  if (sourceMode === 'DATE_RANGE') {
+    return targetMode === 'DATE_RANGE' ? { dateFrom: sourcePeriod.dateFrom, dateTo: sourcePeriod.dateTo } : { dateFrom: sourcePeriod.dateTo, dateTo: sourcePeriod.dateTo };
+  }
+  if (sourceMode === 'AS_OF_DATE' && targetMode === 'DATE_RANGE') return { dateFrom: shiftDays(sourcePeriod.dateTo, -(defaultLookbackDays - 1)), dateTo: sourcePeriod.dateTo };
+  return undefined;
 }
 
 // DrillAnchor is a column on screen that a viewer can open other reports from.
@@ -49,8 +104,10 @@ export function drillValueOf(cell: unknown): string | undefined {
   return value && value.length <= maximumValueLength ? value : undefined;
 }
 
-export function drillQuery(link: ReportDrillLink, value: string, from: ReportKey): Record<string, string> {
-  return { [drillColumnQueryKey]: link.targetColumn, [drillValueQueryKey]: value, [drillFromQueryKey]: from };
+export function drillQuery(link: ReportDrillLink, value: string, from: ReportKey, period?: DrillPeriod): Record<string, string> {
+  const query: Record<string, string> = { [drillColumnQueryKey]: link.targetColumn, [drillValueQueryKey]: value, [drillFromQueryKey]: from };
+  if (period) { query[drillDateFromQueryKey] = period.dateFrom; query[drillDateToQueryKey] = period.dateTo; }
+  return query;
 }
 
 // drillRequestFromQuery validates what the address claims. Anything malformed is
@@ -65,7 +122,16 @@ export function drillRequestFromQuery(query: Record<string, unknown>, filterable
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > maximumValueLength) return undefined;
   const from = query[drillFromQueryKey];
-  return { column, value: trimmed, from: typeof from === 'string' ? (from as ReportKey) : undefined };
+  const request: DrillRequest = { column, value: trimmed, from: typeof from === 'string' ? (from as ReportKey) : undefined };
+  const dateFrom = query[drillDateFromQueryKey];
+  const dateTo = query[drillDateToQueryKey];
+  // A period counts only when both ends are real dates in order and within the
+  // 366 days a report may cover; otherwise the viewer's own selection is used.
+  if (validDate(dateFrom) && validDate(dateTo) && dateFrom <= dateTo && (Date.parse(dateTo) - Date.parse(dateFrom)) / 86_400_000 < 366) {
+    request.dateFrom = dateFrom;
+    request.dateTo = dateTo;
+  }
+  return request;
 }
 
 export function withoutDrillQuery(query: Record<string, string | string[]>): Record<string, string | string[]> {
@@ -73,5 +139,7 @@ export function withoutDrillQuery(query: Record<string, string | string[]>): Rec
   delete rest[drillColumnQueryKey];
   delete rest[drillValueQueryKey];
   delete rest[drillFromQueryKey];
+  delete rest[drillDateFromQueryKey];
+  delete rest[drillDateToQueryKey];
   return rest;
 }

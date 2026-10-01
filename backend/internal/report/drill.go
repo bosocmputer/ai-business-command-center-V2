@@ -26,10 +26,18 @@ type DrillLink struct {
 	// the name and keep the code hidden, so the link is offered from whichever of
 	// the two is on screen.
 	LabelColumn string `json:"labelColumn,omitempty"`
+	// DateColumn is the date column of the source row (the document date), for a
+	// document link. The target report is opened for that one day, because a
+	// document is only in the target report's rows for a period that contains it.
+	DateColumn string `json:"dateColumn,omitempty"`
 }
 
 func customerLink(column, label string, target Key) DrillLink {
 	return DrillLink{Column: column, LabelColumn: label, Kind: DrillCustomer, TargetReport: target, TargetColumn: "cust_code"}
+}
+
+func documentLink(column, dateColumn string, target Key) DrillLink {
+	return DrillLink{Column: column, DateColumn: dateColumn, Kind: DrillDocument, TargetReport: target, TargetColumn: "doc_no"}
 }
 
 func itemLink(column, label string, target Key, targetColumn string) DrillLink {
@@ -54,12 +62,11 @@ var drillLinks = map[Key][]DrillLink{
 	ARAging: {
 		customerLink("cust_code", "cust_name", ARCustomerMovement), customerLink("cust_code", "cust_name", ARDebtReceipt),
 		customerLink("cust_code", "cust_name", SalesGoodsServices), customerLink("cust_code", "cust_name", CustomerRFM),
-		{Column: "doc_no", Kind: DrillDocument, TargetReport: ARCustomerMovement, TargetColumn: "doc_no"},
-		{Column: "doc_no", Kind: DrillDocument, TargetReport: SalesGoodsServices, TargetColumn: "doc_no"},
+		documentLink("doc_no", "doc_date", ARCustomerMovement), documentLink("doc_no", "doc_date", SalesGoodsServices),
 	},
 	ARCustomerMovement: {
 		customerLink("cust_code", "cust_name", ARAging), customerLink("cust_code", "cust_name", ARDebtReceipt), customerLink("cust_code", "cust_name", SalesGoodsServices),
-		{Column: "doc_no", Kind: DrillDocument, TargetReport: SalesGoodsServices, TargetColumn: "doc_no"},
+		documentLink("doc_no", "doc_date", SalesGoodsServices),
 	},
 	ARDebtReceipt: {
 		customerLink("cust_code", "cust_name", ARAging), customerLink("cust_code", "cust_name", ARCustomerMovement),

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   replace: vi.fn(async () => undefined),
   push: vi.fn(async () => undefined),
   exactSnapshot: vi.fn(),
+  createRun: vi.fn(),
   run: vi.fn(),
   queryRows: vi.fn(),
   route: { params: { tenantId: 'tenant-1', reportKey: 'ar_aging' }, query: {} as Record<string, string>, path: '/app/tenant/tenant-1/report/ar_aging', hash: '' }
@@ -17,7 +18,7 @@ vi.mock('primevue/useconfirm', () => ({ useConfirm: () => ({ require: vi.fn(), c
 vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: vi.fn() }) }));
 vi.mock('@/api', async () => {
   const actual = await vi.importActual<typeof import('@/api')>('@/api');
-  return { ...actual, viewerApi: { exactSnapshot: mocks.exactSnapshot, run: mocks.run, queryRows: mocks.queryRows } };
+  return { ...actual, viewerApi: { exactSnapshot: mocks.exactSnapshot, run: mocks.run, queryRows: mocks.queryRows, createRun: mocks.createRun } };
 });
 vi.mock('@/stores/viewer', async () => {
   const period = await vi.importActual<typeof import('@/utils/reportPeriod')>('@/utils/reportPeriod');
@@ -33,6 +34,7 @@ vi.mock('@/stores/viewer', async () => {
   };
 });
 
+import { ApiError } from '@/api/client';
 import ViewerReport from './ViewerReport.vue';
 
 const dashboard = { period: { preset: 'AS_OF_RUN', dateFrom: '2026-10-01', dateTo: '2026-10-01' }, kpis: [], visualizations: [], quality: { status: 'OK', warnings: [] }, generatedAt: '2026-10-01T04:00:00Z' };
@@ -139,8 +141,33 @@ describe('ViewerReport drill-down', () => {
     model[0]!.items[0]!.command();
     expect(mocks.push).toHaveBeenCalledWith({
       name: 'viewer-report', params: { tenantId: 'tenant-1', reportKey: 'ar_aging' },
-      query: { drillColumn: 'cust_code', drillValue: 'C001', drillFrom: 'customer_rfm' }
+      // RFM is a date-range report and aging is as-of, so the target opens as of the range's last day.
+      query: { drillColumn: 'cust_code', drillValue: 'C001', drillFrom: 'customer_rfm', drillDateFrom: '2026-09-30', drillDateTo: '2026-09-30' }
     });
     mocks.route.params.reportKey = 'ar_aging';
+  });
+
+  const noSnapshot = () => new ApiError(404, { code: 'NOT_FOUND', message: 'no snapshot', requestId: 'r', retryable: false });
+
+  it('fetches the report at once when a drill finds no snapshot for the period it asked for', async () => {
+    mocks.route.params.reportKey = 'customer_rfm';
+    mocks.route.query = { drillColumn: 'cust_code', drillValue: 'C001', drillFrom: 'ar_aging', drillDateFrom: '2026-07-04', drillDateTo: '2026-10-01' };
+    mocks.exactSnapshot.mockRejectedValueOnce(noSnapshot());
+    mocks.createRun.mockResolvedValue({ ...succeededRun, id: 'run-2', status: 'QUEUED', periodPreset: 'CUSTOM', dateFrom: '2026-07-04', dateTo: '2026-10-01' });
+    mountReport();
+    await flushPromises();
+    expect(mocks.exactSnapshot.mock.calls[0]![2]).toEqual({ periodPreset: 'CUSTOM', dateFrom: '2026-07-04', dateTo: '2026-10-01' });
+    expect(mocks.createRun).toHaveBeenCalledTimes(1);
+    expect(mocks.createRun.mock.calls[0]![2]).toEqual({ periodPreset: 'CUSTOM', dateFrom: '2026-07-04', dateTo: '2026-10-01' });
+    mocks.route.params.reportKey = 'ar_aging';
+  });
+
+  it('does not start a run by itself for an ordinary visit with no snapshot', async () => {
+    mocks.route.query = {};
+    mocks.exactSnapshot.mockRejectedValueOnce(noSnapshot());
+    const wrapper = mountReport();
+    await flushPromises();
+    expect(mocks.createRun).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain('ยังไม่มี Snapshot');
   });
 });
