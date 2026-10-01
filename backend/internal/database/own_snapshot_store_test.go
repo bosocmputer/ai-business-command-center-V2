@@ -47,6 +47,12 @@ func TestOwnDetailSnapshotIsFoundForTheViewerWhoRanItAndNoOneElse(t *testing.T) 
 			values ($1, $2, '\x01', '\x02', 'test', 'ACTIVE', $3)`, id, []byte(id.String()), now); err != nil {
 			t.Fatal(err)
 		}
+		if _, err := pool.Exec(ctx, `insert into tenant_memberships (tenant_id, recipient_id, status) values ($1, $2, 'ACTIVE')`, tenantID, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `insert into recipient_report_permissions (tenant_id, recipient_id, report_key) values ($1, $2, 'customer_rfm')`, tenantID, id); err != nil {
+			t.Fatal(err)
+		}
 	}
 	period := report.Period{Preset: report.Custom, DateFrom: "2026-09-01", DateTo: "2026-09-30"}
 	dashboard := report.Dashboard{
