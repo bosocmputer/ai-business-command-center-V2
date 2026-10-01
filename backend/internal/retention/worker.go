@@ -31,6 +31,7 @@ type Counts struct {
 	Deliveries             int64
 	NotificationRuns       int64
 	AuditLogs              int64
+	ViewEvents             int64
 	Sessions               int64
 	IdempotencyRequests    int64
 	AccessLinks            int64

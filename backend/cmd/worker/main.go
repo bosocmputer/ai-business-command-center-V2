@@ -195,7 +195,7 @@ func retentionLoop(ctx context.Context, logger *slog.Logger, retentionWorker *re
 			delay = time.Minute
 			continue
 		}
-		logger.Info("retention batch completed", "reportRows", counts.ReportRows, "reportRuns", counts.ReportRuns, "dashboardRefreshes", counts.DashboardRefreshes, "dashboardGenerations", counts.DashboardGenerations, "auditLogs", counts.AuditLogs, "deliveries", counts.Deliveries, "operationalIncidents", counts.OperationalIncidents, "maintenanceWindows", counts.MaintenanceWindows)
+		logger.Info("retention batch completed", "reportRows", counts.ReportRows, "reportRuns", counts.ReportRuns, "dashboardRefreshes", counts.DashboardRefreshes, "dashboardGenerations", counts.DashboardGenerations, "auditLogs", counts.AuditLogs, "viewEvents", counts.ViewEvents, "deliveries", counts.Deliveries, "operationalIncidents", counts.OperationalIncidents, "maintenanceWindows", counts.MaintenanceWindows)
 		delay = time.Hour
 	}
 }

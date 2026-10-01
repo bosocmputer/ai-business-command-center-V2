@@ -112,3 +112,11 @@ tags: [backend, security, operations, retention]
 ## Incident Documentation
 
 Use the sanitized incident template. Record safe error codes, time windows, affected subsystem, evidence sources, containment, fix, and regression tests. Do not copy customer identifiers, payloads, tokens, SQL, KPI values, or full logs into Git.
+
+## Viewer open events
+
+- `report_view_events` (migration 000035) records that a recipient opened a card button, a report page, the executive overview, or asked for fresh data. It exists to measure real use before more is built.
+- It stores internal recipient and tenant ids, the event kind, an optional report key and delivery id, and a timestamp. It never stores LINE user ids, names, report values or request bodies.
+- Recording is best effort and asynchronous: a failure is logged by category and never fails the viewer's request. The same viewer doing the same thing within one minute is stored once.
+- Events are deleted with their recipient or tenant, and by the retention worker after 365 days (`viewEvents` in the retention log line).
+

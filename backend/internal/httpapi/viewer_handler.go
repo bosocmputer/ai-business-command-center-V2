@@ -9,11 +9,12 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/line"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/viewer"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/viewevent"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
-func registerViewerRoutes(router chi.Router, viewerAuth ViewerAPI, secureCookies bool) {
+func registerViewerRoutes(router chi.Router, viewerAuth ViewerAPI, secureCookies bool, events viewevent.Recorder) {
 	router.Post("/api/v1/viewer/line/session", func(response http.ResponseWriter, request *http.Request) {
 		if !isJSONRequest(request) {
 			writeProblem(response, request, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE", "Content-Type must be application/json.", false)
@@ -43,6 +44,8 @@ func registerViewerRoutes(router chi.Router, viewerAuth ViewerAPI, secureCookies
 		payload := viewerResponse(result.RecipientID.String(), result.DisplayName, result.CSRFToken, result.ExpiresAt)
 		if result.DeliveryContext != nil {
 			payload["deliveryContext"] = result.DeliveryContext
+			deliveryID := result.DeliveryContext.DeliveryID
+			recordViewEvent(events, result.DeliveryContext.TenantID, result.RecipientID, viewevent.CardOpen, "", &deliveryID)
 		}
 		if result.DeliveryContextErrorCode != "" {
 			payload["deliveryContextErrorCode"] = result.DeliveryContextErrorCode
@@ -76,6 +79,7 @@ func registerViewerRoutes(router chi.Router, viewerAuth ViewerAPI, secureCookies
 		if handleDeliveryContextError(response, request, err) {
 			return
 		}
+		recordViewEvent(events, item.TenantID, authenticated.RecipientID, viewevent.CardOpen, "", &item.DeliveryID)
 		writeJSON(response, http.StatusOK, item)
 	})
 
@@ -113,6 +117,7 @@ func registerViewerRoutes(router chi.Router, viewerAuth ViewerAPI, secureCookies
 		if handleDeliveryContextError(response, request, err) {
 			return
 		}
+		recordViewEvent(events, tenantID, authenticated.RecipientID, viewevent.ReportView, string(reportKey), &deliveryID)
 		writeJSON(response, http.StatusOK, item)
 	})
 
@@ -330,4 +335,13 @@ func clearViewerCSRFCookie(response http.ResponseWriter, secure bool) {
 		Name: viewerCSRFCookie, Path: "/", MaxAge: -1, Expires: time.Unix(1, 0),
 		HttpOnly: false, Secure: secure, SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// recordViewEvent notes that a viewer opened something. It never delays or fails
+// the request, and does nothing when no recorder is configured.
+func recordViewEvent(events viewevent.Recorder, tenantID, recipientID uuid.UUID, kind viewevent.Kind, reportKey string, deliveryID *uuid.UUID) {
+	if events == nil {
+		return
+	}
+	events.Record(viewevent.Event{TenantID: tenantID, RecipientID: recipientID, Kind: kind, ReportKey: reportKey, DeliveryID: deliveryID, At: time.Now().UTC()})
 }

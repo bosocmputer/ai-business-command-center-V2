@@ -9,11 +9,12 @@ import (
 
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/viewer"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/viewevent"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
-func registerViewerReportRoutes(router chi.Router, viewerAuth ViewerAPI, viewerReports ViewerReportAPI) {
+func registerViewerReportRoutes(router chi.Router, viewerAuth ViewerAPI, viewerReports ViewerReportAPI, events viewevent.Recorder) {
 	router.Get("/api/v1/viewer/tenants/{tenantId}/reports/{reportKey}/snapshots/latest", func(response http.ResponseWriter, request *http.Request) {
 		authenticated, ok := authenticateViewer(response, request, viewerAuth)
 		if !ok {
@@ -31,6 +32,7 @@ func registerViewerReportRoutes(router chi.Router, viewerAuth ViewerAPI, viewerR
 		if handleViewerReportError(response, request, err) {
 			return
 		}
+		recordViewEvent(events, tenantID, authenticated.RecipientID, viewevent.ReportView, string(reportKey), nil)
 		writeJSON(response, http.StatusOK, snapshot)
 	})
 
@@ -113,6 +115,7 @@ func registerViewerReportRoutes(router chi.Router, viewerAuth ViewerAPI, viewerR
 		if handleViewerReportError(response, request, err) {
 			return
 		}
+		recordViewEvent(events, tenantID, authenticated.RecipientID, viewevent.OverviewView, "", nil)
 		writeJSON(response, http.StatusOK, overview)
 	})
 
@@ -147,6 +150,7 @@ func registerViewerReportRoutes(router chi.Router, viewerAuth ViewerAPI, viewerR
 		if handleViewerReportError(response, request, err) {
 			return
 		}
+		recordViewEvent(events, tenantID, authenticated.RecipientID, viewevent.RefreshRequest, "", nil)
 		writeJSON(response, http.StatusAccepted, refresh)
 	})
 
@@ -220,6 +224,7 @@ func registerViewerReportRoutes(router chi.Router, viewerAuth ViewerAPI, viewerR
 		if handleViewerReportError(response, request, err) {
 			return
 		}
+		recordViewEvent(events, tenantID, authenticated.RecipientID, viewevent.RefreshRequest, string(reportKey), nil)
 		writeJSON(response, http.StatusAccepted, reportRunResponse(run))
 	})
 

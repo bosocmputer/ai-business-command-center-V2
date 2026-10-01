@@ -130,6 +130,12 @@ func (store *RetentionStore) Run(ctx context.Context, policy retention.Policy, n
 		)`, now, policy.BatchSize); err != nil {
 		return retention.Counts{}, err
 	}
+	if counts.ViewEvents, err = execRetention(ctx, tx, `
+		delete from report_view_events where id in (
+		  select id from report_view_events where expires_at <= $1 order by expires_at limit $2
+		)`, now, policy.BatchSize); err != nil {
+		return retention.Counts{}, err
+	}
 	if counts.AccessLinks, err = execRetention(ctx, tx, `
 		delete from delivery_access_links where reference_hash in (
 		  select reference_hash from delivery_access_links where expires_at <= $1 order by expires_at limit $2

@@ -16,6 +16,7 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/sentinel"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/tenant"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/viewer"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/viewevent"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -43,6 +44,7 @@ type Dependencies struct {
 	ScheduleTests   ScheduleTestSendAPI
 	Operations      OperationsAPI
 	Monitor         MonitorAPI
+	ViewEvents      viewevent.Recorder
 	ExecutionModes  ExecutionModeAPI
 	TableQueries    any
 	Incidents       IncidentAPI
@@ -150,9 +152,9 @@ func NewHandler(dependencies Dependencies) http.Handler {
 		}
 	}
 	if dependencies.ViewerAuth != nil {
-		registerViewerRoutes(router, dependencies.ViewerAuth, dependencies.SecureCookies)
+		registerViewerRoutes(router, dependencies.ViewerAuth, dependencies.SecureCookies, dependencies.ViewEvents)
 		if dependencies.ViewerReports != nil {
-			registerViewerReportRoutes(router, dependencies.ViewerAuth, dependencies.ViewerReports)
+			registerViewerReportRoutes(router, dependencies.ViewerAuth, dependencies.ViewerReports, dependencies.ViewEvents)
 		}
 	}
 	router.NotFound(func(response http.ResponseWriter, request *http.Request) {

@@ -111,6 +111,7 @@ func main() {
 			FlexPreviews:    flexPreviewService,
 			ScheduleTests:   scheduleTestService,
 			Monitor:         monitorService,
+			ViewEvents:      database.NewViewEventStore(pool, logger),
 			ExecutionModes:  executionmode.NewService(database.NewReportModeStore(pool), smlService, smlClient, time.Now),
 			Operations:      operations.NewService(database.NewOperationsStore(pool), recipientService),
 			TableQueries:    tablequery.NewService(database.NewTableQueryStore(pool), recipientService, cfg.LineMessagingAccessToken != "", time.Now),
