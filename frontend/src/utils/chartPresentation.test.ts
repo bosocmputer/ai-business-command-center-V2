@@ -25,7 +25,7 @@ describe('chart presentation model', () => {
 
     expect(model.status).toBe('READY');
     expect(model.rankingItems.map((item) => item.widthPercent)).toEqual([100, 1]);
-    expect(model.rankingItems[0]?.formattedValue).toBe('฿10,000,000');
+    expect(model.rankingItems[0]?.formattedValue).toBe('฿10,000,000.00');
   });
 
   it('distinguishes zero, no data, partial data, and invalid contracts', () => {

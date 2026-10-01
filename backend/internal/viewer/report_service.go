@@ -69,7 +69,44 @@ func (service *ReportService) ExactSnapshot(ctx context.Context, recipientID, te
 	if !ok {
 		return DashboardSnapshot{}, errors.New("viewer snapshot store is unavailable")
 	}
-	return store.GetExactSnapshotForPeriod(ctx, tenantID, reportKey, period, now)
+	tenantSnapshot, tenantErr := store.GetExactSnapshotForPeriod(ctx, tenantID, reportKey, period, now)
+	if tenantErr != nil && !errors.Is(tenantErr, report.ErrRunNotFound) {
+		return DashboardSnapshot{}, tenantErr
+	}
+	own, ok := service.store.(ViewerOwnSnapshotStore)
+	if !ok {
+		return tenantSnapshot, tenantErr
+	}
+	ownSnapshot, ownErr := own.GetOwnDetailSnapshotForPeriod(ctx, recipientID, tenantID, reportKey, period, now)
+	if ownErr != nil && !errors.Is(ownErr, report.ErrRunNotFound) {
+		return DashboardSnapshot{}, ownErr
+	}
+	return newerSnapshot(tenantSnapshot, tenantErr, ownSnapshot, ownErr)
+}
+
+// ViewerOwnSnapshotStore finds the viewer's own earlier run of a report for a
+// period, which carries the detail rows and so is not part of the tenant-wide
+// summary snapshots.
+type ViewerOwnSnapshotStore interface {
+	GetOwnDetailSnapshotForPeriod(context.Context, uuid.UUID, uuid.UUID, report.Key, report.Period, time.Time) (DashboardSnapshot, error)
+}
+
+// newerSnapshot gives whichever snapshot was collected from SML more recently, and
+// the viewer's own run when the two were collected at the same moment because it
+// also has the detail rows.
+func newerSnapshot(tenant DashboardSnapshot, tenantErr error, own DashboardSnapshot, ownErr error) (DashboardSnapshot, error) {
+	switch {
+	case tenantErr != nil && ownErr != nil:
+		return DashboardSnapshot{}, report.ErrRunNotFound
+	case ownErr != nil:
+		return tenant, nil
+	case tenantErr != nil:
+		return own, nil
+	}
+	if tenant.SourceFinishedAt != nil && own.SourceFinishedAt != nil && tenant.SourceFinishedAt.After(*own.SourceFinishedAt) {
+		return tenant, nil
+	}
+	return own, nil
 }
 
 type CreateReportRunInput struct {

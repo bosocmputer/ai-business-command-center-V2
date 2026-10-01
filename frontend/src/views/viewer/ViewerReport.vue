@@ -151,9 +151,11 @@ function openDrillMenu(event: Event, columnKey: string, value: string, row: Reco
 function applyPendingDrill() {
   const request = drillRequest.value;
   if (!request || !dashboard.value || run.value?.status !== 'SUCCEEDED') return;
+  // Without rows there is nothing to filter yet; keep the request for the run that
+  // is about to be fetched.
+  if (detailRowsUnavailable.value) return;
   drillRequest.value = undefined;
   void router.replace({ path: route.path, query: withoutDrillQuery(cleanViewerQuery(route.query)), hash: route.hash });
-  if (detailRowsUnavailable.value) return;
   appliedRowFilters.value = [{ columnKey: request.column, operator: 'EQUALS', value: request.value }];
   drillActive.value = request;
   if (activeTab.value === 'detail' && rowsLoaded.value) void loadRows(0);
@@ -186,6 +188,8 @@ async function resolveSnapshot(selection: ReportPeriodSelection) {
       fetchFresh = true;
     } else {
       applyCachedSnapshot(snapshot);
+      // A summary snapshot has no rows to filter, so a drill needs a run of its own.
+      if (!snapshot.detailsAvailable) fetchFresh = true;
       try { run.value = await viewerApi.run(selectedTenantId, selectedReportKey, snapshot.runId, initializeController.signal); }
       catch (cause) { if (!(cause instanceof ApiError) || cause.status !== 404) throw cause; }
     }

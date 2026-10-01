@@ -206,6 +206,24 @@ func (store *ReportStore) GetExactSnapshot(ctx context.Context, tenantID uuid.UU
 }
 
 func (store *ReportStore) getExactSnapshotWithPolicy(ctx context.Context, tenantID uuid.UUID, reportKey report.Key, period report.Period, policy report.RefreshPolicy, now time.Time) (viewer.DashboardSnapshot, error) {
+	return store.getSnapshotByFingerprint(ctx, tenantID, reportKey, period, policy, now, report.ResultSummary, nil)
+}
+
+// GetOwnDetailSnapshotForPeriod finds the newest report this viewer already ran
+// themselves for exactly this period. Their own run is a DETAIL run, which the
+// tenant-wide snapshot lookup above deliberately does not match (it matches the
+// summary plan), so without this a viewer who reopens a report has to fetch it
+// from SML again every time. Only the viewer's own run is returned: its rows are
+// readable by them alone.
+func (store *ReportStore) GetOwnDetailSnapshotForPeriod(ctx context.Context, recipientID, tenantID uuid.UUID, reportKey report.Key, period report.Period, now time.Time) (viewer.DashboardSnapshot, error) {
+	policy, err := NewRefreshPolicyStore(store.pool).GetRefreshPolicy(ctx, tenantID)
+	if err != nil {
+		return viewer.DashboardSnapshot{}, err
+	}
+	return store.getSnapshotByFingerprint(ctx, tenantID, reportKey, period, policy, now, report.ResultDetail, &recipientID)
+}
+
+func (store *ReportStore) getSnapshotByFingerprint(ctx context.Context, tenantID uuid.UUID, reportKey report.Key, period report.Period, policy report.RefreshPolicy, now time.Time, projection report.ResultKind, recipientID *uuid.UUID) (viewer.DashboardSnapshot, error) {
 	definition, ok := report.DefinitionFor(reportKey)
 	if !ok {
 		return viewer.DashboardSnapshot{}, report.ErrRunNotFound
@@ -214,7 +232,7 @@ func (store *ReportStore) getExactSnapshotWithPolicy(ctx context.Context, tenant
 	var dashboardJSON []byte
 	var resultKind report.ResultKind
 	var expiresAt time.Time
-	fingerprint := report.QueryPlanFingerprint(reportKey, report.ResultSummary)
+	fingerprint := report.QueryPlanFingerprint(reportKey, projection)
 	err := store.pool.QueryRow(ctx, `
 		select r.id, r.dashboard_json, r.period_from::text, r.period_to::text,
 		       coalesce(r.source_started_at, r.started_at), coalesce(r.source_finished_at, r.finished_at),
@@ -227,8 +245,9 @@ func (store *ReportStore) getExactSnapshotWithPolicy(ctx context.Context, tenant
 		  and r.period_from = $3::date and r.period_to = $4::date
 		  and r.query_plan_fingerprint = $5
 		  and r.status = 'SUCCEEDED' and r.dashboard_json <> '{}'::jsonb
+		  and ($6::uuid is null or (r.source = 'DASHBOARD' and r.requested_by_recipient_id = $6))
 		order by r.finished_at desc nulls last, r.id desc
-		limit 1`, tenantID, reportKey, period.DateFrom, period.DateTo, fingerprint).Scan(
+		limit 1`, tenantID, reportKey, period.DateFrom, period.DateTo, fingerprint, recipientID).Scan(
 		&snapshot.RunID, &dashboardJSON, &snapshot.PeriodFrom, &snapshot.PeriodTo,
 		&snapshot.SourceStartedAt, &snapshot.SourceFinishedAt,
 		&snapshot.ReportDefinitionVersion, &snapshot.DataSourceVersion,

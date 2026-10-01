@@ -8,8 +8,10 @@ import (
 // agingDetailFixture is a small receivable: two customers, one credit note, one
 // document with no due date. Balances are checked by hand in the tests below.
 func agingDetailFixture() []map[string]string {
+	// Age counted from the document date, where a document still has a balance.
+	docAge := map[string]string{"D1": "AGE_0_30", "D2": "AGE_31_60", "D3": "AGE_OVER_365", "D4": "AGE_OVER_365", "D5": "AGE_91_180"}
 	row := func(cust, name, doc, bucket, balance string) map[string]string {
-		return map[string]string{"cust_code": cust, "cust_name": name, "doc_no": doc, "bucket": bucket, "balance": balance, "amount": balance, "paid_amount": "0"}
+		return map[string]string{"cust_code": cust, "cust_name": name, "doc_no": doc, "bucket": bucket, "balance": balance, "amount": balance, "paid_amount": "0", "doc_age_bucket": docAge[doc]}
 	}
 	return []map[string]string{
 		row("C1", "ลูกค้า 1", "D1", agingBucketNotDue, "1000.00"),
@@ -26,6 +28,7 @@ func agingSummaryFixture() map[string][]map[string]string {
 	metrics := map[string]string{
 		"_metric_row_count": "7", "_metric_customer_count": "2", "_metric_total_balance": "5500.00", "_metric_overdue_amount": "850.00",
 		"_metric_not_due_amount": "1000.00", "_metric_no_due_date_amount": "4000.00", "_metric_credit_amount": "-350.00",
+		"_metric_over_year_amount": "4250.00",
 	}
 	merge := func(row map[string]string) map[string]string {
 		for key, value := range metrics {
@@ -35,7 +38,8 @@ func agingSummaryFixture() map[string][]map[string]string {
 	}
 	return map[string][]map[string]string{"rows": {
 		merge(map[string]string{"_summary_kind": "buckets", "bucket_not_due": "1000.00", "bucket_overdue_1_30": "500.00", "bucket_overdue_31_60": "0", "bucket_overdue_61_90": "100.00",
-			"bucket_overdue_91_120": "0", "bucket_overdue_over_120": "250.00", "bucket_no_due_date": "4000.00", "bucket_credit": "-350.00"}),
+			"bucket_overdue_91_120": "0", "bucket_overdue_over_120": "250.00", "bucket_no_due_date": "4000.00", "bucket_credit": "-350.00",
+			"doc_age_0_30": "1000.00", "doc_age_31_60": "500.00", "doc_age_61_90": "0", "doc_age_91_180": "100.00", "doc_age_181_365": "0", "doc_age_over_365": "4250.00"}),
 		merge(map[string]string{"_summary_kind": "ranking", "cust_code": "C2", "cust_name": "ลูกค้า 2", "balance": "3800.00", "overdue_balance": "100.00"}),
 		merge(map[string]string{"_summary_kind": "ranking", "cust_code": "C1", "cust_name": "ลูกค้า 1", "balance": "1750.00", "overdue_balance": "750.00"}),
 	}}
@@ -48,7 +52,7 @@ func TestAgingDetailRowsSummariseToTheHandCheckedTotals(t *testing.T) {
 	}
 	want := map[string]string{
 		"customer_count": "2", "document_count": "7", "total_balance": "5500.00", "overdue_amount": "850.00",
-		"not_due_amount": "1000.00", "no_due_date_amount": "4000.00", "credit_amount": "-350.00",
+		"not_due_amount": "1000.00", "no_due_date_amount": "4000.00", "credit_amount": "-350.00", "over_year_amount": "4250.00",
 	}
 	for name, value := range want {
 		if summary.Metrics[name] != value {
@@ -115,14 +119,18 @@ func TestAgingDashboardIsTheSameFromDetailAndFromSummary(t *testing.T) {
 				t.Errorf("%s: aging has no comparison but %s says %s", name, kpi.Key, kpi.Comparison.Availability)
 			}
 		}
-		if kpis["total_balance"] != "5500.00" || kpis["overdue_amount"] != "850.00" || kpis["no_due_date_amount"] != "4000.00" || kpis["customer_count"] != "2" {
+		if kpis["total_balance"] != "5500.00" || kpis["overdue_amount"] != "850.00" || kpis["no_due_date_amount"] != "4000.00" || kpis["customer_count"] != "2" || kpis["over_year_amount"] != "4250.00" {
 			t.Errorf("%s: KPIs = %v", name, kpis)
 		}
 		byKey := map[string]DashboardVisualization{}
 		for _, visualization := range dashboard.Visualizations {
 			byKey[visualization.Key] = visualization
 		}
-		buckets, debtors := byKey["ar_aging_buckets"], byKey["top_debtors"]
+		buckets, debtors, docAges := byKey["ar_aging_buckets"], byKey["top_debtors"], byKey["ar_aging_doc_age"]
+		// Ages from the document date, in order, leaving out the empty buckets: 1,000 + 500 + 100 + 4,250 is the debit side, with no credit in it.
+		if len(docAges.Categories) != 4 || docAges.Categories[0] != "ออกใบมา 0–30 วัน" || docAges.Categories[3] != "ออกใบมาเกิน 1 ปี" || docAges.Series[0].Values[3] != "4250.00" {
+			t.Errorf("%s: document age chart = %+v", name, docAges)
+		}
 		if len(buckets.Categories) == 0 || buckets.Categories[0] != "ยังไม่ครบกำหนด" {
 			t.Errorf("%s: bucket chart = %+v", name, buckets)
 		}
@@ -189,5 +197,20 @@ func TestAgingCountsTheSameDocumentTypesAsMovement(t *testing.T) {
 		if !strings.Contains(arCustomerMovementSQL, rule) {
 			t.Errorf("movement no longer has %q, so aging and movement may disagree", rule)
 		}
+	}
+}
+
+func TestAgingFindsTheDueDateFromCreditDaysWhenThereIsNone(t *testing.T) {
+	for _, want := range []string{
+		"coalesce(d.due_date, case when d.credit_day > 0 then d.doc_date + d.credit_day end) as effective_due_date",
+		"when d.due_date is not null then 'DUE_DATE' when d.credit_day > 0 then 'CREDIT_DAY' else 'NONE'",
+	} {
+		if !strings.Contains(arAgingBaseSQL, want) {
+			t.Errorf("aging lost the credit day rule %q", want)
+		}
+	}
+	// A negative or zero credit day is not a term. The pilot shop has 34,710 of 34,712 sale documents at zero.
+	if strings.Contains(arAgingBaseSQL, "credit_day >= 0") {
+		t.Error("zero credit days must not count as a due date")
 	}
 }

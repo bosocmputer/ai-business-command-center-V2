@@ -99,3 +99,9 @@ that an old or test occurrence was a scheduled customer delivery.
   supports PostgreSQL scientific numeric strings, returns stable row ordinals,
   and never starts SML work. Date ranges are inclusive in Bangkok business-date
   semantics and Global Search is limited to catalog-approved columns.
+
+## Reopening a report without fetching again
+
+- The tenant-wide exact snapshot lookup matches only SUMMARY runs (by query plan fingerprint), so a viewer's own DETAIL run was never found again and every reopen needed a fetch from SML.
+- `ReportService.ExactSnapshot` now also looks for the viewer's own finished DETAIL run of the same period (`ReportStore.GetOwnDetailSnapshotForPeriod`, restricted to `source = DASHBOARD` and the requester, because its rows are readable by that viewer only) and returns whichever was collected more recently, the own run on a tie. Freshness is still judged by the refresh policy, so an old run shows as stale and the viewer can refresh.
+- A drill-down needs rows. When the snapshot found is a summary, the page starts a detail run itself.

@@ -170,4 +170,17 @@ describe('ViewerReport drill-down', () => {
     expect(mocks.createRun).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain('ยังไม่มี Snapshot');
   });
+
+  it('fetches a run of its own for a drill when the snapshot found is a summary with no rows', async () => {
+    mocks.route.query = { drillColumn: 'cust_code', drillValue: 'C001', drillFrom: 'customer_rfm' };
+    mocks.exactSnapshot.mockResolvedValueOnce({ ...snapshot, detailsAvailable: false });
+    mocks.run.mockResolvedValueOnce({ ...succeededRun, resultKind: 'SUMMARY' });
+    mocks.createRun.mockResolvedValue({ ...succeededRun, id: 'run-3', status: 'QUEUED' });
+    const wrapper = mountReport();
+    await flushPromises();
+    expect(mocks.createRun).toHaveBeenCalledTimes(1);
+    // The rows are not asked for until there is a run that has them.
+    expect(mocks.queryRows).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain('กำลังดูเฉพาะ');
+  });
 });

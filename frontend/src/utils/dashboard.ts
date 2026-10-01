@@ -73,7 +73,9 @@ export function formatDashboardValue(value: string | undefined, unit: DashboardM
   const number = numberForChart(value);
   if (number === null) return value;
   const maximumFractionDigits = unit === 'COUNT' ? 0 : 2;
-  const formatted = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 0, maximumFractionDigits }).format(number);
+  // Baht always shows satang, so 6,049,988.10 is not shown as 6,049,988.1.
+  const minimumFractionDigits = unit === 'THB' ? 2 : 0;
+  const formatted = new Intl.NumberFormat('th-TH', { minimumFractionDigits, maximumFractionDigits }).format(number);
   if (unit === 'THB') return `฿${formatted}`;
   if (unit === 'PERCENT') return `${formatted}%`;
   return formatted;

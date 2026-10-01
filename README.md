@@ -10,7 +10,7 @@ Fork ของ [nextstep-dashboard](https://github.com/bosocmputer) (backend Go 
 จุดเริ่มต้น: copy โค้ดจาก nextstep-dashboard-backend/frontend มาทั้งชุด (ยังไม่ปรับอะไร)
 
 งานที่เหลือ (ตามแผน):
-- ตั้งค่า tenant เดียว = สินทวีคอนกรีต
+- ตั้งค่า tenant เดียว = ร้านแรกที่ใช้ทดสอบ
 - สลับ LINE Flex renderer (`backend/internal/line/flex.go`, `presentation.go`) ให้เป็นฟอร์แมตเดิมของ AI-Business Command-Center
 - ปิด/ตัดส่วนที่เกินความจำเป็นสำหรับร้านเดียว (sentinel + Telegram alerting, retention policy เดิม)
 - ตรวจสอบ/ปรับ SML connection config ให้ตรงกับร้านจริง

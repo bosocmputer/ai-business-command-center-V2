@@ -182,7 +182,8 @@ func buildDashboardMetrics(key Key, current, previous SummaryResult, currentStep
 	case ARAging:
 		return []dashboardMetricInput{
 			metric("total_balance", "ยอดค้างรวม", UnitTHB), metric("overdue_amount", "ยอดเลยกำหนด", UnitTHB),
-			metric("no_due_date_amount", "ไม่ระบุวันครบกำหนด", UnitTHB), metric("customer_count", "จำนวนลูกหนี้ที่ค้าง", UnitCount),
+			metric("no_due_date_amount", "ไม่ระบุวันครบกำหนด", UnitTHB), metric("over_year_amount", "ค้างเกิน 1 ปีนับจากวันที่ออกใบ", UnitTHB),
+			metric("customer_count", "จำนวนลูกหนี้ที่ค้าง", UnitCount),
 		}, nil
 	case ARCustomerMovement:
 		currentDebit, currentCredit, err := movementTotalsFromSummary(current, currentSteps["rows"])

@@ -51,6 +51,19 @@ var agingBuckets = []struct{ code, column, label string }{
 	{agingBucketCredit, "bucket_credit", "เครดิตคงค้าง"},
 }
 
+// agingDocAges is the second way of ageing a debt: by the days since the
+// document was issued, whether or not it has a due date. It covers documents that
+// still carry a balance. A shop that records no due dates and no credit days
+// can only be aged this way.
+var agingDocAges = []struct{ code, column, label string }{
+	{"AGE_0_30", "doc_age_0_30", "ออกใบมา 0–30 วัน"},
+	{"AGE_31_60", "doc_age_31_60", "ออกใบมา 31–60 วัน"},
+	{"AGE_61_90", "doc_age_61_90", "ออกใบมา 61–90 วัน"},
+	{"AGE_91_180", "doc_age_91_180", "ออกใบมา 91–180 วัน"},
+	{"AGE_181_365", "doc_age_181_365", "ออกใบมา 181–365 วัน"},
+	{"AGE_OVER_365", "doc_age_over_365", "ออกใบมาเกิน 1 ปี"},
+}
+
 func agingOverdueBucket(code string) bool {
 	switch code {
 	case agingBucketOverdue1, agingBucketOverdue2, agingBucketOverdue3, agingBucketOverdue4, agingBucketOverdue5:
@@ -63,7 +76,7 @@ func agingOverdueBucket(code string) bool {
 // $1 is the as-of date.
 const arAgingBaseSQL = `
 open_docs as (
-  select t.cust_code, t.doc_no, t.doc_date, t.due_date, t.trans_flag as doc_type_code,
+  select t.cust_code, t.doc_no, t.doc_date, t.due_date, t.credit_day, t.trans_flag as doc_type_code,
     1 as direction, coalesce(t.total_amount, 0) as amount,
     coalesce((
       select sum(coalesce(p.sum_pay_money, 0)) from ap_ar_trans_detail p
@@ -74,7 +87,7 @@ open_docs as (
   where coalesce(t.last_status, 0) = 0 and t.doc_date <= $1::date and coalesce(t.cust_code, '') <> ''
     and ((t.trans_flag in (44, 250) and t.inquiry_type in (0, 2)) or t.trans_flag in (46) or t.trans_flag in (93, 99, 95, 101, 254, 418))
   union all
-  select t.cust_code, t.doc_no, t.doc_date, t.due_date, t.trans_flag as doc_type_code,
+  select t.cust_code, t.doc_no, t.doc_date, t.due_date, t.credit_day, t.trans_flag as doc_type_code,
     -1 as direction, coalesce(t.total_amount, 0) as amount,
     coalesce((
       select sum(coalesce(p.sum_pay_money, 0)) from ap_ar_trans_detail p
@@ -85,12 +98,19 @@ open_docs as (
   where coalesce(t.last_status, 0) = 0 and t.doc_date <= $1::date and coalesce(t.cust_code, '') <> ''
     and ((t.trans_flag = 48 and t.inquiry_type in (0, 2, 4)) or t.trans_flag in (97, 103) or (t.trans_flag = 262 and t.inquiry_type not in (1, 3)))
 ),
+dated as (
+  select d.*,
+    coalesce(d.due_date, case when d.credit_day > 0 then d.doc_date + d.credit_day end) as effective_due_date,
+    case when d.due_date is not null then 'DUE_DATE' when d.credit_day > 0 then 'CREDIT_DAY' else 'NONE' end as due_basis
+  from open_docs d
+),
 aged as (
-  select d.cust_code, d.doc_no, d.doc_date, d.due_date, d.doc_type_code, d.direction * d.amount as amount, d.paid_amount,
+  select d.cust_code, d.doc_no, d.doc_date, d.effective_due_date as due_date, d.due_basis, d.doc_type_code,
+    d.direction * d.amount as amount, d.paid_amount,
     d.direction * d.amount - d.paid_amount as balance,
     $1::date - d.doc_date as age_days,
-    case when d.due_date is null then null else $1::date - d.due_date end as days_past_due
-  from open_docs d
+    case when d.effective_due_date is null then null else $1::date - d.effective_due_date end as days_past_due
+  from dated d
 ),
 bucketed as (
   select a.*,
@@ -103,7 +123,16 @@ bucketed as (
       when a.days_past_due <= 90 then 'OVERDUE_61_90'
       when a.days_past_due <= 120 then 'OVERDUE_91_120'
       else 'OVERDUE_120_PLUS'
-    end as bucket
+    end as bucket,
+    case
+      when a.balance <= 0 then null
+      when a.age_days <= 30 then 'AGE_0_30'
+      when a.age_days <= 60 then 'AGE_31_60'
+      when a.age_days <= 90 then 'AGE_61_90'
+      when a.age_days <= 180 then 'AGE_91_180'
+      when a.age_days <= 365 then 'AGE_181_365'
+      else 'AGE_OVER_365'
+    end as doc_age_bucket
   from aged a
   where abs(a.balance) >= 0.005
 )`
@@ -111,8 +140,16 @@ bucketed as (
 const arAgingSQL = `
 with` + arAgingBaseSQL + `
 select b.cust_code, coalesce(c.name_1, '') as cust_name, b.doc_no, b.doc_date, b.due_date,
-  b.doc_type_code, trans_flag(b.doc_type_code) as doc_type_label,
-  b.amount, b.paid_amount, b.balance, b.age_days, b.days_past_due, b.bucket,
+  b.due_basis, b.doc_type_code, trans_flag(b.doc_type_code) as doc_type_label,
+  b.amount, b.paid_amount, b.balance, b.age_days, b.doc_age_bucket, b.days_past_due, b.bucket,
+  case b.doc_age_bucket
+    when 'AGE_0_30' then 'อายุ 0–30 วัน'
+    when 'AGE_31_60' then 'อายุ 31–60 วัน'
+    when 'AGE_61_90' then 'อายุ 61–90 วัน'
+    when 'AGE_91_180' then 'อายุ 91–180 วัน'
+    when 'AGE_181_365' then 'อายุ 181–365 วัน'
+    when 'AGE_OVER_365' then 'อายุเกิน 365 วัน'
+    else '' end as doc_age_label,
   case b.bucket
     when 'NOT_DUE' then 'ยังไม่ครบกำหนด'
     when 'OVERDUE_1_30' then 'เลยกำหนด 1–30 วัน'
@@ -139,7 +176,8 @@ summary_metrics as (
     coalesce(sum(balance) filter (where bucket in ('OVERDUE_1_30', 'OVERDUE_31_60', 'OVERDUE_61_90', 'OVERDUE_91_120', 'OVERDUE_120_PLUS')), 0) as _metric_overdue_amount,
     coalesce(sum(balance) filter (where bucket = 'NOT_DUE'), 0) as _metric_not_due_amount,
     coalesce(sum(balance) filter (where bucket = 'NO_DUE_DATE'), 0) as _metric_no_due_date_amount,
-    coalesce(sum(balance) filter (where bucket = 'CREDIT'), 0) as _metric_credit_amount
+    coalesce(sum(balance) filter (where bucket = 'CREDIT'), 0) as _metric_credit_amount,
+    coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_OVER_365'), 0) as _metric_over_year_amount
   from bucketed
 ),
 bucket_row as (
@@ -152,7 +190,13 @@ bucket_row as (
     coalesce(sum(balance) filter (where bucket = 'OVERDUE_91_120'), 0) as bucket_overdue_91_120,
     coalesce(sum(balance) filter (where bucket = 'OVERDUE_120_PLUS'), 0) as bucket_overdue_over_120,
     coalesce(sum(balance) filter (where bucket = 'NO_DUE_DATE'), 0) as bucket_no_due_date,
-    coalesce(sum(balance) filter (where bucket = 'CREDIT'), 0) as bucket_credit
+    coalesce(sum(balance) filter (where bucket = 'CREDIT'), 0) as bucket_credit,
+    coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_0_30'), 0) as doc_age_0_30,
+    coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_31_60'), 0) as doc_age_31_60,
+    coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_61_90'), 0) as doc_age_61_90,
+    coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_91_180'), 0) as doc_age_91_180,
+    coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_181_365'), 0) as doc_age_181_365,
+    coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_OVER_365'), 0) as doc_age_over_365
   from bucketed
 ),
 debtor_rows as (
@@ -161,7 +205,9 @@ debtor_rows as (
     coalesce(sum(b.balance) filter (where b.bucket in ('OVERDUE_1_30', 'OVERDUE_31_60', 'OVERDUE_61_90', 'OVERDUE_91_120', 'OVERDUE_120_PLUS')), 0) as overdue_balance,
     null::numeric as bucket_not_due, null::numeric as bucket_overdue_1_30, null::numeric as bucket_overdue_31_60,
     null::numeric as bucket_overdue_61_90, null::numeric as bucket_overdue_91_120, null::numeric as bucket_overdue_over_120,
-    null::numeric as bucket_no_due_date, null::numeric as bucket_credit
+    null::numeric as bucket_no_due_date, null::numeric as bucket_credit,
+    null::numeric as doc_age_0_30, null::numeric as doc_age_31_60, null::numeric as doc_age_61_90,
+    null::numeric as doc_age_91_180, null::numeric as doc_age_181_365, null::numeric as doc_age_over_365
   from bucketed b
   left join ar_customer c on c.code = b.cust_code
   group by b.cust_code
@@ -186,13 +232,18 @@ type agingTotals struct {
 	total, overdue       *big.Rat
 	notDue, noDueDate    *big.Rat
 	credit               *big.Rat
+	overYear             *big.Rat
 	buckets              map[string]*big.Rat
+	docAges              map[string]*big.Rat
 }
 
 func newAgingTotals() *agingTotals {
-	totals := &agingTotals{total: new(big.Rat), overdue: new(big.Rat), notDue: new(big.Rat), noDueDate: new(big.Rat), credit: new(big.Rat), buckets: map[string]*big.Rat{}}
+	totals := &agingTotals{total: new(big.Rat), overdue: new(big.Rat), notDue: new(big.Rat), noDueDate: new(big.Rat), credit: new(big.Rat), overYear: new(big.Rat), buckets: map[string]*big.Rat{}, docAges: map[string]*big.Rat{}}
 	for _, bucket := range agingBuckets {
 		totals.buckets[bucket.code] = new(big.Rat)
+	}
+	for _, age := range agingDocAges {
+		totals.docAges[age.code] = new(big.Rat)
 	}
 	return totals
 }
@@ -232,6 +283,9 @@ func agingTotalsFromSummary(steps map[string][]map[string]string, rows []map[str
 	if totals.credit, err = read("credit_amount"); err != nil {
 		return nil, err
 	}
+	if totals.overYear, err = read("over_year_amount"); err != nil {
+		return nil, err
+	}
 	totals.customers, _ = strconv.Atoi(integerText(summaryMetricOr(steps, "customer_count", "0")))
 	totals.documents, _ = strconv.Atoi(integerText(summaryMetricOr(steps, "row_count", "0")))
 	for _, bucketRow := range rowsForSummaryKind(rows, "buckets") {
@@ -244,6 +298,16 @@ func agingTotalsFromSummary(steps map[string][]map[string]string, rows []map[str
 				return nil, fieldDecimalError(bucket.column, parseErr)
 			}
 			totals.buckets[bucket.code].Add(totals.buckets[bucket.code], value)
+		}
+		for _, age := range agingDocAges {
+			if bucketRow[age.column] == "" {
+				continue
+			}
+			value, parseErr := decimal(bucketRow[age.column])
+			if parseErr != nil {
+				return nil, fieldDecimalError(age.column, parseErr)
+			}
+			totals.docAges[age.code].Add(totals.docAges[age.code], value)
 		}
 	}
 	return totals, nil
@@ -264,6 +328,13 @@ func agingTotalsFromDetail(rows []map[string]string) (*agingTotals, error) {
 		}
 		accumulator.Add(accumulator, balance)
 		totals.total.Add(totals.total, balance)
+		if age := row["doc_age_bucket"]; age != "" {
+			ageTotal, known := totals.docAges[age]
+			if !known {
+				return nil, fmt.Errorf("receivable aging document age %q is not defined", age)
+			}
+			ageTotal.Add(ageTotal, balance)
+		}
 		if bucket != agingBucketCredit {
 			customers[row["cust_code"]] = struct{}{}
 		}
@@ -283,6 +354,7 @@ func agingTotalsFromDetail(rows []map[string]string) (*agingTotals, error) {
 		}
 	}
 	totals.customers = len(customers)
+	totals.overYear.Set(totals.docAges["AGE_OVER_365"])
 	return totals, nil
 }
 
@@ -295,6 +367,7 @@ func (totals *agingTotals) metrics() map[string]string {
 		"not_due_amount":     money(totals.notDue),
 		"no_due_date_amount": money(totals.noDueDate),
 		"credit_amount":      money(totals.credit),
+		"over_year_amount":   money(totals.overYear),
 	}
 }
 
@@ -344,11 +417,25 @@ func buildAgingVisualizations(rows []map[string]string) ([]DashboardVisualizatio
 	if err != nil {
 		return nil, err
 	}
+	totals, err := agingTotalsFromSteps(map[string][]map[string]string{"rows": rows})
+	if err != nil {
+		return nil, err
+	}
+	ageRow := make(map[string]string, len(agingDocAges))
+	ageFields := make([]fieldLabel, 0, len(agingDocAges))
+	for _, age := range agingDocAges {
+		ageRow[age.column] = money(totals.docAges[age.code])
+		ageFields = append(ageFields, fieldLabel{age.column, age.label})
+	}
+	docAges, err := buildComposition("ar_aging_doc_age", "ยอดค้างตามอายุนับจากวันที่ออกใบ", []map[string]string{ageRow}, ageFields)
+	if err != nil {
+		return nil, err
+	}
 	debtors, err := buildRanking("top_debtors", "ลูกหนี้ค้างสูงสุด", UnitTHB, rows, "cust_code", "cust_name", func(row map[string]string) (*big.Rat, error) {
 		return decimal(row["balance"])
 	}, false)
 	if err != nil {
 		return nil, err
 	}
-	return compactVisualizations(composition, debtors), nil
+	return compactVisualizations(composition, docAges, debtors), nil
 }

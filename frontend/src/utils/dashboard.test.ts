@@ -43,7 +43,7 @@ describe('dashboard helpers', () => {
   });
 
   it('formats metric units for Thai executives', () => {
-    expect(formatDashboardValue('604058.00', 'THB')).toBe('฿604,058');
+    expect(formatDashboardValue('604058.00', 'THB')).toBe('฿604,058.00');
     expect(formatDashboardValue('8.19', 'PERCENT')).toBe('8.19%');
     expect(formatDashboardValue(undefined, 'THB')).toBe('ยังไม่มีข้อมูล');
   });
