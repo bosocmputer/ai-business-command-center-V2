@@ -37,6 +37,7 @@ This block is generated from `report.Definitions()`. Do not edit it manually.
 | `stock_balance` | รายงานสต็อกคงเหลือ | `1.0.0` | `ACTIVE` | `AS_OF_DATE` | `HEAVY` | `true` |
 | `stock_reorder` | รายงานสินค้าถึงจุดสั่งซื้อ | `1.0.0` | `ACTIVE` | `CURRENT_ONLY` | `STANDARD` | `false` |
 | `ar_customer_movement` | รายงานความเคลื่อนไหวลูกหนี้ | `1.0.0` | `ACTIVE` | `AS_OF_DATE` | `HEAVY` | `true` |
+| `ar_aging` | รายงานอายุหนี้ลูกหนี้ | `1.0.0` | `ACTIVE` | `AS_OF_DATE` | `HEAVY` | `false` |
 | `ar_debt_receipt` | รายงานรับชำระหนี้ | `1.0.0` | `ACTIVE` | `DATE_RANGE` | `FAST` | `false` |
 | `cash_bank_receipts` | รายงานรับเงิน | `1.0.0` | `ACTIVE` | `DATE_RANGE` | `FAST` | `false` |
 | `cash_bank_payments` | รายงานจ่ายเงิน | `1.0.0` | `ACTIVE` | `DATE_RANGE` | `FAST` | `false` |
