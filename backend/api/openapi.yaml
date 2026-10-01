@@ -2795,7 +2795,7 @@ components:
     ReportModeItem:
       type: object
       additionalProperties: false
-      required: [reportKey, label, chunkable, mode, source, reason, lastRows, lastDurationMs, changedAt]
+      required: [reportKey, label, chunkable, mode, source, reason, lastRows, lastDurationMs, changedAt, chunkThreshold]
       properties:
         reportKey: {type: string}
         label: {type: string}
@@ -2806,6 +2806,7 @@ components:
         lastRows: {type: integer, minimum: 0, nullable: true, description: "Rows of the last direct run, or units of the last chunked run or measurement."}
         lastDurationMs: {type: integer, format: int64, minimum: 0, nullable: true}
         changedAt: {type: string, format: date-time, nullable: true}
+        chunkThreshold: {type: integer, minimum: 1, nullable: true, description: "Measured unit count from which CHUNKED is recommended; null for a report that cannot be chunked."}
     ReportModeList:
       type: object
       additionalProperties: false
@@ -2822,12 +2823,13 @@ components:
     ReportModeMeasurement:
       type: object
       additionalProperties: false
-      required: [reportKey, units, recommendedMode, applied]
+      required: [reportKey, units, recommendedMode, applied, threshold]
       properties:
         reportKey: {type: string}
         units: {type: integer, minimum: 0, nullable: true}
         recommendedMode: {type: string, enum: [DIRECT, CHUNKED, '']}
         applied: {type: boolean}
+        threshold: {type: integer, minimum: 0}
         safeErrorCode: {type: string}
     ReportModeMeasurementList:
       type: object

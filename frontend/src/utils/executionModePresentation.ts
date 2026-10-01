@@ -46,7 +46,7 @@ export function measurementSummary(item: ReportModeMeasurement, label: string): 
     const reason = item.safeErrorCode ? (measureErrorLabels[item.safeErrorCode] ?? `รหัสข้อผิดพลาด ${item.safeErrorCode}`) : 'วัดไม่สำเร็จ';
     return `${label}: วัดไม่ได้ (${reason})`;
   }
-  const size = `${item.units.toLocaleString('th-TH')} รายการ`;
+  const size = `${item.units.toLocaleString('th-TH')} รายการ (เกณฑ์ ${item.threshold.toLocaleString('th-TH')})`;
   const advice = item.recommendedMode === 'CHUNKED' ? 'แนะนำแบ่งชุด' : 'ดึงตรงได้';
   return `${label}: ${size} · ${advice}${item.applied ? ' · ตั้งให้แล้ว' : ''}`;
 }

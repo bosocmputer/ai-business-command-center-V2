@@ -2480,6 +2480,8 @@ export interface components {
             lastDurationMs: number | null;
             /** Format: date-time */
             changedAt: string | null;
+            /** @description Measured unit count from which CHUNKED is recommended; null for a report that cannot be chunked. */
+            chunkThreshold: number | null;
         };
         ReportModeList: {
             data: components["schemas"]["ReportModeItem"][];
@@ -2495,6 +2497,7 @@ export interface components {
             /** @enum {string} */
             recommendedMode: "DIRECT" | "CHUNKED" | "";
             applied: boolean;
+            threshold: number;
             safeErrorCode?: string;
         };
         ReportModeMeasurementList: {

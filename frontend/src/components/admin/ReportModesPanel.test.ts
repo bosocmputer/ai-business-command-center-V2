@@ -16,7 +16,7 @@ import ReportModesPanel from './ReportModesPanel.vue';
 
 const item = (overrides: Record<string, unknown>) => ({
   reportKey: 'stock_balance', label: 'สต็อกคงเหลือ', chunkable: true, mode: 'DIRECT', source: 'DEFAULT', reason: '',
-  lastRows: null, lastDurationMs: null, changedAt: null, ...overrides
+  lastRows: null, lastDurationMs: null, changedAt: null, chunkThreshold: 5000, ...overrides
 });
 const problem = (status: number, code: string) => new ApiError(status, { code, message: code, requestId: 'r', retryable: false });
 
@@ -61,13 +61,13 @@ describe('ReportModesPanel', () => {
 
   it('reports each measurement and reloads the list afterwards', async () => {
     listReportModes.mockResolvedValue({ data: [item({})] });
-    measureReportModes.mockResolvedValue({ data: [{ reportKey: 'stock_balance', units: 8080, recommendedMode: 'CHUNKED', applied: true }] });
+    measureReportModes.mockResolvedValue({ data: [{ reportKey: 'stock_balance', units: 8080, recommendedMode: 'CHUNKED', applied: true, threshold: 5000 }] });
     const wrapper = mountPanel();
     await flushPromises();
     await wrapper.findAll('button').find((button) => button.text() === 'วัดขนาดร้านนี้')?.trigger('click');
     await flushPromises();
     expect(measureReportModes).toHaveBeenCalledWith('tenant-1');
-    expect(wrapper.get('[data-testid="measure-result"]').text()).toBe('สต็อกคงเหลือ: 8,080 รายการ · แนะนำแบ่งชุด · ตั้งให้แล้ว');
+    expect(wrapper.get('[data-testid="measure-result"]').text()).toBe('สต็อกคงเหลือ: 8,080 รายการ (เกณฑ์ 5,000) · แนะนำแบ่งชุด · ตั้งให้แล้ว');
     expect(listReportModes).toHaveBeenCalledTimes(2);
   });
 

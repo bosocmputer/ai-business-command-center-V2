@@ -89,7 +89,13 @@ func TestListShowsEveryReportAndMarksWhichCanBeChunked(t *testing.T) {
 	if stock.Mode != report.ModeChunked || stock.Source != report.ModeSourceAutoSwitched || !stock.Chunkable || stock.LastRows == nil || *stock.LastRows != 8080 {
 		t.Fatalf("stock = %+v", stock)
 	}
+	if stock.ChunkThreshold == nil || *stock.ChunkThreshold != report.ChunkUnitThreshold(report.StockBalance) {
+		t.Fatalf("a chunkable report must show its threshold: %+v", stock)
+	}
 	sales := byKey[report.SalesGoodsServices]
+	if sales.ChunkThreshold != nil {
+		t.Fatalf("a report that cannot be chunked must have no threshold: %+v", sales)
+	}
 	if sales.Mode != report.ModeDirect || sales.Source != report.ModeSourceDefault || sales.Chunkable {
 		t.Fatalf("a report with no stored row must read DIRECT/DEFAULT and not chunkable: %+v", sales)
 	}
@@ -136,56 +142,89 @@ func TestSetRefusesModesTheWorkerCannotHonour(t *testing.T) {
 	}
 }
 
-func TestMeasureAppliesOnlyToReportsNobodyHasDecided(t *testing.T) {
+func unitsByReport(stock, ar int) queryFunc {
+	return func(_ context.Context, _ sml.Connection, sql string) ([]map[string]string, error) {
+		if strings.Contains(sql, "from ic_inventory") {
+			return manifest(stock), nil
+		}
+		return manifest(ar), nil
+	}
+}
+
+func TestMeasureAppliesPerReportThresholdsAndNeverOverrulesAnAdmin(t *testing.T) {
+	stockLine, arLine := report.ChunkUnitThreshold(report.StockBalance), report.ChunkUnitThreshold(report.ARCustomerMovement)
 	store := &fakeStore{records: []report.ExecutionModeRecord{
 		{ReportKey: report.ARCustomerMovement, Mode: report.ModeDirect, Source: report.ModeSourceManual},
 	}}
-	client := queryFunc(func(_ context.Context, _ sml.Connection, sql string) ([]map[string]string, error) {
-		if strings.Contains(sql, "from ic_inventory") {
-			return manifest(report.ChunkUnitThreshold), nil
-		}
-		return manifest(5000), nil
-	})
-	results, err := NewService(store, fakeConnections{}, client, now).Measure(context.Background(), []byte("admin"), "req", uuid.New())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results) != 2 {
-		t.Fatalf("results = %+v; want the two chunkable reports", results)
+	results, err := NewService(store, fakeConnections{}, unitsByReport(stockLine, arLine+1000), now).Measure(context.Background(), []byte("admin"), "req", uuid.New())
+	if err != nil || len(results) != 2 {
+		t.Fatalf("results=%+v err=%v; want the two chunkable reports", results, err)
 	}
 	byKey := map[report.Key]Measurement{}
 	for _, result := range results {
 		byKey[result.ReportKey] = result
 	}
 	stock := byKey[report.StockBalance]
-	if stock.Units == nil || *stock.Units != report.ChunkUnitThreshold || stock.RecommendedMode != report.ModeChunked || !stock.Applied {
-		t.Fatalf("stock at the threshold must be recommended and applied: %+v", stock)
+	if stock.Units == nil || *stock.Units != stockLine || stock.Threshold != stockLine || stock.RecommendedMode != report.ModeChunked || !stock.Applied {
+		t.Fatalf("stock at its own line must be recommended and applied: %+v", stock)
 	}
 	ar := byKey[report.ARCustomerMovement]
-	if ar.RecommendedMode != report.ModeChunked || ar.Applied {
+	if ar.Threshold != arLine || ar.RecommendedMode != report.ModeChunked || ar.Applied {
 		t.Fatalf("an admin's manual DIRECT must only receive a recommendation: %+v", ar)
 	}
 	if len(store.sets) != 1 || store.sets[0].key != report.StockBalance || store.sets[0].source != report.ModeSourceMeasured || store.sets[0].mode != report.ModeChunked {
 		t.Fatalf("store sets = %+v", store.sets)
 	}
-	if store.measured[report.StockBalance] != report.ChunkUnitThreshold || store.measured[report.ARCustomerMovement] != 5000 {
+	if store.measured[report.StockBalance] != stockLine || store.measured[report.ARCustomerMovement] != arLine+1000 {
 		t.Fatalf("recorded sizes = %v", store.measured)
 	}
 }
 
-func TestMeasureBelowThresholdKeepsDirect(t *testing.T) {
-	store := &fakeStore{}
-	client := queryFunc(func(context.Context, sml.Connection, string) ([]map[string]string, error) {
-		return manifest(report.ChunkUnitThreshold - 1), nil
-	})
-	results, err := NewService(store, fakeConnections{}, client, now).Measure(context.Background(), nil, "req", uuid.New())
+func TestEachReportHasItsOwnLine(t *testing.T) {
+	stockLine, arLine := report.ChunkUnitThreshold(report.StockBalance), report.ChunkUnitThreshold(report.ARCustomerMovement)
+	if stockLine == arLine {
+		t.Fatalf("both reports share the line %d; the point of per-report thresholds is that they differ", stockLine)
+	}
+	// Just under each line stays DIRECT, and a size that is over the stock line
+	// but under the receivable line is DIRECT only for receivables.
+	results, err := NewService(&fakeStore{}, fakeConnections{}, unitsByReport(stockLine-1, arLine-1), now).Measure(context.Background(), nil, "req", uuid.New())
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, result := range results {
 		if result.RecommendedMode != report.ModeDirect {
-			t.Fatalf("%s recommended %s below the threshold", result.ReportKey, result.RecommendedMode)
+			t.Fatalf("%s recommended %s just under its line", result.ReportKey, result.RecommendedMode)
 		}
+	}
+	results, _ = NewService(&fakeStore{}, fakeConnections{}, unitsByReport(stockLine+1, stockLine+1), now).Measure(context.Background(), nil, "req", uuid.New())
+	for _, result := range results {
+		want := report.ModeChunked
+		if result.ReportKey == report.ARCustomerMovement && stockLine+1 < arLine {
+			want = report.ModeDirect
+		}
+		if result.RecommendedMode != want {
+			t.Fatalf("%s at %d units recommended %s, want %s", result.ReportKey, stockLine+1, result.RecommendedMode, want)
+		}
+	}
+}
+
+func TestAMeasurementReplacesAnEarlierMeasurementButNotAWorkerSwitch(t *testing.T) {
+	store := &fakeStore{records: []report.ExecutionModeRecord{
+		{ReportKey: report.StockBalance, Mode: report.ModeChunked, Source: report.ModeSourceMeasured},
+		{ReportKey: report.ARCustomerMovement, Mode: report.ModeChunked, Source: report.ModeSourceAutoSwitched},
+	}}
+	results, err := NewService(store, fakeConnections{}, unitsByReport(100, 100), now).Measure(context.Background(), nil, "req", uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range results {
+		wantApplied := result.ReportKey == report.StockBalance
+		if result.Applied != wantApplied {
+			t.Fatalf("%s applied=%v, want %v: only an earlier measurement may be replaced", result.ReportKey, result.Applied, wantApplied)
+		}
+	}
+	if len(store.sets) != 1 || store.sets[0].key != report.StockBalance || store.sets[0].mode != report.ModeDirect {
+		t.Fatalf("store sets = %+v; the shrunken shop must go back to DIRECT and the auto-switched report must stay", store.sets)
 	}
 }
 

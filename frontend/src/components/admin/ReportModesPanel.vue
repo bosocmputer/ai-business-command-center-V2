@@ -89,7 +89,7 @@ onMounted(load);
       <div class="flex flex-wrap items-center gap-3">{{ loadError }} <Button label="ลองใหม่" size="small" text @click="load" /></div>
     </Message>
     <DataTable v-else :value="items" :loading="loading" data-key="reportKey" size="small" striped-rows responsive-layout="scroll">
-      <Column header="รายงาน"><template #body="{ data }"><span class="font-medium">{{ data.label }}</span></template></Column>
+      <Column header="รายงาน"><template #body="{ data }"><span class="font-medium">{{ data.label }}</span><small v-if="data.chunkThreshold" class="text-muted-color block">แนะนำแบ่งชุดเมื่อตั้งแต่ {{ data.chunkThreshold.toLocaleString('th-TH') }} รายการ</small></template></Column>
       <Column header="โหมด"><template #body="{ data }"><Tag :severity="modeSeverity(data.mode)" :value="modeLabel(data.mode)" /></template></Column>
       <Column header="ที่มา"><template #body="{ data }">
         <div>{{ sourceLabel(data.source) }}</div>

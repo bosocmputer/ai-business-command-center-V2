@@ -52,6 +52,9 @@ type Item struct {
 	LastRows       *int                 `json:"lastRows"`
 	LastDurationMS *int64               `json:"lastDurationMs"`
 	ChangedAt      *time.Time           `json:"changedAt"`
+	// ChunkThreshold is the measured unit count from which CHUNKED is recommended,
+	// or nil for a report that cannot be chunked.
+	ChunkThreshold *int `json:"chunkThreshold"`
 }
 
 // Measurement is the outcome for one chunkable report. Units is nil and
@@ -61,6 +64,7 @@ type Measurement struct {
 	Units           *int                 `json:"units"`
 	RecommendedMode report.ExecutionMode `json:"recommendedMode"`
 	Applied         bool                 `json:"applied"`
+	Threshold       int                  `json:"threshold"`
 	SafeErrorCode   string               `json:"safeErrorCode,omitempty"`
 }
 
@@ -94,11 +98,7 @@ func (s *Service) List(ctx context.Context, tenantID uuid.UUID) ([]Item, error) 
 		if !stored {
 			record = report.ExecutionModeRecord{ReportKey: key, Mode: report.ModeDirect, Source: report.ModeSourceDefault}
 		}
-		items = append(items, Item{
-			ReportKey: key, Label: definition.LabelTH, Chunkable: definition.ChunkSafe,
-			Mode: record.Mode, Source: record.Source, Reason: record.Reason,
-			LastRows: record.LastRows, LastDurationMS: record.LastDurationMS, ChangedAt: record.ChangedAt,
-		})
+		items = append(items, itemFor(definition, record))
 	}
 	return items, nil
 }
@@ -114,11 +114,20 @@ func (s *Service) Set(ctx context.Context, actorHash []byte, requestID string, t
 	if err != nil {
 		return Item{}, err
 	}
-	return Item{
-		ReportKey: key, Label: definition.LabelTH, Chunkable: definition.ChunkSafe,
+	return itemFor(definition, record), nil
+}
+
+func itemFor(definition report.Definition, record report.ExecutionModeRecord) Item {
+	item := Item{
+		ReportKey: definition.Key, Label: definition.LabelTH, Chunkable: definition.ChunkSafe,
 		Mode: record.Mode, Source: record.Source, Reason: record.Reason,
 		LastRows: record.LastRows, LastDurationMS: record.LastDurationMS, ChangedAt: record.ChangedAt,
-	}, nil
+	}
+	if definition.ChunkSafe {
+		threshold := report.ChunkUnitThreshold(definition.Key)
+		item.ChunkThreshold = &threshold
+	}
+	return item
 }
 
 // Measure counts the units each chunkable report would split over, records the
@@ -159,7 +168,7 @@ func (s *Service) Measure(ctx context.Context, actorHash []byte, requestID strin
 }
 
 func (s *Service) measureOne(ctx context.Context, actorHash []byte, requestID string, tenantID uuid.UUID, key report.Key, period report.Period, connection sml.Connection, existing report.ExecutionModeRecord, now time.Time) Measurement {
-	result := Measurement{ReportKey: key}
+	result := Measurement{ReportKey: key, Threshold: report.ChunkUnitThreshold(key)}
 	query, _, err := report.BuildChunkManifestQuery(key, period)
 	if err != nil {
 		result.SafeErrorCode = "REPORT_CONTRACT_INVALID"
@@ -186,13 +195,14 @@ func (s *Service) measureOne(ctx context.Context, actorHash []byte, requestID st
 	}
 	count := len(units)
 	result.Units = &count
-	result.RecommendedMode = report.RecommendMode(count)
+	result.RecommendedMode = report.RecommendMode(key, count)
 	if err := s.store.RecordMeasurement(ctx, tenantID, key, count, elapsed, now); err != nil {
 		result.SafeErrorCode = "STORE_FAILED"
 		return result
 	}
-	// Only a report nobody has chosen for yet takes the measured mode.
-	if existing.Source == "" || existing.Source == report.ModeSourceDefault {
+	// A measurement replaces nothing but an earlier measurement or the default.
+	// A switch made by the worker or a choice made by an admin is never overruled.
+	if existing.Source == "" || existing.Source == report.ModeSourceDefault || existing.Source == report.ModeSourceMeasured {
 		reason := "measured " + itoa(count) + " units"
 		if _, err := s.store.Set(ctx, actorHash, requestID, tenantID, key, result.RecommendedMode, report.ModeSourceMeasured, reason, now); err == nil {
 			result.Applied = true

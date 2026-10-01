@@ -21,11 +21,31 @@ const (
 	ModeSourceManual       ModeSource = "MANUAL"
 )
 
-// ChunkUnitThreshold is the unit count (products or customers) from which a
-// report is measured as CHUNKED. It is a starting guess: the only hard data is
-// that 8,080 stock rows could not be fetched in one query. Tune it from the
-// first real shops.
-const ChunkUnitThreshold = 3000
+// ChunkUnitThreshold returns the unit count (products or customers) from which a
+// measurement recommends CHUNKED for a report. It is an estimate anchored on two
+// observations per report, not a measured limit:
+//
+//   - stock balance: one shop fetched 190 items in a single query in about a
+//     second, while another could not fetch 8,080 stock rows at all (the response
+//     XML was cut off), so the line sits between them;
+//   - receivable movement: a shop fetched 3,972 customers and about 50,000 rows
+//     in a single query in about five seconds. One query may return at most
+//     200,000 rows, and a shop has been seen at about 13 rows per customer, so
+//     the line is set well below that.
+//
+// The worker still switches a report to CHUNKED by itself when a direct fetch
+// fails on size, so a threshold that is too high costs one failed run, not
+// missing data. Recorded sizes and durations (last_rows, last_duration_ms) are
+// there to tune these numbers.
+func ChunkUnitThreshold(key Key) int {
+	switch key {
+	case StockBalance:
+		return 5000
+	case ARCustomerMovement:
+		return 8000
+	}
+	return 0
+}
 
 // ExecutionModeRecord is one tenant/report row. Missing rows mean DIRECT.
 type ExecutionModeRecord struct {
@@ -40,9 +60,10 @@ type ExecutionModeRecord struct {
 
 func (mode ExecutionMode) Valid() bool { return mode == ModeDirect || mode == ModeChunked }
 
-// RecommendMode maps a measured unit count to a mode.
-func RecommendMode(units int) ExecutionMode {
-	if units >= ChunkUnitThreshold {
+// RecommendMode maps a measured unit count to a mode for one report. A report
+// that cannot be chunked is always DIRECT.
+func RecommendMode(key Key, units int) ExecutionMode {
+	if threshold := ChunkUnitThreshold(key); threshold > 0 && units >= threshold {
 		return ModeChunked
 	}
 	return ModeDirect

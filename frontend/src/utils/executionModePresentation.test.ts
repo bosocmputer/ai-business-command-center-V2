@@ -21,13 +21,13 @@ describe('execution mode presentation', () => {
   });
 
   it('summarises a measurement, including a failed one', () => {
-    expect(measurementSummary({ reportKey: 'stock_balance', units: 8080, recommendedMode: 'CHUNKED', applied: true }, 'สต็อกคงเหลือ'))
-      .toBe('สต็อกคงเหลือ: 8,080 รายการ · แนะนำแบ่งชุด · ตั้งให้แล้ว');
-    expect(measurementSummary({ reportKey: 'ar_customer_movement', units: 900, recommendedMode: 'DIRECT', applied: false }, 'ลูกหนี้'))
-      .toBe('ลูกหนี้: 900 รายการ · ดึงตรงได้');
-    expect(measurementSummary({ reportKey: 'stock_balance', units: null, recommendedMode: '', applied: false, safeErrorCode: 'SML_TIMEOUT' }, 'สต็อกคงเหลือ'))
+    expect(measurementSummary({ reportKey: 'stock_balance', units: 8080, recommendedMode: 'CHUNKED', applied: true, threshold: 5000 }, 'สต็อกคงเหลือ'))
+      .toBe('สต็อกคงเหลือ: 8,080 รายการ (เกณฑ์ 5,000) · แนะนำแบ่งชุด · ตั้งให้แล้ว');
+    expect(measurementSummary({ reportKey: 'ar_customer_movement', units: 900, recommendedMode: 'DIRECT', applied: false, threshold: 8000 }, 'ลูกหนี้'))
+      .toBe('ลูกหนี้: 900 รายการ (เกณฑ์ 8,000) · ดึงตรงได้');
+    expect(measurementSummary({ reportKey: 'stock_balance', units: null, recommendedMode: '', applied: false, threshold: 5000, safeErrorCode: 'SML_TIMEOUT' }, 'สต็อกคงเหลือ'))
       .toBe('สต็อกคงเหลือ: วัดไม่ได้ (ร้านตอบช้าเกินกำหนด)');
-    expect(measurementSummary({ reportKey: 'stock_balance', units: null, recommendedMode: '', applied: false, safeErrorCode: 'ODD' }, 'x'))
+    expect(measurementSummary({ reportKey: 'stock_balance', units: null, recommendedMode: '', applied: false, threshold: 5000, safeErrorCode: 'ODD' }, 'x'))
       .toContain('รหัสข้อผิดพลาด ODD');
   });
 });

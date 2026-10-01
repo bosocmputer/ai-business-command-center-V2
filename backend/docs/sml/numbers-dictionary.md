@@ -25,9 +25,9 @@ The rules below describe what the V2 SQL does today. Where V2 and the older smlm
 
 | Term (Thai) | Definition | Where it is used |
 |---|---|---|
-| ยอดขาย (sales, including VAT) | Sum of header `total_amount` of code 44 documents. Includes cash and credit sales. Excludes code 46 (debit notes) and 48 (returns and credit notes). | Sales report. smlmcpconnect sales tools use the same rule. |
-| ยอดขายก่อน VAT | Sum of line `sum_amount_exclude_vat` of code 44 documents. | Gross profit reports |
-| VAT ขาย | Sum of header `total_vat_value` of code 44 documents. Zero for `vat_type` 2. | Sales report |
+| ยอดขาย (sales, including VAT), the headline figure | Header `total_amount` of codes 44 and 46 minus code 48. Includes cash and credit sales, so a return lowers the day's sales and a debit note raises it. Always labelled "including VAT". Decided by the owner on 2026-10-01. | Sales report and every answer that says "sales". The sales report counted code 44 only until this decision was applied, and smlmcpconnect's sales tools still do. |
+| ยอดขายก่อน VAT | Line `sum_amount_exclude_vat` of codes 44 and 46 minus code 48. Used next to profit, and always named "before VAT". | Gross profit reports |
+| VAT ขาย | Header `total_vat_value` of codes 44 and 46 minus code 48. Zero for `vat_type` 2 and 3. | Sales report |
 | ยอดขายสุทธิ (net sales before VAT) | Lines of codes 44 and 46 minus lines of code 48, using `sum_amount_exclude_vat`. | Gross profit reports |
 | ต้นทุนขาย | Line `sum_of_cost` of codes 44 and 46 minus code 48. | Gross profit reports |
 | กำไรขั้นต้น | Net sales before VAT minus cost of sales. smlmcpconnect uses code 44 only, so it differs from V2 whenever there are returns or debit notes. Follow V2. | Gross profit by product and by customer |
@@ -68,6 +68,4 @@ Settled by the owner on 2026-10-01:
 - `vat_type` 3 means no effect on tax. `inquiry_type` 4 does not exist. Only `last_status` 0 and 1 matter.
 - A document with no `due_date` is shown as "no due date", as the data says.
 
-Open:
-
-1. Whether "ยอดขาย" in answers and cards includes debit notes (46) and subtracts returns (48), or stays as code 44 only as the sales report does today. Recommendation: net, with the "including VAT" and "before VAT" figures named separately. The profit reports already include them, so two reports can disagree on "sales" until this is settled.
+- "Sales" is the net figure above (codes 44 and 46 minus 48), with "including VAT" and "before VAT" named separately. The live sales report still counts code 44 only; changing it changes the card the shop sees by a small amount, so it is applied when the first new reports are built and announced to the owner beforehand.
