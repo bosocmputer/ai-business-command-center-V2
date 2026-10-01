@@ -91,7 +91,7 @@ func TestBuildDashboardCoversEveryApprovedReport(t *testing.T) {
 				if metric.Key == "" || metric.Label == "" || metric.Unit == "" || metric.Value == "" {
 					t.Fatalf("invalid KPI = %+v", metric)
 				}
-				if key == StockReorder {
+				if key == StockReorder || key == ARAging {
 					if metric.Comparison.Availability != ComparisonUnavailable || metric.Comparison.PreviousValue != "" {
 						t.Fatalf("unsupported comparison leaked for KPI = %+v", metric)
 					}
@@ -233,6 +233,9 @@ func dashboardFixture(key Key) (map[string][]map[string]string, map[string][]map
 	case ARCustomerMovement:
 		return map[string][]map[string]string{"rows": {{"cust_code": "C1", "cust_name": "ลูกค้า 1", "doc_sort": "1", "amount": "300.00"}, {"cust_code": "C1", "cust_name": "ลูกค้า 1", "doc_sort": "2", "amount": "100.00"}}},
 			map[string][]map[string]string{"rows": {{"cust_code": "C1", "cust_name": "ลูกค้า 1", "doc_sort": "1", "amount": "150.00"}}}
+	case ARAging:
+		rows := agingDetailFixture()
+		return map[string][]map[string]string{"rows": rows}, map[string][]map[string]string{"rows": rows}
 	case ARDebtReceipt:
 		return map[string][]map[string]string{"rows": {{"doc_date": "2026-07-09", "doc_no": "R1", "cash_amount": "100.00", "transfer_amount": "20.00", "total_net_value": "120.00", "payment_split_missing": "false"}, {"doc_date": "2026-07-10", "doc_no": "R2", "cash_amount": "0", "transfer_amount": "80.00", "total_net_value": "80.00", "payment_split_missing": "false"}}},
 			map[string][]map[string]string{"rows": {{"doc_date": "2026-07-07", "doc_no": "R0", "cash_amount": "60.00", "transfer_amount": "40.00", "total_net_value": "100.00", "payment_split_missing": "false"}}}

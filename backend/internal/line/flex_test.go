@@ -128,8 +128,8 @@ func TestRenderFlexConstrainsLongTenantAndNumericText(t *testing.T) {
 	}
 }
 
-func TestRenderFlexSupportsTenReportsButRejectsElevenOrIncompleteMetrics(t *testing.T) {
-	keys := report.Keys()
+func TestRenderFlexSupportsTheCardLimitButRejectsOneMoreOrIncompleteMetrics(t *testing.T) {
+	keys := report.Keys()[:report.MaxReportsPerCard]
 	input := FlexInput{
 		TenantName: "Shop", Period: report.Period{DateFrom: "2026-07-01", DateTo: "2026-07-10"}, GeneratedAt: time.Now(),
 		ActionURL: "https://dashboard.nextstep-soft.com/app?deliveryRef=opaque",
@@ -142,14 +142,14 @@ func TestRenderFlexSupportsTenReportsButRejectsElevenOrIncompleteMetrics(t *test
 		input.Reports = append(input.Reports, item)
 	}
 	if _, err := RenderFlex(input); err != nil {
-		t.Fatalf("ten reports rejected: %v", err)
+		t.Fatalf("%d reports rejected: %v", report.MaxReportsPerCard, err)
 	}
 	if payload, err := RenderFlex(input); err != nil || len(payload) > softFlexPayloadBytes {
 		t.Fatalf("ten-report payload = %d bytes, err = %v", len(payload), err)
 	}
 	input.Reports = append(input.Reports, flexReport(keys[0]))
 	if _, err := RenderFlex(input); err == nil {
-		t.Fatal("eleven reports accepted in one bubble")
+		t.Fatalf("%d reports accepted in one bubble", report.MaxReportsPerCard+1)
 	}
 	input.Reports = []FlexReport{{Key: report.SalesGoodsServices, Metrics: map[string]string{"document_count": "1"}}}
 	if _, err := RenderFlex(input); err == nil {

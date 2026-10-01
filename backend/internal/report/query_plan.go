@@ -104,6 +104,8 @@ func detailQueryTemplates(key Key) []string {
 		return []string{stockReorderSQL}
 	case ARCustomerMovement:
 		return []string{arCustomerMovementSQL}
+	case ARAging:
+		return []string{arAgingSQL}
 	case ARDebtReceipt:
 		return []string{arDebtReceiptSQL}
 	case CashBankReceipts:
@@ -155,6 +157,8 @@ func BuildQueryPlanForProjection(key Key, period Period, projection ResultKind) 
 		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: stockReorderSQL}}}
 	case ARCustomerMovement:
 		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: arCustomerMovementSQL, Args: []any{period.DateTo}}}}
+	case ARAging:
+		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: arAgingSQL, Args: []any{period.DateTo}}}}
 	case ARDebtReceipt:
 		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: arDebtReceiptSQL, Args: dateRangeArgs}}}
 	case CashBankReceipts:

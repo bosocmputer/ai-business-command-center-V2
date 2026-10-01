@@ -32,6 +32,8 @@ func buildSummaryQueryPlan(key Key, period Period) (QueryPlan, error) {
 		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: summaryReorderSQL()}}}
 	case ARCustomerMovement:
 		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: summaryARMovementSQL(arCustomerMovementSQL), Args: []any{period.DateTo}}}}
+	case ARAging:
+		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: arAgingSummarySQL, Args: []any{period.DateTo}}}}
 	case ARDebtReceipt:
 		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: summaryCashFlowSQL(arDebtReceiptSQL, period, true, false), Args: dateRangeArgs}}}
 	case CashBankReceipts:

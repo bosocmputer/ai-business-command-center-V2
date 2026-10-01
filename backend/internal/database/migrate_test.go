@@ -55,8 +55,8 @@ func TestMigrateCreatesFoundationAndIsIdempotent(t *testing.T) {
 	if err := pool.QueryRow(ctx, `select count(*) from report_definitions`).Scan(&reportCount); err != nil {
 		t.Fatalf("count report definitions: %v", err)
 	}
-	if reportCount != 10 {
-		t.Fatalf("report definition count = %d, want 10", reportCount)
+	if reportCount != len(report.Keys()) {
+		t.Fatalf("report definition rows = %d, catalog has %d reports: a new report needs a migration that inserts its definition", reportCount, len(report.Keys()))
 	}
 	var hasDashboardJSON bool
 	if err := pool.QueryRow(ctx, `

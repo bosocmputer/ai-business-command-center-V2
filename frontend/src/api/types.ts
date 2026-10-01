@@ -114,6 +114,7 @@ export const reportDefinitions: ReportDefinition[] = [
   { reportKey: 'stock_balance', version: '1.0.0', label: 'รายงานสต็อกคงเหลือ', category: 'INVENTORY', isSensitive: true, periodMode: 'AS_OF_DATE' },
   { reportKey: 'stock_reorder', version: '1.0.0', label: 'รายงานสินค้าถึงจุดสั่งซื้อ', category: 'INVENTORY', isSensitive: false, periodMode: 'CURRENT_ONLY' },
   { reportKey: 'ar_customer_movement', version: '1.0.0', label: 'รายงานความเคลื่อนไหวลูกหนี้', category: 'AR', isSensitive: true, periodMode: 'AS_OF_DATE' },
+  { reportKey: 'ar_aging', version: '1.0.0', label: 'รายงานอายุหนี้ลูกหนี้', category: 'AR', isSensitive: true, periodMode: 'AS_OF_DATE' },
   { reportKey: 'ar_debt_receipt', version: '1.0.0', label: 'รายงานรับชำระหนี้', category: 'AR', isSensitive: true, periodMode: 'DATE_RANGE' },
   { reportKey: 'cash_bank_receipts', version: '1.0.0', label: 'รายงานรับเงิน', category: 'CASH_BANK', isSensitive: true, periodMode: 'DATE_RANGE' },
   { reportKey: 'cash_bank_payments', version: '1.0.0', label: 'รายงานจ่ายเงิน', category: 'CASH_BANK', isSensitive: true, periodMode: 'DATE_RANGE' }

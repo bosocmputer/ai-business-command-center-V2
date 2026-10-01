@@ -121,15 +121,15 @@ func TestValidateNormalizesOrderAndRejectsUserError(t *testing.T) {
 	}
 }
 
-func TestValidateAcceptsTenReportsButRejectsEleven(t *testing.T) {
+func TestValidateAcceptsTheCardLimitButRejectsOneMore(t *testing.T) {
 	input := validInput(uuid.New())
-	input.ReportKeys = append([]report.Key(nil), report.Keys()...)
+	input.ReportKeys = append([]report.Key(nil), report.Keys()[:report.MaxReportsPerCard]...)
 	if _, err := Validate(input); err != nil {
-		t.Fatalf("ten reports rejected: %v", err)
+		t.Fatalf("%d reports rejected: %v", report.MaxReportsPerCard, err)
 	}
-	input.ReportKeys = append(input.ReportKeys, report.Keys()[0])
+	input.ReportKeys = append(input.ReportKeys, report.Keys()[report.MaxReportsPerCard])
 	if _, err := Validate(input); err == nil {
-		t.Fatal("eleven reports accepted")
+		t.Fatalf("%d reports accepted on one card", report.MaxReportsPerCard+1)
 	}
 }
 

@@ -89,6 +89,7 @@ var flexPresentationDefinitions = map[report.Key]flexPresentationDefinition{
 	report.StockBalance:            {primary: "balance_amount", supporting: []string{"item_count"}, zeroText: "ไม่พบสินค้าคงเหลือ"},
 	report.StockReorder:            {primary: "reorder_item_count", supporting: []string{"shortage_qty"}, zeroText: "ไม่มีสินค้าต่ำกว่าจุดสั่งซื้อ"},
 	report.ARCustomerMovement:      {primary: "net_movement_amount", supporting: []string{"customer_count"}, zeroText: "ไม่มีความเคลื่อนไหวลูกหนี้"},
+	report.ARAging:                 {primary: "total_balance", supporting: []string{"overdue_amount", "customer_count"}, zeroText: "ไม่มียอดค้างชำระ"},
 	report.ARDebtReceipt:           {primary: "total_received_amount", supporting: []string{"receipt_count", "average_per_receipt"}, zeroText: "ไม่มีรายการรับชำระหนี้"},
 	report.CashBankReceipts:        {primary: "total_amount", supporting: []string{"document_count", "average_per_document"}, zeroText: "ไม่มีรายการรับเงิน"},
 	report.CashBankPayments:        {primary: "total_amount", supporting: []string{"document_count", "average_per_document"}, zeroText: "ไม่มีรายการจ่ายเงิน"},

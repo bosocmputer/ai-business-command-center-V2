@@ -13,6 +13,7 @@ const (
 	StockReorder            Key = "stock_reorder"
 	ARCustomerMovement      Key = "ar_customer_movement"
 	ARDebtReceipt           Key = "ar_debt_receipt"
+	ARAging                 Key = "ar_aging"
 	CashBankReceipts        Key = "cash_bank_receipts"
 	CashBankPayments        Key = "cash_bank_payments"
 )
@@ -87,6 +88,7 @@ var orderedDefinitions = []Definition{
 	definition(StockBalance, "รายงานสต็อกคงเหลือ", "INVENTORY", true, AsOfDate, "item_count", "สินค้า", "balance_amount", "มูลค่าคงเหลือ"),
 	definition(StockReorder, "รายงานสินค้าถึงจุดสั่งซื้อ", "INVENTORY", false, CurrentOnly, "reorder_item_count", "สินค้าต้องสั่ง", "shortage_qty", "จำนวนขาด"),
 	definition(ARCustomerMovement, "รายงานความเคลื่อนไหวลูกหนี้", "AR", true, AsOfDate, "customer_count", "ลูกหนี้", "net_movement_amount", "ยอดเคลื่อนไหวสุทธิ"),
+	definition(ARAging, "รายงานอายุหนี้ลูกหนี้", "AR", true, AsOfDate, "total_balance", "ยอดค้างรวม", "overdue_amount", "ยอดเลยกำหนด"),
 	definition(ARDebtReceipt, "รายงานรับชำระหนี้", "AR", true, DateRange, "receipt_count", "เอกสาร", "total_received_amount", "ยอดรับชำระ"),
 	definition(CashBankReceipts, "รายงานรับเงิน", "CASH_BANK", true, DateRange, "document_count", "เอกสาร", "total_amount", "ยอดรับเงิน"),
 	definition(CashBankPayments, "รายงานจ่ายเงิน", "CASH_BANK", true, DateRange, "document_count", "เอกสาร", "total_amount", "ยอดจ่ายเงิน"),
@@ -108,7 +110,7 @@ func definition(key Key, label, category string, sensitive bool, parameterKind P
 	refreshClass := RefreshStandard
 	if key == SalesGoodsServices || key == ARDebtReceipt || key == CashBankReceipts || key == CashBankPayments {
 		refreshClass = RefreshFast
-	} else if key == StockBalance || key == ARCustomerMovement {
+	} else if key == StockBalance || key == ARCustomerMovement || key == ARAging {
 		refreshClass = RefreshHeavy
 	}
 	summaryTimeout := 30 * time.Second

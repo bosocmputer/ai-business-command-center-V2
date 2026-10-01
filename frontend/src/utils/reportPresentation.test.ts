@@ -3,7 +3,7 @@ import { reportDefinitions } from '@/api';
 import { formatReportCell, presentationFor, reportPresentations, visibleReportColumns } from './reportPresentation';
 
 describe('report presentation metadata', () => {
-  it('defines a business-first presentation for all ten reports', () => {
+  it('defines a business-first presentation for every report', () => {
     expect(Object.keys(reportPresentations).sort()).toEqual(reportDefinitions.map((item) => item.reportKey).sort());
     for (const definition of Object.values(reportPresentations)) {
       expect(definition.columns.filter((column) => column.defaultVisible).length).toBeGreaterThanOrEqual(3);
@@ -34,8 +34,8 @@ describe('typed report table presentation', () => {
     expect(formatReportCell('15', integer)).toBe('15');
   });
 
-  it('defines a semantic type for every known column in all ten reports', () => {
-    expect(Object.keys(reportPresentations)).toHaveLength(10);
+  it('defines a semantic type for every known column in every report', () => {
+    expect(Object.keys(reportPresentations)).toHaveLength(reportDefinitions.length);
     for (const presentation of Object.values(reportPresentations)) {
       for (const column of presentation.columns) {
         expect(column.dataType, `${presentation.reportKey}.${column.key}`).toMatch(/^(TEXT|IDENTIFIER|DATE|TIME|NUMBER)$/);

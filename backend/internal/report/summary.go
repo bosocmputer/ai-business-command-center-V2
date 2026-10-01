@@ -123,6 +123,15 @@ func Summarize(key Key, steps map[string][]map[string]string) (SummaryResult, er
 			}
 		}
 		result.Metrics["shortage_qty"] = shortage.FloatString(4)
+	case ARAging:
+		totals, agingErr := agingTotalsFromSteps(steps)
+		if agingErr != nil {
+			return SummaryResult{}, agingErr
+		}
+		for name, value := range totals.metrics() {
+			result.Metrics[name] = value
+		}
+		result.RowCount = totals.documents
 	case ARCustomerMovement:
 		if customerCount, ok := summaryMetric(steps, "customer_count"); ok {
 			result.Metrics["customer_count"] = integerText(customerCount)

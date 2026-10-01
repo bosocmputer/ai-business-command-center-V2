@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestCatalogKeepsStableTenReportContract(t *testing.T) {
+func TestCatalogKeepsStableReportContract(t *testing.T) {
 	want := []Key{
 		SalesGoodsServices,
 		PurchaseGoodsPayables,
@@ -15,6 +15,7 @@ func TestCatalogKeepsStableTenReportContract(t *testing.T) {
 		StockBalance,
 		StockReorder,
 		ARCustomerMovement,
+		ARAging,
 		ARDebtReceipt,
 		CashBankReceipts,
 		CashBankPayments,

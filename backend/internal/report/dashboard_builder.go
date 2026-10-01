@@ -68,7 +68,7 @@ func BuildDashboard(key Key, period, comparisonPeriod Period, currentSteps, prev
 // ComparisonSupported prevents unlike time windows and current-only reports
 // from being presented as historical comparisons.
 func ComparisonSupported(key Key, period Period) bool {
-	if _, ok := DefinitionFor(key); !ok || key == StockReorder || period.Preset == TodayToNow {
+	if _, ok := DefinitionFor(key); !ok || key == StockReorder || key == ARAging || period.Preset == TodayToNow {
 		return false
 	}
 	if period.Preset == AsOfRun {
@@ -166,6 +166,11 @@ func buildDashboardMetrics(key Key, current, previous SummaryResult, currentStep
 		}, nil
 	case StockReorder:
 		return []dashboardMetricInput{metric("reorder_item_count", "สินค้าที่ต้องสั่ง", UnitCount), metric("shortage_qty", "จำนวนขาดรวม", UnitQuantity)}, nil
+	case ARAging:
+		return []dashboardMetricInput{
+			metric("total_balance", "ยอดค้างรวม", UnitTHB), metric("overdue_amount", "ยอดเลยกำหนด", UnitTHB),
+			metric("no_due_date_amount", "ไม่ระบุวันครบกำหนด", UnitTHB), metric("customer_count", "จำนวนลูกหนี้ที่ค้าง", UnitCount),
+		}, nil
 	case ARCustomerMovement:
 		currentDebit, currentCredit, err := movementTotalsFromSummary(current, currentSteps["rows"])
 		if err != nil {
@@ -271,6 +276,8 @@ func buildDashboardVisualizations(key Key, period, comparisonPeriod Period, curr
 	case StockReorder:
 		reorder, err := buildReorderExceptions(currentSteps["rows"])
 		return compactVisualizations(reorder), err
+	case ARAging:
+		return buildAgingVisualizations(currentSteps["rows"])
 	case ARCustomerMovement:
 		return buildMovementVisualizations(currentSteps["rows"])
 	case ARDebtReceipt:

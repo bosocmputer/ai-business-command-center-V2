@@ -39,6 +39,7 @@ The rules below describe what the V2 SQL does today. Where V2 and the older smlm
 | ช่องทางชำระ | `cash_amount`, `card_amount`, `chq_amount`, `tranfer_amount`, `coupon_amount` on the cash book row. A row whose channels do not add up to `total_amount` shows the difference as "ไม่ระบุช่องทาง". Never present that difference as a person's mistake. | Receipts and payments |
 | สต็อกคงเหลือ (stock on hand by movement) | Built from line movements up to the end date. A code list decides which documents add and which remove stock. It excludes item types 1 and 3, lines of item type 5, and lines of copies or POS bills with a `doc_ref`. It reproduces the SML stock card. | Stock balance report |
 | คงเหลือตามทะเบียนสินค้า | `ic_inventory.balance_qty`, the figure stored on the item master. | Reorder report |
+| ลูกหนี้ตามอายุหนี้ (`ar_aging`) | As of a date, per open document: `total_amount` minus debt receipts (code 239, matched by billing number and document date, payments up to the as-of date). Debit documents are 44 and 250-style credit sales (`inquiry_type` 0 or 2), 46 and the opening balances 93, 99, 95, 101. Credit documents (48 with `inquiry_type` 0, 2 or 4, 97, 103) carry a negative balance. Buckets by days past `due_date`: not yet due, 1 to 30, 31 to 60, 61 to 90, 91 to 120, over 120, plus "ไม่ระบุวันครบกำหนด" for documents without a due date (never aged from the document date) and "เครดิตคงค้าง" for negative balances. The grand total equals the receivable movement balance at the same date. A payment is applied to the customer of the document it was billed against, so a single customer can differ between the two reports when a receipt was booked under another customer; the totals still agree. | Receivable aging report |
 | ถึงจุดสั่งซื้อ | Item master balance below the largest `purchase_point` of the item, for item types other than 5. | Reorder report |
 
 Stock on hand by movement and the item master balance are different numbers. Name them differently in answers, and do not mix them in one sentence. They can disagree for individual items, and the value by movement can be negative when issues are recorded without matching receipts, so the figure must be shown with its basis.
@@ -47,7 +48,6 @@ Stock on hand by movement and the item master balance are different numbers. Nam
 
 | Term | Rule to follow |
 |---|---|
-| ลูกหนี้ตามอายุหนี้ (receivables aging) | smlmcpconnect's rule: per document, balance is `total_amount` minus payments from `ap_ar_trans_detail` (code 239, matched by billing number and date); buckets by days past `due_date` (due today, 1 to 30, 31 to 60, 61 to 90, 91 to 120, over 120). It needs `due_date`, which some shops leave empty on most open documents. Report those documents in their own bucket, "ไม่ระบุวันครบกำหนด" (no due date), and state the amount. Do not invent a due date and do not age them from the document date (decision of the owner). |
 | RFM (recency, frequency, monetary) | Do not copy smlmcpconnect's SQL. It orders recency ascending and frequency and amount descending when scoring with NTILE, so score 1 is the best customer, but its segment rules treat 5 as the best. The best customers end up labelled "Hibernating". Score so that 5 is the best: recency ordered descending (shorter is better), frequency and monetary ordered ascending. Count code 44 documents with `last_status = 0` and `is_doc_copy = 0`, amount from `total_amount`. |
 | ความถี่การซื้อ | Average days between a customer's code 44 documents in the window: `(last date - first date) / (documents - 1)`, for customers with at least two documents. |
 
@@ -57,7 +57,7 @@ Stock on hand by movement and the item master balance are different numbers. Nam
 |---|---|---|---|
 | Profit | Codes 44 and 46 minus 48, before VAT | Code 44 only | V2 |
 | Sales report POS rule | Drops POS bills that have a `doc_ref` | No rule | V2, and check on any shop that uses POS |
-| Aging | Not built | Uses `due_date` | Build with a "no due date" bucket |
+| Aging | `ar_aging`, built | Uses `due_date` | V2, with a "no due date" bucket |
 | RFM | Not built | Inverted scores | Rewrite |
 | Stock | Movement based | Not compared | Name the basis in every answer |
 
