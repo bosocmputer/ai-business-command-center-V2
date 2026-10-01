@@ -71,7 +71,7 @@ func TestReadContainersParsesDockerStatsAndRejectsStaleFile(t *testing.T) {
 	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 	writeFile(t, dir, "containers.json", `{"version":1,"checkedAt":"2026-09-30T11:59:55Z","containers":[
 	  {"Name":"ai-bcc-v2-api-1","CPUPerc":"1.25%","MemUsage":"48.5MiB / 512MiB"},
-	  {"Name":"hermes-sintawee","CPUPerc":"0.00%","MemUsage":"1.5GiB / 15.6GiB"},
+	  {"Name":"hermes-shop1","CPUPerc":"0.00%","MemUsage":"1.5GiB / 15.6GiB"},
 	  {"Name":"","CPUPerc":"1%","MemUsage":"1B / 2B"},
 	  {"Name":"odd","CPUPerc":"--","MemUsage":"nonsense"}]}`)
 
