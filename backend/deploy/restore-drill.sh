@@ -83,7 +83,7 @@ fi
 
 d exec -i "$container" pg_restore --username "$postgres_user" --dbname restorecheck --exit-on-error --no-owner --no-acl < "$backup_file"
 validated=$(d exec "$container" psql --username "$postgres_user" --dbname restorecheck --tuples-only --no-align --command \
-  "select (count(*) = 10 and (select max(version) from schema_migrations) >= 23) from report_definitions;" | tr -d '[:space:]')
+  "select (count(*) >= 10 and (select max(version) from schema_migrations) >= 23) from report_definitions;" | tr -d '[:space:]')
 if [ "$validated" != "t" ]; then
   echo "Isolated restore validation failed." >&2
   exit 1

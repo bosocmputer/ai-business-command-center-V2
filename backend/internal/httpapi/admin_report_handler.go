@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	maximumScheduleReports  = 10
+	maximumScheduleReports  = report.MaxReportsPerCard
 	maximumFlexPayloadBytes = 30 * 1024
 )
 

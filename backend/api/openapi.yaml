@@ -1557,7 +1557,7 @@ components:
           properties:
             tenantId: {type: string, format: uuid}
             statuses: {type: array, uniqueItems: true, maxItems: 7, items: {$ref: '#/components/schemas/ReportRunStatus'}}
-            reportKeys: {type: array, uniqueItems: true, maxItems: 10, items: {$ref: '#/components/schemas/ReportKey'}}
+            reportKeys: {type: array, uniqueItems: true, maxItems: 64, items: {$ref: '#/components/schemas/ReportKey'}}
             sources: {type: array, uniqueItems: true, maxItems: 3, items: {type: string, enum: [DASHBOARD, SCHEDULE, BACKGROUND]}}
             dateFrom: {type: string, format: date}
             dateTo: {type: string, format: date}
@@ -1582,7 +1582,7 @@ components:
             tenantId: {type: string, format: uuid}
             recipientId: {type: string, format: uuid}
             statuses: {type: array, uniqueItems: true, maxItems: 6, items: {type: string, enum: [PENDING, SENDING, ACCEPTED, RETRY_WAIT, UNCERTAIN, FAILED_PERMANENT]}}
-            reportKeys: {type: array, uniqueItems: true, maxItems: 10, items: {$ref: '#/components/schemas/ReportKey'}}
+            reportKeys: {type: array, uniqueItems: true, maxItems: 64, items: {$ref: '#/components/schemas/ReportKey'}}
             dateFrom: {type: string, format: date}
             dateTo: {type: string, format: date}
     DeliveriesTableQueryResult:
@@ -1650,7 +1650,7 @@ components:
           additionalProperties: false
           properties:
             tenantId: {type: string, format: uuid}
-            reportKeys: {type: array, uniqueItems: true, maxItems: 10, items: {$ref: '#/components/schemas/ReportKey'}}
+            reportKeys: {type: array, uniqueItems: true, maxItems: 64, items: {$ref: '#/components/schemas/ReportKey'}}
             sourceKinds: {type: array, uniqueItems: true, maxItems: 8, items: {type: string, enum: [NOTIFICATION, DELIVERY, REPORT, WORKER, SML_CIRCUIT, HOST, BACKUP, DATABASE]}}
             safeErrorCodes: {type: array, uniqueItems: true, maxItems: 8, items: {type: string, pattern: '^[A-Z][A-Z0-9_]*$', maxLength: 100}}
             dateFrom: {type: string, format: date}
@@ -2422,7 +2422,7 @@ components:
         publishedAt: {type: string, format: date-time, nullable: true}
         items:
           type: array
-          maxItems: 10
+          maxItems: 64
           items: {$ref: '#/components/schemas/DashboardSnapshot'}
     DashboardRefreshRun:
       type: object
@@ -2455,7 +2455,7 @@ components:
         failed: {type: integer, minimum: 0, maximum: 10}
         runs:
           type: array
-          maxItems: 10
+          maxItems: 64
           items: {$ref: '#/components/schemas/DashboardRefreshRun'}
         createdAt: {type: string, format: date-time}
         finishedAt: {type: string, format: date-time, nullable: true}
@@ -2470,7 +2470,7 @@ components:
         reportKeys:
           type: array
           minItems: 1
-          maxItems: 10
+          maxItems: 64
           uniqueItems: true
           items: {$ref: '#/components/schemas/ReportKey'}
     DashboardRefreshFailure:
@@ -2497,11 +2497,11 @@ components:
         status: {type: string, enum: [PARTIAL, SUCCEEDED, FAILED]}
         items:
           type: array
-          maxItems: 10
+          maxItems: 64
           items: {$ref: '#/components/schemas/DashboardSnapshot'}
         failures:
           type: array
-          maxItems: 10
+          maxItems: 64
           items: {$ref: '#/components/schemas/DashboardRefreshFailure'}
     RevalidationDisposition:
       type: string
@@ -2523,7 +2523,7 @@ components:
       properties:
         disposition: {$ref: '#/components/schemas/RevalidationDisposition'}
         overview: {$ref: '#/components/schemas/ExecutiveOverview'}
-        runs: {type: array, maxItems: 10, items: {$ref: '#/components/schemas/ReportRun'}}
+        runs: {type: array, maxItems: 64, items: {$ref: '#/components/schemas/ReportRun'}}
         retryAfter: {type: integer, minimum: 0}
         legacyFallback: {type: boolean, default: false}
     LineSessionInput:

@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
 	"os"
 	"strings"
 	"testing"
@@ -154,6 +155,19 @@ func TestMigrateCreatesFoundationAndIsIdempotent(t *testing.T) {
 		where conrelid = 'notification_schedule_reports'::regclass
 		  and conname = 'notification_schedule_reports_position_check'`).Scan(&acceptsPositionTen); err != nil || !acceptsPositionTen {
 		t.Fatalf("notification schedule position constraint is not 1..10: accepts=%v err=%v", acceptsPositionTen, err)
+	}
+	// A dashboard covers the whole catalog, so its bounds follow
+	// report.MaxCatalogReports; a LINE card keeps its own limit of ten.
+	for _, bound := range []struct{ table, column string }{
+		{"dashboard_refreshes", "total"}, {"dashboard_generations", "total"}, {"dashboard_generation_reports", "position"},
+	} {
+		var lifted bool
+		if err := pool.QueryRow(ctx, `
+			select bool_and(pg_get_constraintdef(oid) ~ '<= 64') and not bool_or(pg_get_constraintdef(oid) ~ '<= 10\)')
+			from pg_constraint
+			where conrelid = $1::regclass and contype = 'c' and pg_get_constraintdef(oid) ~ $2`, bound.table, bound.column+`.*<= `).Scan(&lifted); err != nil || !lifted {
+			t.Fatalf("%s.%s bound is not %d: lifted=%v err=%v", bound.table, bound.column, report.MaxCatalogReports, lifted, err)
+		}
 	}
 	var hasReportEvidence, hasIncidentEvidence bool
 	if err := pool.QueryRow(ctx, `select exists(select 1 from information_schema.columns where table_name = 'report_runs' and column_name = 'failure_stage')`).Scan(&hasReportEvidence); err != nil || !hasReportEvidence {

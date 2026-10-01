@@ -92,7 +92,7 @@ func (store *ViewerStore) loadDeliveryContext(ctx context.Context, referenceHash
 	}
 	defer rows.Close()
 
-	positions := make([]*int16, 0, 10)
+	positions := make([]*int16, 0, report.MaxReportsPerCard)
 	availableCount := 0
 	for rows.Next() {
 		var contextReport viewer.DeliveryContextReport

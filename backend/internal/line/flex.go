@@ -73,7 +73,7 @@ func RenderFlexWithStats(input FlexInput) (result FlexRenderResult, err error) {
 	startedAt := time.Now()
 	defer func() { result.Duration = time.Since(startedAt) }()
 	input.TenantName = strings.TrimSpace(input.TenantName)
-	if input.TenantName == "" || utf8.RuneCountInString(input.TenantName) > 160 || len(input.Reports) < 1 || len(input.Reports) > 10 || input.GeneratedAt.IsZero() {
+	if input.TenantName == "" || utf8.RuneCountInString(input.TenantName) > 160 || len(input.Reports) < 1 || len(input.Reports) > report.MaxReportsPerCard || input.GeneratedAt.IsZero() {
 		return result, ErrFlexInputInvalid
 	}
 	overviewURL, err := validHTTPSURL(input.ActionURL)

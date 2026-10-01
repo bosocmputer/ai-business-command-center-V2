@@ -286,7 +286,7 @@ func validateFlexPreviewInput(input FlexPreviewInput) (FlexPreviewInput, error) 
 	default:
 		return FlexPreviewInput{}, &FlexPreviewValidationError{Field: "periodPreset", Code: "INVALID_PERIOD_PRESET"}
 	}
-	if len(input.ReportKeys) < 1 || len(input.ReportKeys) > 10 {
+	if len(input.ReportKeys) < 1 || len(input.ReportKeys) > report.MaxReportsPerCard {
 		return FlexPreviewInput{}, &FlexPreviewValidationError{Field: "reportKeys", Code: "INVALID_REPORTS"}
 	}
 	seen := make(map[report.Key]struct{}, len(input.ReportKeys))

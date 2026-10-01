@@ -136,7 +136,7 @@ func Validate(input Input) (Input, error) {
 	default:
 		return Input{}, &ValidationError{Field: "periodPreset", Code: "INVALID_PERIOD_PRESET"}
 	}
-	if len(input.ReportKeys) < 1 || len(input.ReportKeys) > 10 {
+	if len(input.ReportKeys) < 1 || len(input.ReportKeys) > report.MaxReportsPerCard {
 		return Input{}, &ValidationError{Field: "reportKeys", Code: "INVALID_REPORTS"}
 	}
 	seenReports := make(map[report.Key]struct{}, len(input.ReportKeys))

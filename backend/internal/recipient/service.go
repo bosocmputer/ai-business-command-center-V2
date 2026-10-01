@@ -175,7 +175,7 @@ func (service *Service) PermissionDependencies(ctx context.Context, tenantID, re
 
 func (service *Service) ScheduleRecipientOptions(ctx context.Context, tenantID uuid.UUID, input ScheduleRecipientOptionsInput) (ScheduleRecipientOptions, error) {
 	search, err := normalizedTableSearch(input.Search, input.GlobalSearch)
-	if err != nil || tenantID == uuid.Nil || input.Page < 0 || !validTablePageSize(input.PageSize) || len(input.ReportKeys) < 1 || len(input.ReportKeys) > 10 || len(input.SelectedRecipientIDs) > 500 || !validRecipientStatuses(input.Statuses) || !validEligibilityStates(input.EligibilityStates) {
+	if err != nil || tenantID == uuid.Nil || input.Page < 0 || !validTablePageSize(input.PageSize) || len(input.ReportKeys) < 1 || len(input.ReportKeys) > report.MaxReportsPerCard || len(input.SelectedRecipientIDs) > 500 || !validRecipientStatuses(input.Statuses) || !validEligibilityStates(input.EligibilityStates) {
 		return ScheduleRecipientOptions{}, ErrInvalidInput
 	}
 	required := make(map[report.Key]struct{}, len(input.ReportKeys))

@@ -176,7 +176,7 @@ func validReportRunFilters(filters ReportRunFilters) bool {
 			return false
 		}
 	}
-	return len(filters.Statuses) <= 7 && len(filters.ReportKeys) <= 10 && len(filters.Sources) <= 3
+	return len(filters.Statuses) <= 7 && len(filters.ReportKeys) <= len(report.Keys()) && len(filters.Sources) <= 3
 }
 func validDeliveryFilters(filters DeliveryFilters) bool {
 	for _, value := range filters.Statuses {
@@ -191,7 +191,7 @@ func validDeliveryFilters(filters DeliveryFilters) bool {
 			return false
 		}
 	}
-	return len(filters.Statuses) <= 6 && len(filters.ReportKeys) <= 10
+	return len(filters.Statuses) <= 6 && len(filters.ReportKeys) <= len(report.Keys())
 }
 func validAuditFilters(filters AuditFilters) bool {
 	for _, value := range filters.ActorTypes {
@@ -237,7 +237,7 @@ func validOccurrenceFilters(filters OccurrenceFilters) bool {
 			return false
 		}
 	}
-	return len(filters.ReportKeys) <= 10 && len(filters.SourceKinds) <= 8 && len(filters.SafeErrorCodes) <= 8
+	return len(filters.ReportKeys) <= len(report.Keys()) && len(filters.SourceKinds) <= 8 && len(filters.SafeErrorCodes) <= 8
 }
 func appendUnique(values []string, value string) []string {
 	for _, existing := range values {
