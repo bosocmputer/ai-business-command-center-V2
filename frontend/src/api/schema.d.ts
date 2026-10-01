@@ -1597,7 +1597,7 @@ export interface components {
             hasMore: boolean;
         };
         /** @enum {string} */
-        ReportKey: "sales_goods_services" | "purchase_goods_payables" | "gross_profit_by_product" | "gross_profit_by_ar_customer" | "stock_balance" | "stock_reorder" | "ar_customer_movement" | "ar_aging" | "ar_debt_receipt" | "cash_bank_receipts" | "cash_bank_payments";
+        ReportKey: "sales_goods_services" | "customer_rfm" | "purchase_goods_payables" | "gross_profit_by_product" | "gross_profit_by_ar_customer" | "stock_balance" | "stock_reorder" | "ar_customer_movement" | "ar_aging" | "ar_debt_receipt" | "cash_bank_receipts" | "cash_bank_payments";
         ReportDefinition: {
             reportKey: components["schemas"]["ReportKey"];
             version: string;

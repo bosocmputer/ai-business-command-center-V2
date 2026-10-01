@@ -48,7 +48,7 @@ Stock on hand by movement and the item master balance are different numbers. Nam
 
 | Term | Rule to follow |
 |---|---|
-| RFM (recency, frequency, monetary) | Do not copy smlmcpconnect's SQL. It orders recency ascending and frequency and amount descending when scoring with NTILE, so score 1 is the best customer, but its segment rules treat 5 as the best. The best customers end up labelled "Hibernating". Score so that 5 is the best: recency ordered descending (shorter is better), frequency and monetary ordered ascending. Count code 44 documents with `last_status = 0` and `is_doc_copy = 0`, amount from `total_amount`. |
+| RFM (`customer_rfm`) | Per customer who has at least one code 44 sale in the period (customers with no code on the document are left out). Recency is days from the last code 44 sale to the last day of the period, frequency is the number of code 44 sales, monetary is net sales including VAT (44 + 46 - 48). Documents are counted as the sales report counts them: `last_status = 0`, `is_doc_copy` not 1, and POS bills that carry a `doc_ref` dropped. Scores run 1 to 5 and **5 is always the best**: shorter recency, more sales and more money all score higher. A score is the customer's percentile position among the shop's customers in the same period (`1 + floor(5 * percent_rank)`, capped at 5), so customers with equal values always get equal scores; NTILE is not used because it splits ties arbitrarily. Because it is a relative ranking, a score of 4 or 5 on frequency can mean only two purchases when most customers bought once, so the raw recency, frequency and amount are shown beside the scores. Segments (R, F): ลูกค้าดีเด่น R 4-5 and F 4-5; ลูกค้าประจำ R 3-5 and F 3-5 (not the previous one); ลูกค้าใหม่/เพิ่งกลับมา R 4-5 and F 1-2; เสี่ยงหาย R 1-2 and F 3-5; เงียบหาย R 1-2 and F 1-2; ต้องดูแล R 3 and F 1-2. A customer who only has returns does not appear. Not chunked: a percentile needs every customer at once and the result is one row per customer. |
 | ความถี่การซื้อ | Average days between a customer's code 44 documents in the window: `(last date - first date) / (documents - 1)`, for customers with at least two documents. |
 
 ## Where V2 and smlmcpconnect still differ
@@ -58,7 +58,7 @@ Stock on hand by movement and the item master balance are different numbers. Nam
 | Profit | Codes 44 and 46 minus 48, before VAT | Code 44 only | V2 |
 | Sales report POS rule | Drops POS bills that have a `doc_ref` | No rule | V2, and check on any shop that uses POS |
 | Aging | `ar_aging`, built | Uses `due_date` | V2, with a "no due date" bucket |
-| RFM | Not built | Inverted scores | Rewrite |
+| RFM | `customer_rfm`, built | Inverted scores | V2, 5 is the best |
 | Stock | Movement based | Not compared | Name the basis in every answer |
 
 ## Decisions

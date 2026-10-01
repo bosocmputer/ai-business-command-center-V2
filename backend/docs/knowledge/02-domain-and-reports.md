@@ -31,6 +31,7 @@ This block is generated from `report.Definitions()`. Do not edit it manually.
 | Key | Thai label | Version | Status | Period mode | Refresh class | Chunk safe |
 | --- | --- | --- | --- | --- | --- | --- |
 | `sales_goods_services` | รายงานขายสินค้าและบริการ | `1.0.0` | `ACTIVE` | `DATE_RANGE` | `FAST` | `false` |
+| `customer_rfm` | รายงานลูกค้าตามความถี่และมูลค่าการซื้อ (RFM) | `1.0.0` | `ACTIVE` | `DATE_RANGE` | `STANDARD` | `false` |
 | `purchase_goods_payables` | รายงานซื้อสินค้าและตั้งหนี้ | `1.0.0` | `ACTIVE` | `DATE_RANGE` | `STANDARD` | `false` |
 | `gross_profit_by_product` | กำไรขั้นต้นตามสินค้า | `1.0.0` | `ACTIVE` | `DATE_RANGE` | `STANDARD` | `false` |
 | `gross_profit_by_ar_customer` | กำไรขั้นต้นตามลูกหนี้ | `1.0.0` | `ACTIVE` | `DATE_RANGE` | `STANDARD` | `false` |

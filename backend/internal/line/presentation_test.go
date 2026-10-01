@@ -17,6 +17,7 @@ func TestBuildFlexReportPresentationCompactsTrustedZeroDataForEveryReport(t *tes
 		report.StockBalance:            "ไม่พบสินค้าคงเหลือ",
 		report.StockReorder:            "ไม่มีสินค้าต่ำกว่าจุดสั่งซื้อ",
 		report.ARCustomerMovement:      "ไม่มีความเคลื่อนไหวลูกหนี้",
+		report.CustomerRFM:             "ไม่มีลูกค้าซื้อในช่วงนี้",
 		report.ARAging:                 "ไม่มียอดค้างชำระ",
 		report.ARDebtReceipt:           "ไม่มีรายการรับชำระหนี้",
 		report.CashBankReceipts:        "ไม่มีรายการรับเงิน",
