@@ -14,13 +14,14 @@ Definitions come from the project owner. Counts are from the pilot shop over 180
 | `ic_trans`, `ic_trans_detail` | `vat_type` | 0 | VAT added on top (ภาษีแยกนอก) |
 | | | 1 | VAT included (ภาษีรวมใน) |
 | | | 2 | VAT rate 0% (อัตราภาษี 0%), the tax base is reported at 0% |
-| | | 3 | Not defined yet. Treat as an exception and warn |
+| | | 3 | No effect on tax (ไม่กระทบภาษี). Outside the VAT base; do not count it as 0% |
 | `ic_trans`, `ic_trans_detail` | `inquiry_type` | 0 | Credit sale (ขายเงินเชื่อ) |
 | | | 1 | Cash sale (ขายเงินสด) |
 | | | 2 | Credit sale, goods and services (ขายเงินเชื่อ สินค้าบริการ) |
 | | | 3 | Cash sale, goods and services (ขายเงินสด สินค้าบริการ) |
+| | | 4 | Does not exist in SML. Some older SQL accepts it, which is harmless |
 | `ic_trans` | `last_status` | 0 | Normal document |
-| | | 1 | Cancelled document |
+| | | 1 | Cancelled document. No other value is used; ignore any other value |
 | `ic_trans` | `is_pos` | 0 | Not a POS sale |
 | | | 1 | POS sale |
 

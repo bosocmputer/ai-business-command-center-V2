@@ -14,11 +14,11 @@ The rules below describe what the V2 SQL does today. Where V2 and the older smlm
 ## Rules for every document query
 
 - Count normal documents only: `last_status = 0`. A cancelled sale keeps its row with `last_status = 1` and also creates a code 45 document that points at it, so counting only `last_status = 0` never double counts.
-- `last_status = 2` ("hold") appears in smlmcpconnect's labels. The owner has not confirmed it and the pilot shop has none, so it is excluded and not interpreted.
+- Only `last_status` 0 and 1 are used (confirmed by the owner). Count 0 and ignore anything else.
 - Skip copies: `is_doc_copy = 0`.
 - POS: code 44 is shared by the sales menu and the POS menu. V2's sales report drops a POS bill only when it also has a `doc_ref`. A shop that uses POS needs this rule checked.
 - Cash or credit comes from `inquiry_type`, not from `credit_day` or `pay_amount`.
-- VAT treatment comes from `vat_type` (0 added on top, 1 included, 2 rate 0%, 3 undefined and treated as an exception), not from whether `total_vat_value` is zero.
+- VAT treatment comes from `vat_type` (0 added on top, 1 included, 2 rate 0%, 3 no effect on tax), not from whether `total_vat_value` is zero.
 - Header `total_except_vat` was empty on every document of the pilot shop. Do not rely on it. Get amounts before VAT from line `sum_amount_exclude_vat`.
 
 ## Terms
@@ -47,7 +47,7 @@ Stock on hand by movement and the item master balance are different numbers. Nam
 
 | Term | Rule to follow |
 |---|---|
-| ลูกหนี้ตามอายุหนี้ (receivables aging) | smlmcpconnect's rule: per document, balance is `total_amount` minus payments from `ap_ar_trans_detail` (code 239, matched by billing number and date); buckets by days past `due_date` (due today, 1 to 30, 31 to 60, 61 to 90, 91 to 120, over 120). It needs `due_date`, which the pilot shop leaves empty on most open documents. Offer age counted from the document date as the fallback and say which was used. |
+| ลูกหนี้ตามอายุหนี้ (receivables aging) | smlmcpconnect's rule: per document, balance is `total_amount` minus payments from `ap_ar_trans_detail` (code 239, matched by billing number and date); buckets by days past `due_date` (due today, 1 to 30, 31 to 60, 61 to 90, 91 to 120, over 120). It needs `due_date`, which some shops leave empty on most open documents. Report those documents in their own bucket, "ไม่ระบุวันครบกำหนด" (no due date), and state the amount. Do not invent a due date and do not age them from the document date (decision of the owner). |
 | RFM (recency, frequency, monetary) | Do not copy smlmcpconnect's SQL. It orders recency ascending and frequency and amount descending when scoring with NTILE, so score 1 is the best customer, but its segment rules treat 5 as the best. The best customers end up labelled "Hibernating". Score so that 5 is the best: recency ordered descending (shorter is better), frequency and monetary ordered ascending. Count code 44 documents with `last_status = 0` and `is_doc_copy = 0`, amount from `total_amount`. |
 | ความถี่การซื้อ | Average days between a customer's code 44 documents in the window: `(last date - first date) / (documents - 1)`, for customers with at least two documents. |
 
@@ -61,9 +61,13 @@ Stock on hand by movement and the item master balance are different numbers. Nam
 | RFM | Not built | Inverted scores | Rewrite |
 | Stock | Movement based | Not compared | Name the basis in every answer |
 
-## Questions for the owner
+## Decisions
 
-1. Should "ยอดขาย" in the assistant's answers include debit notes (46) and subtract returns (48), or stay as code 44 only as the sales report does? The profit reports already include them, so two reports can disagree on "sales".
-2. What does `vat_type` 3 mean, and `inquiry_type` 4 (it appears in receivable SQL)?
-3. Is `last_status` 2 a real value in SML ("hold")?
-4. For receivables aging, which fallback does the shop prefer when `due_date` is empty?
+Settled by the owner on 2026-10-01:
+
+- `vat_type` 3 means no effect on tax. `inquiry_type` 4 does not exist. Only `last_status` 0 and 1 matter.
+- A document with no `due_date` is shown as "no due date", as the data says.
+
+Open:
+
+1. Whether "ยอดขาย" in answers and cards includes debit notes (46) and subtracts returns (48), or stays as code 44 only as the sales report does today. Recommendation: net, with the "including VAT" and "before VAT" figures named separately. The profit reports already include them, so two reports can disagree on "sales" until this is settled.
