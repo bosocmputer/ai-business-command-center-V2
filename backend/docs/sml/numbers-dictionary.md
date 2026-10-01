@@ -57,7 +57,7 @@ Stock on hand by movement and the item master balance are different numbers. Nam
 |---|---|---|---|
 | Profit | Codes 44 and 46 minus 48, before VAT | Code 44 only | V2 |
 | Sales report POS rule | Drops POS bills that have a `doc_ref` | No rule | V2, and check on any shop that uses POS |
-| Aging | Not built | Uses `due_date` | Build with the fallback above |
+| Aging | Not built | Uses `due_date` | Build with a "no due date" bucket |
 | RFM | Not built | Inverted scores | Rewrite |
 | Stock | Movement based | Not compared | Name the basis in every answer |
 
@@ -67,5 +67,4 @@ Settled by the owner on 2026-10-01:
 
 - `vat_type` 3 means no effect on tax. `inquiry_type` 4 does not exist. Only `last_status` 0 and 1 matter.
 - A document with no `due_date` is shown as "no due date", as the data says.
-
 - "Sales" is the net figure above (codes 44 and 46 minus 48), with "including VAT" and "before VAT" named separately. The live sales report still counts code 44 only; changing it changes the card the shop sees by a small amount, so it is applied when the first new reports are built and announced to the owner beforehand.
