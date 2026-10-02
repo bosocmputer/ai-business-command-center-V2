@@ -44,8 +44,8 @@ func (store *AgentStore) Authenticate(ctx context.Context, tokenHash []byte, now
 
 func (store *AgentStore) TouchToken(ctx context.Context, tokenID uuid.UUID, now time.Time) error {
 	_, err := store.pool.Exec(ctx, `
-		update agent_tokens set last_used_at = $2
-		where id = $1 and (last_used_at is null or last_used_at < $2 - interval '1 minute')`, tokenID, now)
+		update agent_tokens set last_used_at = $2::timestamptz
+		where id = $1 and (last_used_at is null or last_used_at < $2::timestamptz - interval '1 minute')`, tokenID, now)
 	return err
 }
 
