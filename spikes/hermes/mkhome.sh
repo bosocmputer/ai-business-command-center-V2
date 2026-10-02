@@ -22,8 +22,11 @@ mcp_servers:
     env:
       AIBCC_URL: "http://aibcc-mock:8099"
       AIBCC_TOKEN: "$token"
+# Built-in toolsets are chosen per platform: every channel the shop can reach must be listed, or it gets the defaults.
 platform_toolsets:
   cli: []
+  api_server: []
+  telegram: []
 tools:
   tool_search:
     enabled: "${SPIKE_TOOL_SEARCH:-off}"

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """The pass/fail question set for the owner-facing assistant, with an automatic checker.
 
-usage: battery.py <model> [--only N,N,...]
+usage: battery.py <model> [--only N,N,...] [--gateway]
+
+--gateway asks the long-running Hermes gateways (serve.sh) instead of starting a container per question.
 
 Each question is asked through ask.sh (one locked-down Hermes container per question) and the answer is checked
 against the invented data in mock_api.py:
@@ -19,6 +21,7 @@ import subprocess
 import sys
 from datetime import date
 
+import ask_gw
 import mock_api as m
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -126,8 +129,16 @@ def check(kind, answer, must, must_not):
     return problems
 
 
+def log_lines():
+    try:
+        return open(os.path.join(HERE, "data", "calls.jsonl"), encoding="utf-8").read().splitlines()
+    except OSError:
+        return []
+
+
 def main():
     model = sys.argv[1]
+    gateway = "--gateway" in sys.argv
     only = None
     if "--only" in sys.argv:
         only = {int(n) for n in sys.argv[sys.argv.index("--only") + 1].split(",")}
@@ -136,22 +147,30 @@ def main():
             key, value = line.strip().split("=", 1)
             os.environ[key] = value
     subprocess.run(["docker", "restart", "aibcc-mock"], check=True, capture_output=True)  # forget what was "collected"
-    slug = model.replace("/", "_").replace(":", "_")
+    slug = model.replace("/", "_").replace(":", "_") + ("-gw" if gateway else "")
     results, transcript = [], open(os.path.join(HERE, "runs", f"battery-{slug}.txt"), "w")
     for number, (shop, question, kind, must, must_not) in enumerate(Q, 1):
         if only and number not in only:
             continue
-        done = subprocess.run([os.path.join(HERE, "ask.sh"), shop, question, model], capture_output=True, text=True, cwd=HERE)
-        text = done.stdout
-        match = re.search(r"^RUN=(\S+)$", text, re.M)
-        answer = open(os.path.join(HERE, match.group(1) + ".out"), encoding="utf-8").read() if match else ""
-        seconds = re.search(r"\| (\d+)s \|", text)
-        usage = re.search(r"calls=(\S+) .*total=(\S+)", text)
-        calls = len(re.findall(r"^   \S+ /api/v1/agent", text, re.M))
+        if gateway:
+            before = len(log_lines())
+            got = ask_gw.ask(shop, question, model)
+            answer = got["answer"]
+            calls = sum(1 for line in log_lines()[before:] if "/api/v1/agent/" in line)
+            text = f"== gateway shop {shop} | {got['seconds']}s | Q: {question}\n{answer}\n-- agent api calls: {calls} usage: {got['usage']}"
+            seconds = type("M", (), {"group": lambda self, n: str(int(round(got["seconds"])))})()
+            usage = type("M", (), {"group": lambda self, n: str(got["usage"].get("total_tokens"))})() if got["usage"].get("total_tokens") else None
+        else:
+            done = subprocess.run([os.path.join(HERE, "ask.sh"), shop, question, model], capture_output=True, text=True, cwd=HERE)
+            text = done.stdout
+            match = re.search(r"^RUN=(\S+)$", text, re.M)
+            answer = open(os.path.join(HERE, match.group(1) + ".out"), encoding="utf-8").read() if match else ""
+            seconds = re.search(r"\| (\d+)s \|", text)
+            usage = re.search(r"calls=(\S+) .*total=(\S+)", text)
+            calls = len(re.findall(r"^   \S+ /api/v1/agent", text, re.M))
         problems = check(kind, answer, must, must_not) if answer.strip() else ["empty answer"]
         results.append({"n": number, "kind": kind, "shop": shop, "question": question, "ok": not problems, "problems": problems,
-                        "seconds": int(seconds.group(1)) if seconds else None, "api_calls": calls, "model_calls": usage.group(1) if usage else None,
-                        "tokens": usage.group(2) if usage else None})
+                        "seconds": int(seconds.group(1)) if seconds else None, "api_calls": calls, "tokens": usage.group(2 if not gateway else 1) if usage else None})
         transcript.write(f"#{number} [{kind}] {'PASS' if not problems else 'FAIL ' + '; '.join(problems)}\n{text}\n\n")
         transcript.flush()
         print(f"#{number:2} {kind:6} {'PASS' if not problems else 'FAIL'}  {seconds.group(1) + 's' if seconds else '?':>4}  {question[:48]}  {'; '.join(problems)}", flush=True)

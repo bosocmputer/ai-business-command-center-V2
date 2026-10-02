@@ -75,3 +75,43 @@ pass-line measurement; one model, one run per question, and the model is not det
 question (23-60 s, one 115 s outlier from the provider), 1.75 API calls and about 16,000 tokens per question.
 With `tool_search` off the model made 2 calls to AI-BCC for a typical question (`context`, then the report).
 After the verbatim-code rule, question 12 passed 4 of 4 repeats. A planted instruction in a report was never obeyed in any round.
+
+## Step 4, round 3: a gateway kept running, locked down (2026-10-02)
+
+`serve.sh` runs one long-lived `hermes gateway run` per shop (OpenAI-compatible API, private network only,
+nothing published), with the MCP shim kept alive. Same 32 questions through `battery.py --gateway`.
+
+| | one container per question | gateway kept running |
+|---|---|---|
+| Median / p90 / max seconds | 30 / 43 / 115 | **10 / 25 / 90** |
+| Tokens per question | about 16,000 | about 15,800 |
+| Memory per shop idle / CPU | not applicable | about 365 MB / under 1% |
+
+Pass counts with the final instructions: figures 20/20, no data 4/4, collecting 2/2, attacks and cross-shop 5/6.
+The 10-second goal is met only at the median, and only for the model used here; it is mostly waiting for two or
+three model round trips. Faster options, not tried yet: let the API take a period such as `last_month` so
+the model need not call `context` first, and a faster or cached model.
+
+What the step turned up (all of it would have shipped unnoticed):
+1. **The tool lock was per channel.** `platform_toolsets: cli: []` locked only the terminal chat. The API-server
+   channel kept web, browser, terminal, file and code execution enabled (checked with `hermes tools list --platform
+   api_server`). Every channel the shop can reach (`api_server`, `telegram`) needs its own empty list. Check with
+   that command after any config change.
+2. **An identical first message resumes the old session.** Hermes derives the session id from the system prompt and
+   the first user message, so asking the same opening question again was answered in 1 s from the old conversation,
+   with no tool call. Telegram will keep one long conversation per chat, so this is not only a test artefact:
+   `stale_test.py` raised the receivables total between asks in one session and the model answered "same as before" with
+   the old figure. Fixed by a rule "every figure is fetched again, even if just asked" (6 of 6 fresh over two runs),
+   and the harness now sends its own session id per question. Treat this as a property to re-test on every model.
+3. **Hermes calls out on its own.** Behind the allow-list proxy it tried `hermes-agent.nousresearch.com`,
+   `portal.nousresearch.com` and `raw.githubusercontent.com`; all were refused and the assistant worked normally.
+   The only host that went through was `openrouter.ai` (100 of 100 allowed calls in the final run).
+4. **Egress is closed twice.** The gateways sit on a Docker `--internal` network (direct connections to an IP or a
+   name fail), reach AI-BCC on that network, and reach the outside only through `egress_proxy.py` (CONNECT to
+   allow-listed hosts only; logs the host and decision, never a payload). Verified from inside the container with
+   `egress_check.py`. The proxy log was empty at first because the proxy could not write a file owned by another user
+   and swallowed the error; it now reports that.
+
+Known limit: when shop B asks for shop A by name, the model sometimes says "I can see shop B, not shop A" instead of
+the fixed sentence (3 of 5 correct, 5 of 5 on the other cross-shop question). No data of the other shop was ever
+returned, because the token cannot reach it. The wording is a prompt-level defence; the lock is the token.

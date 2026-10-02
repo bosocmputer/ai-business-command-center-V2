@@ -32,6 +32,7 @@ PREPARING = "กำลังดึงข้อมูลรายงานนี�
 INVALID = "ช่วงวันที่ไม่ถูกต้อง ช่วงต้องไม่เกิน 366 วัน ไม่เป็นวันในอนาคต และวันเริ่มต้องไม่หลังวันสิ้นสุด"
 
 CUSTOMERS_A = ["บริษัท ก่อสร้างตัวอย่าง จำกัด", "ห้างหุ้นส่วน ตัวอย่างวัสดุ", "คุณสมชาย (ผู้รับเหมา)", "บริษัท ทดสอบพัฒนา จำกัด", "ร้านช่างตัวอย่าง", "คุณวิภา (โครงการบ้านจัดสรร)"]
+BUMP = [0.0]  # the test harness raises the receivables total through /_bump to see whether an answer uses fresh numbers
 SEEN = {}  # (shop, key, from, to) -> when it was first asked; a period is collected READY_AFTER seconds later
 READY_AFTER = int(os.environ.get("MOCK_READY_AFTER", "60"))
 
@@ -93,7 +94,7 @@ AGING_BALANCES = [1_480_000.0, 402_500.0, 233_100.5, 120_000.0, 64_300.0, 41_000
 
 
 def aging_report(shop):
-    total = round(sum(v for _, v in AGING_BUCKETS), 2)
+    total = round(sum(v for _, v in AGING_BUCKETS) + BUMP[0], 2)
     return {
         "kpis": [
             {"key": "total_balance", "label": "ยอดค้างรวม", "unit": "THB", "value": money(total)},
@@ -220,6 +221,9 @@ class Handler(BaseHTTPRequestHandler):
             log({"path": url.path, "status": 401})
             return self.reply(401, {"status": "UNAUTHORIZED", "message": "ผู้ช่วยยังไม่ได้รับอนุญาตให้ดูข้อมูลร้านนี้ กรุณาแจ้งผู้ดูแลระบบ"})
         entry = {"shop": shop, "path": url.path, "query": query}
+        if url.path == "/_bump":  # test harness only: reached from the private network, changes a figure
+            BUMP[0] += 1000.0
+            return self.reply(200, {"bump": BUMP[0]})
         done = lambda status: log({**entry, "status": status, "ms": int((time.time() - started) * 1000)})
         base = "/api/v1/agent"
         if url.path == base + "/context":

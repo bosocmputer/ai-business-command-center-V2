@@ -19,7 +19,10 @@ Needs Docker, the Hermes image `nousresearch/hermes-agent:v2026.9.24` and an Ope
 printf 'OPENROUTER_API_KEY=%s\n' "<key>" > openrouter.env && chmod 600 openrouter.env
 ./ask.sh a "เดือนนี้ขายได้เท่าไหร่" <model>
 ./battery.py <model>             # the 32-question pass/fail set with an automatic checker
+./serve.sh                       # long-running gateways + allow-list proxy on an internal network (no route out)
+./battery.py <model> --gateway   # the same set against the running gateways
+./stale_test.py <model>          # one conversation: does it reuse a number that has since changed?
 ```
 
-`tokens.env`, `openrouter.env`, `data/`, `home-*/` and `runs/` are local and ignored by git.
+`tokens.env`, `openrouter.env`, `gateway.env`, `data/`, `home-*/` and `runs/` are local and ignored by git.
 Do not use a model that logs prompts (OpenRouter "stealth" models do) with real shop data.
