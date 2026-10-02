@@ -10,6 +10,11 @@ if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -z "${TELEGRAM_ALLOWED_USERS:-}" ]; the
   echo '{"telegram":"not started: TELEGRAM_BOT_TOKEN is set but TELEGRAM_ALLOWED_USERS is empty"}'
   unset TELEGRAM_BOT_TOKEN
 fi
+# Hermes nags with "no home channel is set, type /sethome" until one exists; /sethome is not allowed to users, so the
+# first allowed person's private chat (the chat id of a private chat is the user id) is the home channel.
+if [ -n "${TELEGRAM_ALLOWED_USERS:-}" ] && [ -z "${TELEGRAM_HOME_CHANNEL:-}" ]; then
+  export TELEGRAM_HOME_CHANNEL="${TELEGRAM_ALLOWED_USERS%%,*}"
+fi
 cp /assistant/config.yaml /opt/data/config.yaml
 cp /assistant/SOUL.md /opt/data/SOUL.md
 GW=""
