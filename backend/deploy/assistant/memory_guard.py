@@ -7,17 +7,21 @@ text planted in report data (a product name someone typed in SML, say) must not 
 
   memory_guard.py            report only (prints counts, never the text)
   memory_guard.py --apply    remove the flagged entries
+  memory_guard.py --apply --locked   the same while the assistant is running (entrypoint.sh, every 10 minutes)
 Also lists skills the agent wrote for itself (names only), since self-written skills are off and none are expected.
 """
+import fcntl
 import json
 import os
 import re
 import sys
+import time
 
 MEMORY_DIR = "/opt/data/memories"
 SKILLS_DIR = "/opt/data/skills"
 BUNDLED_SKILLS_DIR = "/opt/hermes/skills"
 APPLY = "--apply" in sys.argv
+LOCKED = "--locked" in sys.argv  # while the gateway runs: take the same lock Hermes takes, and print only when something was found
 
 FLAGS = [
     re.compile(r"\d{3,}"),                                   # a figure, a date, an account number
@@ -39,6 +43,18 @@ if os.path.isdir(MEMORY_DIR):
         if not name.endswith(".md") or not os.path.isfile(path):
             continue
         files += 1
+        lock = None
+        if LOCKED:  # Hermes writes memory under an exclusive flock on <file>.lock; wait for it, at most 10 s
+            lock = open(path + ".lock", "a")
+            for _ in range(100):
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError:
+                    time.sleep(0.1)
+            else:
+                lock.close()
+                continue
         with open(path, encoding="utf-8") as handle:
             lines = handle.read().split("\n")
         keep = []
@@ -50,13 +66,18 @@ if os.path.isdir(MEMORY_DIR):
                 continue
             keep.append(line)
         if APPLY and len(keep) != len(lines):
-            with open(path, "w", encoding="utf-8") as handle:
+            temporary = path + ".guard-tmp"
+            with open(temporary, "w", encoding="utf-8") as handle:
                 handle.write("\n".join(keep))
+            os.replace(temporary, path)
+        if lock:
+            lock.close()
 
 own_skills = []
 if os.path.isdir(SKILLS_DIR) and os.path.isdir(BUNDLED_SKILLS_DIR):
     bundled = set(os.listdir(BUNDLED_SKILLS_DIR))
     own_skills = sorted(n for n in os.listdir(SKILLS_DIR) if not n.startswith(".") and n not in bundled)
 
-print(json.dumps({"memory_guard": "applied" if APPLY else "report-only", "files": files, "entries": entries,
-                  "flagged": removed, "own_skills": own_skills}, ensure_ascii=False))
+if not (LOCKED and not removed and not own_skills):
+    print(json.dumps({"memory_guard": "applied" if APPLY else "report-only", "files": files, "entries": entries,
+                      "flagged": removed, "own_skills": own_skills}, ensure_ascii=False), flush=True)

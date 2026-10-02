@@ -25,9 +25,12 @@ mcp_servers:
 # Built-in toolsets are chosen per platform: every channel the shop can reach must be listed, or it gets the defaults.
 platform_toolsets:
   cli: []
-  api_server: []
+  api_server: [${SPIKE_MEMORY:+memory}]
   telegram: []
-# Pin the provider (one that OpenRouter lists as zero-data-retention for this model) and refuse any that may store data.
+${SPIKE_MEMORY:+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+}# Pin the provider (one that OpenRouter lists as zero-data-retention for this model) and refuse any that may store data.
 ${SPIKE_PROVIDER:+provider_routing:
   only: ["$SPIKE_PROVIDER"]
   data_collection: "deny"

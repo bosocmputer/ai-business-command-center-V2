@@ -10,14 +10,18 @@ cp /assistant/SOUL.md /opt/data/SOUL.md
 GW=""
 trap '[ -n "$GW" ] && kill -TERM "$GW" 2>/dev/null; [ -n "$GW" ] && wait "$GW"; exit 0' TERM INT
 last_day=""
+GUARD_TICKS="${MEMORY_GUARD_TICKS:-20}"   # 20 x 30 s = every 10 minutes
 while true; do
   "$HERMES" gateway run &
   GW=$!
   maintenance=0
+  ticks=0
   while kill -0 "$GW" 2>/dev/null; do
     if [ "$(date -u +%H)" = "$MAINT_HOUR" ] && [ "$last_day" != "$(date -u +%F)" ]; then
       last_day="$(date -u +%F)"; maintenance=1; break
     fi
+    ticks=$((ticks + 1))
+    if [ $((ticks % GUARD_TICKS)) = 0 ]; then /opt/hermes/.venv/bin/python /assistant/memory_guard.py --apply --locked; fi
     sleep 30 & wait $!
   done
   if [ "$maintenance" = 0 ]; then

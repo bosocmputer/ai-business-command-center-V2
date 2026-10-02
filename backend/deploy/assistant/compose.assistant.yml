@@ -64,6 +64,7 @@ services:
       RETENTION_HOURS: ${ASSISTANT_RETENTION_HOURS:-24}
       LOG_RETENTION_DAYS: ${ASSISTANT_LOG_RETENTION_DAYS:-7}
       MAINTENANCE_HOUR_UTC: ${ASSISTANT_MAINTENANCE_HOUR_UTC:-21}
+      MEMORY_GUARD_TICKS: ${ASSISTANT_MEMORY_GUARD_TICKS:-20}
     volumes:
       - assistant_data:/opt/data
       - ./assistant:/assistant:ro
