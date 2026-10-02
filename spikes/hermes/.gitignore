@@ -1,0 +1,6 @@
+tokens.env
+openrouter.env
+data/
+home-*/
+runs/
+*.bak
