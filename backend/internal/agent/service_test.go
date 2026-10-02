@@ -274,10 +274,10 @@ func TestStaleSnapshotIsServedAndMarkedWhileItRefreshes(t *testing.T) {
 }
 
 func TestTheHourlyFetchBudgetIsRespected(t *testing.T) {
-	store := &fakeStore{permitted: []report.Key{report.SalesGoodsServices}, preparing: 3}
+	store := &fakeStore{permitted: []report.Key{report.SalesGoodsServices}, preparing: 10}
 	snapshots := &fakeSnapshots{revalidation: viewer.ReportRevalidation{Disposition: viewer.RevalidationMissingRefreshing}}
 	response, err := newService(store, snapshots).Report(context.Background(), principal, "sales_goods_services", "2026-09-01", "2026-09-30")
-	if err != nil || response.Status != "UNAVAILABLE" || response.Message != MessageUnavailable {
+	if err != nil || response.Status != "UNAVAILABLE" || response.Message != MessageBudgetUsed {
 		t.Fatalf("response = %+v, %v", response, err)
 	}
 	if snapshots.revalidated != 0 {
@@ -419,5 +419,20 @@ func TestIssuedTokenIsStoredOnlyAsAHashAndHasATimeLimit(t *testing.T) {
 	store.issueErr = ErrAIChatDisabled
 	if _, err := service.IssueToken(context.Background(), nil, "req", tenantID, uuid.New(), false); !errors.Is(err, ErrAIChatDisabled) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCustomerReportsDefaultToTheLast180DaysNotTheMonthSoFar(t *testing.T) {
+	location := locationOf(principal)
+	for _, key := range []report.Key{report.CustomerRFM, report.PurchaseFrequency} {
+		definition, _ := report.DefinitionFor(key)
+		period, err := resolvePeriod(definition, location, now, "", "")
+		if err != nil || period.DateFrom != "2026-04-05" || period.DateTo != "2026-10-01" {
+			t.Errorf("%s default = %+v, %v; want 2026-04-05 to 2026-10-01 (180 days)", key, period, err)
+		}
+	}
+	sales, _ := report.DefinitionFor(report.SalesGoodsServices)
+	if period, _ := resolvePeriod(sales, location, now, "", ""); period.DateFrom != "2026-10-01" {
+		t.Errorf("sales keeps the month so far: %+v", period)
 	}
 }

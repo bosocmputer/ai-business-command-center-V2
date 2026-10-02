@@ -58,10 +58,13 @@ func (store *AgentStore) CallsSince(ctx context.Context, tokenID uuid.UUID, sinc
 	return count, err
 }
 
+// PreparingSince counts the different reports and periods the assistant has had fetched in the window. Asking again
+// for the same one while it is being fetched is not another fetch.
 func (store *AgentStore) PreparingSince(ctx context.Context, tenantID uuid.UUID, since time.Time) (int, error) {
 	var count int
 	err := store.pool.QueryRow(ctx, `
-		select count(*) from agent_calls where tenant_id = $1 and outcome = 'PREPARING' and created_at >= $2`, tenantID, since).Scan(&count)
+		select count(distinct (report_key, period_from, period_to)) from agent_calls
+		where tenant_id = $1 and outcome = 'PREPARING' and created_at >= $2`, tenantID, since).Scan(&count)
 	return count, err
 }
 

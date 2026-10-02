@@ -34,7 +34,7 @@ func (config Config) withDefaults() Config {
 		config.CallsPerHour = 60
 	}
 	if config.RefreshesPerHour <= 0 {
-		config.RefreshesPerHour = 3
+		config.RefreshesPerHour = 10
 	}
 	if config.TokenTTL <= 0 {
 		config.TokenTTL = 90 * 24 * time.Hour
@@ -406,6 +406,8 @@ type snapshotResult struct {
 	snapshot   viewer.DashboardSnapshot
 	stale      bool
 	retryAfter int
+	// budgetUsed says the shop has had many fetches started this hour, so none more is started.
+	budgetUsed bool
 }
 
 func (result snapshotResult) message() string {
@@ -413,6 +415,9 @@ func (result snapshotResult) message() string {
 	case statePreparing:
 		return MessagePreparing
 	case stateUnavailable:
+		if result.budgetUsed {
+			return MessageBudgetUsed
+		}
 		return MessageUnavailable
 	default:
 		return ""
@@ -446,7 +451,9 @@ func (service *Service) snapshot(ctx context.Context, principal Principal, defin
 	}
 	used, err := service.store.PreparingSince(ctx, principal.TenantID, now.Add(-time.Hour))
 	if err != nil || used >= service.config.RefreshesPerHour {
-		return fallback(300)
+		result := fallback(300)
+		result.budgetUsed = true
+		return result
 	}
 	revalidation, err := service.snapshots.RevalidateSnapshot(ctx, principal.TenantID, definition.Key, period, now)
 	if err != nil {
@@ -546,6 +553,9 @@ func locationOf(principal Principal) *time.Location {
 	return location
 }
 
+// defaultLookbackDays are the reports whose useful default is a stretch of recent days rather than the month so far.
+var defaultLookbackDays = map[report.Key]int{report.CustomerRFM: 180, report.PurchaseFrequency: 180}
+
 // resolvePeriod gives the period a report is read for. Date-range reports default to the month so far and as-of
 // reports to today. A period is never in the future and never longer than 366 days.
 func resolvePeriod(definition report.Definition, location *time.Location, now time.Time, dateFrom, dateTo string) (report.Period, error) {
@@ -565,6 +575,12 @@ func resolvePeriod(definition report.Definition, location *time.Location, now ti
 	default:
 		if dateFrom == "" && dateTo == "" {
 			dateFrom, dateTo = today[:8]+"01", today
+			// Customer behaviour needs months, not the days of a new month: segments and buying rhythm are read over 180 days.
+			if days, ok := defaultLookbackDays[definition.Key]; ok {
+				if end, err := time.Parse(time.DateOnly, today); err == nil {
+					dateFrom = end.AddDate(0, 0, -(days - 1)).Format(time.DateOnly)
+				}
+			}
 		}
 	}
 	if dateFrom == "" || dateTo == "" {

@@ -119,10 +119,11 @@ func TestAgentTokenLifecycleAndEveryReasonToRefuse(t *testing.T) {
 	}
 	record(agent.OutcomeOK, now)
 	record(agent.OutcomePreparing, now)
+	record(agent.OutcomePreparing, now) // asking again for the same report and period is not another fetch
 	record(agent.OutcomeRateLimited, now)
 	record(agent.OutcomeOK, now.Add(-2*time.Hour))
-	if used, err := store.CallsSince(ctx, second.TokenID, now.Add(-time.Hour)); err != nil || used != 2 {
-		t.Fatalf("answered calls in the last hour = %d, %v; a rate-limited refusal must not count", used, err)
+	if used, err := store.CallsSince(ctx, second.TokenID, now.Add(-time.Hour)); err != nil || used != 3 {
+		t.Fatalf("answered calls in the last hour = %d, %v (want 3); a rate-limited refusal must not count", used, err)
 	}
 	if preparing, err := store.PreparingSince(ctx, tenantID, now.Add(-time.Hour)); err != nil || preparing != 1 {
 		t.Fatalf("fetches started = %d, %v", preparing, err)
@@ -131,7 +132,7 @@ func TestAgentTokenLifecycleAndEveryReasonToRefuse(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := store.TokenInfo(ctx, tenantID, recipientID, now)
-	if err != nil || status.Status != "ACTIVE" || status.LastUsedAt == nil || status.Calls24h != 4 {
+	if err != nil || status.Status != "ACTIVE" || status.LastUsedAt == nil || status.Calls24h != 5 {
 		t.Fatalf("token info = %+v, %v", status, err)
 	}
 

@@ -91,7 +91,7 @@ decision (customer names to the model provider) is made.
 
 ### Limits and audit
 
-- 60 calls per hour per token; at most 3 refresh enqueues per hour per tenant through this API.
+- 60 calls per hour per token; at most 10 different reports or periods fetched per hour per tenant through this API.
 - `agent_calls` records each call: token, tenant, recipient, tool, report key, period, outcome, duration, snapshot run id. No values, names or
   question text. Retention 365 days like audit.
 - Issue and revoke are written to `audit_logs` as admin actions.
