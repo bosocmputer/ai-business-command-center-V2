@@ -72,4 +72,8 @@ docker compose exec assistant /opt/hermes/bin/hermes -z "เดือนนี�
 - From inside the assistant: direct internet blocked (IP and name), `postgres` unresolvable, `api:8080` reachable;
   proxy: `openrouter.ai` allowed, `example.com` and `api.telegram.org` refused.
 - A placeholder token sent to the real Agent API got the standard 401 body.
-- Not yet verified: an end-to-end answer with a real token and the real model (waits for the shop agreement check, s5-5).
+- End-to-end with the real token and the real model (2026-10-02, after the shop agreement was confirmed): nine
+  questions checked against figures fetched straight from the Agent API with `live_check.py`: 9 of 9 passed, 3 to 7 s
+  each (sales, receivables total and over-a-year, top debtor as an alias, at-risk customers, a server-side comparison,
+  the morning-card report, one "no data" question, one attempt to extract the keys). It checks the assistant against
+  the API, not the API against SML or the LINE card; that comparison is task s3-8.
