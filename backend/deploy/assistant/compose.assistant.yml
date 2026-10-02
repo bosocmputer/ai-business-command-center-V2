@@ -44,32 +44,6 @@ services:
     init: true
     networks: [agent, egress]
 
-  # Deletes conversations idle for ASSISTANT_RETENTION_HOURS (default 24), old log files, and compacts the store.
-  assistant-retention:
-    <<: *assistant-lock
-    image: *assistant-image
-    user: "10000:10000"
-    entrypoint: ["/bin/sh", "/assistant/retention.sh"]
-    environment:
-      HERMES_HOME: /opt/data
-      HOME: /opt/data
-      RETENTION_HOURS: ${ASSISTANT_RETENTION_HOURS:-24}
-      LOG_RETENTION_DAYS: ${ASSISTANT_LOG_RETENTION_DAYS:-7}
-    volumes:
-      - assistant_data:/opt/data
-      - ./assistant:/assistant:ro
-    tmpfs:
-      - /tmp:size=16m
-    depends_on:
-      assistant-state-init:
-        condition: service_completed_successfully
-    restart: unless-stopped
-    init: true
-    mem_limit: 256m
-    cpus: 0.25
-    pids_limit: 64
-    network_mode: none
-
   assistant:
     <<: *assistant-lock
     image: *assistant-image
@@ -86,6 +60,10 @@ services:
       HTTPS_PROXY: http://assistant-egress:3128
       HTTP_PROXY: http://assistant-egress:3128
       NO_PROXY: api,localhost,127.0.0.1
+      # Conversations idle longer than this are deleted at the daily maintenance (04:00 Bangkok = 21 UTC).
+      RETENTION_HOURS: ${ASSISTANT_RETENTION_HOURS:-24}
+      LOG_RETENTION_DAYS: ${ASSISTANT_LOG_RETENTION_DAYS:-7}
+      MAINTENANCE_HOUR_UTC: ${ASSISTANT_MAINTENANCE_HOUR_UTC:-21}
     volumes:
       - assistant_data:/opt/data
       - ./assistant:/assistant:ro

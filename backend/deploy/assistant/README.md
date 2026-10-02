@@ -54,15 +54,16 @@ level was raised to WARNING).
 
 | What | Kept | Removed by |
 |---|---|---|
-| Conversations in `state.db` | until idle for `ASSISTANT_RETENTION_HOURS` (default 24) | `assistant-retention`, hourly (`prune` measures last activity, so a chat in use is not cut off) |
-| Log files | `ASSISTANT_LOG_RETENTION_DAYS` (default 7), WARNING and above, no question text | same sidecar |
-| A shop's deletion request | at once | `./assistant/forget.sh --all` or `--chat-id ID`: deletes the sessions, empties the logs, compacts the store |
-| Backups of the volume | 30 days, mode 0600 | `backup.sh` deletes older ones; a deletion request does not reach a backup until it expires |
+| Conversations in `state.db` | until idle for `ASSISTANT_RETENTION_HOURS` (default 24) | the assistant itself, daily at 04:00 Bangkok: it stops its gateway for a few seconds, runs `maintain.sh`, starts again (`prune` measures last activity, so a chat in use is not cut off) |
+| Log files | `ASSISTANT_LOG_RETENTION_DAYS` (default 7), WARNING and above, no question text | same daily maintenance |
+| A shop's deletion request | at once | `./assistant/forget.sh --all` or `--chat-id ID`: stops the assistant for a few seconds, deletes the sessions, empties the logs, compacts the store |
+| Backups of the volume | 30 days, mode 0600 | `backup.sh` (stops the assistant for the copy) deletes older ones; a deletion request does not reach a backup until it expires |
 | Memory and skills the agent writes by itself | off | `memory`, `background_review` disabled in `config.yaml`; memory may later hold the owner's preferences only (never figures or customer names) |
 
 The 365 days the shop agreements allow is a ceiling, not a target: keeping less leaves less to protect. A record that
 must outlive the day belongs in AI-BCC (the `agent_conversations` table exists and is not written yet), where the
-shop-scoped delete already works. Context compression stays off because its model call is not bound by the
+shop-scoped delete already works. Hermes refuses to delete while its gateway holds the store open, which is why
+deletion always happens with the gateway stopped (never `--force`). Context compression stays off because its model call is not bound by the
 provider pin above (the auxiliary client has no code that reads `provider_routing`); a long chat is bounded by the
 idle deletion and by the owner sending `/new`.
 
