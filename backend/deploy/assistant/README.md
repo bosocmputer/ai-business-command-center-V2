@@ -58,7 +58,7 @@ level was raised to WARNING).
 | Log files | `ASSISTANT_LOG_RETENTION_DAYS` (default 7), WARNING and above, no question text | same daily maintenance |
 | A shop's deletion request | at once | `./assistant/forget.sh --all` or `--chat-id ID`: stops the assistant for a few seconds, deletes the sessions (open ones too: `hermes sessions prune` skips them, which is why `purge_sessions.py` exists), empties the logs, compacts the store |
 | Backups of the volume | 30 days, mode 0600 | `backup.sh` (stops the assistant for the copy) deletes older ones; a deletion request does not reach a backup until it expires |
-| Memory and skills the agent writes by itself | off | `memory`, `background_review` disabled in `config.yaml`; memory may later hold the owner's preferences only (never figures or customer names) |
+| What the assistant remembers about the owner (`memories/MEMORY.md`, `USER.md`) | until the owner asks it to forget (`forget.sh --memory`, or `--all`) | preferences and vocabulary only; `memory_guard.py` removes any line with a figure, a decimal, a link, a customer code or the words of an instruction, every 10 minutes (under Hermes' own lock) and at the daily maintenance |
 
 The 365 days the shop agreements allow is a ceiling, not a target: keeping less leaves less to protect. A record that
 must outlive the day belongs in AI-BCC (the `agent_conversations` table exists and is not written yet), where the
@@ -66,6 +66,25 @@ shop-scoped delete already works. Hermes refuses to delete while its gateway hol
 deletion always happens with the gateway stopped (never `--force`). Context compression stays off because its model call is not bound by the
 provider pin above (the auxiliary client has no code that reads `provider_routing`); a long chat is bounded by the
 idle deletion and by the owner sending `/new`.
+
+## What it learns, and what it does not (yet)
+
+On: **memory and the owner profile**, including Hermes' background review that writes them. The assistant learns how
+this owner likes answers (short, millions of baht, the owner's own names for things) and uses it in later
+conversations; tested: a stated preference was stored, used in a new session with a correct figure, and a request to
+"remember" a sales figure was refused. The review is a fork of the same model and inherits the provider pin (read in
+`agent/background_review.py`; not verified end to end, because OpenRouter shows no per-call provider).
+
+Why the guard exists: memory is the one place where text planted in report data (a product name someone typed in SML)
+could become a standing instruction, and where a recalled figure could replace a fresh one. In a test with an
+instruction planted in a report, memory stayed clean, but the model once said it *would* store a transfer account, so
+the rules do not rest on the model alone.
+
+Off, on purpose: **skills the agent writes for itself** (a self-written procedure could outrank the numeric rules in
+`SOUL.md`; none are expected, and `memory_guard.py` reports any that appear), **context compression and title
+generation** (their model calls are not bound by the provider pin), and the built-in tools (terminal, files, web,
+browser, code, cron, delegation), which let an assistant for numbers reach beyond numbers. Each can be reviewed one at a
+time; the order worth trying is skills (after memory has run for a few weeks), then scheduled messages.
 
 ## Updating
 

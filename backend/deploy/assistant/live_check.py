@@ -57,6 +57,11 @@ def ask(question):
 def has(text, figure):
     flat = text.replace(",", "")
     figure = figure.lstrip("-")
+    try:  # the owner may have asked for millions of baht: accept the figure rounded to 2 decimals in millions
+        if float(figure) >= 1_000_000 and re.search(r"(?<![\d.])" + re.escape(f"{float(figure) / 1e6:.2f}") + r"(?!\d)", flat):
+            return True
+    except ValueError:
+        pass
     options = {figure, figure.rstrip("0").rstrip(".")} if "." in figure else {figure}
     tail = "0*" if "." in figure else ""
     return any(re.search(r"(?<![\d.])" + re.escape(o) + tail + r"(?!\d)", flat) for o in options)
