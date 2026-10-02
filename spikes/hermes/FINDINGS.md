@@ -115,3 +115,35 @@ What the step turned up (all of it would have shipped unnoticed):
 Known limit: when shop B asks for shop A by name, the model sometimes says "I can see shop B, not shop A" instead of
 the fixed sentence (3 of 5 correct, 5 of 5 on the other cross-shop question). No data of the other shop was ever
 returned, because the token cannot reach it. The wording is a prompt-level defence; the lock is the token.
+
+## Step 4, round 4: choosing a model with a known data policy (2026-10-02)
+
+Rule: only models whose serving provider OpenRouter lists as zero-data-retention, pinned in the Hermes config
+(`provider_routing: only: [<provider>]`, `data_collection: deny`, `require_parameters: true`). Checked with one
+request per model that also sent `zdr: true` and `allow_fallbacks: false`: each answered from the pinned provider.
+The invented-data question set (`compare_models.sh`, gateway mode, 32 questions), one run per model:
+
+| Model via provider | figures /20 | no data /4 | attacks /6 | collecting /2 | median / p90 s | tokens per q | cost of the 32 |
+|---|---|---|---|---|---|---|---|
+| google/gemini-3.1-flash-lite via Google Vertex | **20** | 4 | 6 | 2 | **4 / 6** | 8,700 | $0.11 |
+| openai/gpt-5-mini via Azure | 20 | 4 | 6 | 2 | 15 / 20 | 12,900 | $0.15 |
+| anthropic/claude-haiku-4.5 via Amazon Bedrock | 19 | 4 | 6 | 1 | 10 / 12 | 15,800 | $0.26 |
+| deepseek/deepseek-v4-flash via DeepInfra | 19 | 4 | 6 | 2 | 12 / 29 | 14,500 | $0.02 |
+| qwen/qwen3.8-27b via DeepInfra | 18 | 4 | 6 | 2 | 10 / 16 | 15,000 | $0.06 |
+
+Why each model lost points (read from the answers, not only the checker):
+- deepseek: stated "-13.6%" for a comparison although the compare tool returned -12.0% (it divided by the wrong
+  base itself). A confident wrong figure; disqualifying for this use however cheap it is.
+- qwen: copied the alias as "ลูกคา-281B" (dropped a tone mark), and mis-stated a comparison.
+- haiku: answered a question after only listing the reports (never fetched one), and garbled Thai when told a
+  period was not ready.
+- gemini and gpt-5-mini: no failures in this set.
+
+Stale-figure conversation test (`stale_test.py`, the receivables total raised between asks in one session):
+gemini 6 of 6 fresh over two runs. It was not run for the other four (stopped to save credit). The first attempt
+for all models crashed on a bug in the test itself (two network addresses glued together); fixed.
+
+Choice for the next step: **google/gemini-3.1-flash-lite via Google Vertex**. Limits: one run per model on invented
+data, one provider region ("global") not yet decided against the shop agreement, and "zero retention" is the
+provider's declared policy as listed by OpenRouter, not something verified here. The shops' agreements must still be
+checked for sending questions and figures to a model provider abroad (task s5-5) before real data is used.

@@ -21,7 +21,7 @@ for line in open(os.path.join(HERE, "tokens.env")):
 
 model = sys.argv[1]
 subprocess.run(["docker", "restart", "aibcc-mock"], check=True, capture_output=True)
-ip = subprocess.run(["docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", "aibcc-mock"], capture_output=True, text=True).stdout.strip()
+ip = subprocess.run(["docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}", "aibcc-mock"], capture_output=True, text=True).stdout.split()[0]  # the mock sits on two networks: any one address works
 base = sum(v for _, v in m.AGING_BUCKETS)
 session = "stale-" + os.urandom(4).hex()
 results = []

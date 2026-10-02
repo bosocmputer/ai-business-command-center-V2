@@ -27,7 +27,12 @@ platform_toolsets:
   cli: []
   api_server: []
   telegram: []
-tools:
+# Pin the provider (one that OpenRouter lists as zero-data-retention for this model) and refuse any that may store data.
+${SPIKE_PROVIDER:+provider_routing:
+  only: ["$SPIKE_PROVIDER"]
+  data_collection: "deny"
+  require_parameters: true
+}tools:
   tool_search:
     enabled: "${SPIKE_TOOL_SEARCH:-off}"
 YAML
