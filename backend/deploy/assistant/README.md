@@ -63,3 +63,13 @@ docker compose exec assistant /opt/hermes/bin/hermes -z "เดือนนี�
 - `assistant-egress` is a 60-line proxy that is tested but not battle-hardened; replace it with squid if the shop
   count grows.
 - "Zero retention" is the provider's declared policy as listed by OpenRouter, not something checked here.
+
+## Verification record (2026-10-02, V2 server, placeholder secrets, no real data sent to any model)
+
+- `docker compose config` valid; `api` joined `agent` (recreated once); web to api still answers (health 200, admin
+  session 401); the other five services unchanged and healthy.
+- `hermes tools list` for `api_server` and `telegram`: 0 built-in toolsets enabled; `mcp test aibcc`: 4 tools.
+- From inside the assistant: direct internet blocked (IP and name), `postgres` unresolvable, `api:8080` reachable;
+  proxy: `openrouter.ai` allowed, `example.com` and `api.telegram.org` refused.
+- A placeholder token sent to the real Agent API got the standard 401 body.
+- Not yet verified: an end-to-end answer with a real token and the real model (waits for the shop agreement check, s5-5).
