@@ -56,7 +56,7 @@ level was raised to WARNING).
 |---|---|---|
 | Conversations in `state.db` | until idle for `ASSISTANT_RETENTION_HOURS` (default 24) | the assistant itself, daily at 04:00 Bangkok: it stops its gateway for a few seconds, runs `maintain.sh`, starts again (`prune` measures last activity, so a chat in use is not cut off) |
 | Log files | `ASSISTANT_LOG_RETENTION_DAYS` (default 7), WARNING and above, no question text | same daily maintenance |
-| A shop's deletion request | at once | `./assistant/forget.sh --all` or `--chat-id ID`: stops the assistant for a few seconds, deletes the sessions, empties the logs, compacts the store |
+| A shop's deletion request | at once | `./assistant/forget.sh --all` or `--chat-id ID`: stops the assistant for a few seconds, deletes the sessions (open ones too: `hermes sessions prune` skips them, which is why `purge_sessions.py` exists), empties the logs, compacts the store |
 | Backups of the volume | 30 days, mode 0600 | `backup.sh` (stops the assistant for the copy) deletes older ones; a deletion request does not reach a backup until it expires |
 | Memory and skills the agent writes by itself | off | `memory`, `background_review` disabled in `config.yaml`; memory may later hold the owner's preferences only (never figures or customer names) |
 

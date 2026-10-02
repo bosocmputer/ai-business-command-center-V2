@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 export COMPOSE_FILE="${COMPOSE_FILE:-compose.local.yml:assistant/compose.assistant.yml}"
 ENV_FILE="${ENV_FILE:-.env.production}"
 case "${1:-}" in
-  --all) FILTER="--older-than 1s"; WHAT="every conversation";;
+  --all) FILTER="--all"; WHAT="every conversation";;
   --chat-id) [ -n "${2:-}" ] || { echo "chat id required" >&2; exit 2; }; FILTER="--chat-id $2"; WHAT="the conversations of chat $2";;
   *) echo "usage: forget.sh --all | --chat-id ID" >&2; exit 2;;
 esac
@@ -20,9 +20,7 @@ echo "This deletes $WHAT from the assistant of this deployment (it is stopped fo
 printf 'Type DELETE to continue: '; read -r answer; [ "$answer" = "DELETE" ] || { echo "cancelled"; exit 1; }
 trap 'dc start assistant >/dev/null' EXIT
 dc stop assistant >/dev/null
-OUT="$(hermes sessions prune $FILTER --yes --include-archived --include-pinned 2>&1)" || true
-echo "$OUT" | tail -3
-case "$OUT" in *Refusing*) echo "Hermes refused: the store is still in use. Nothing was deleted." >&2; exit 1;; esac
+dc run --rm --no-deps -T --entrypoint /opt/hermes/.venv/bin/python assistant /assistant/purge_sessions.py $FILTER
 dc run --rm --no-deps -T --entrypoint sh assistant -c 'for f in /opt/data/logs/*; do [ -f "$f" ] && : > "$f"; done; true'
 hermes sessions optimize >/dev/null
 hermes sessions stats
