@@ -81,10 +81,10 @@ func TestAgentTokenLifecycleAndEveryReasonToRefuse(t *testing.T) {
 		"membership ended": func() {
 			exec(`update tenant_memberships set status = 'REVOKED' where tenant_id = $1 and recipient_id = $2`, tenantID, recipientID)
 		},
-		"recipient blocked": func() {
-			exec(`update line_recipients set status = 'BLOCKED' where id = $1`, recipientID)
+		"recipient revoked": func() {
+			exec(`update line_recipients set status = 'REVOKED' where id = $1`, recipientID)
 		},
-		"shop suspended": func() { exec(`update tenants set status = 'SUSPENDED' where id = $1`, tenantID) },
+		"shop disabled": func() { exec(`update tenants set status = 'DISABLED' where id = $1`, tenantID) },
 		"shop access over": func() {
 			exec(`update tenants set access_ends_at = $2 where id = $1`, tenantID, now.Add(-time.Hour))
 		},
