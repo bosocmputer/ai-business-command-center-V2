@@ -22,9 +22,9 @@ mcp_servers:
 # Built-in toolsets are chosen per channel: every channel must be listed or it gets the defaults
 # (web, browser, terminal, file, code execution). Verify with: hermes tools list --platform <channel>
 platform_toolsets:
-  cli: []
-  api_server: []
-  telegram: []
+  cli: [memory]
+  api_server: [memory]
+  telegram: [memory]
 
 tools:
   tool_search:
@@ -36,15 +36,22 @@ logging:
   max_size_mb: 5
   backup_count: 3
 
-# Every one of these would send the owner's conversation to a model on its own, outside the pinned provider
-# rules above, or write memory and skills by itself. Off until each is reviewed (task s4-6).
+# Memory holds the owner's preferences and vocabulary only (SOUL.md says so; maintain.sh enforces it every day).
+# The background review that writes memory runs as a fork of the same model, which inherits the provider pin above
+# (agent/background_review.py, _PROVIDER_PIN_ATTRS). Not verified end to end: OpenRouter shows no per-call provider.
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+
+# Skills the agent writes for itself stay off for now (no skill toolset, no creation nudges): a self-written
+# procedure could outrank the numeric rules in SOUL.md. Revisit after memory has run for a while.
+skills:
+  creation_nudge_interval: 0
+
+# These call a model with the conversation and cannot be bound by the provider pin (the auxiliary client does not read
+# provider_routing), so they stay off.
 auxiliary:
   title_generation:
     enabled: false
-  background_review:
-    enabled: false
 compression:
   enabled: false
-memory:
-  memory_enabled: false
-  user_profile_enabled: false
