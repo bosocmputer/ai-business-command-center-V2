@@ -1,0 +1,65 @@
+# Owner-facing assistant (Hermes) for one shop
+
+An overlay on `compose.local.yml`. It runs one locked-down Hermes per shop that answers the owner's questions with
+numbers it fetches from AI-BCC's Agent API (ADR 0001) and nothing else. Findings that led to these settings:
+`spikes/hermes/FINDINGS.md`.
+
+## What it can and cannot do
+
+| | |
+|---|---|
+| Data source | AI-BCC `api` over the internal network `agent`, with the shop's own Agent API token |
+| Internet | none directly; only hosts in `ASSISTANT_EGRESS_ALLOW` (default `openrouter.ai`) through `assistant-egress`, which logs host and decision (`docker logs`) |
+| Built-in tools | none: terminal, files, web, browser, code execution, skills, memory, cron are off on every channel (`platform_toolsets`) |
+| Model | `google/gemini-3.1-flash-lite`, pinned to Google Vertex with `data_collection: deny` (`config.yaml`) |
+| Side calls | title generation, background review, compression and memory are off, because each would send the conversation to a model outside the pinned provider rules |
+| Ports | none published to the host |
+
+## Secrets (never in git, never in chat)
+
+`secrets/assistant/hermes.env`, mode 0600, three values written by `set-secret.sh` (hidden prompt):
+
+```
+ssh -t <server> 'cd <deploy dir>/backend/deploy && ./assistant/set-secret.sh OPENROUTER_API_KEY'
+ssh -t <server> 'cd <deploy dir>/backend/deploy && ./assistant/set-secret.sh AIBCC_TOKEN'      # issued on the recipient's permissions page
+ssh -t <server> 'cd <deploy dir>/backend/deploy && ./assistant/set-secret.sh API_SERVER_KEY'  # type "generate"
+```
+
+A token is shop-specific: one assistant container, one token. Revoke it on the permissions page to cut the assistant
+off at once.
+
+## Start, check, stop
+
+```
+export COMPOSE_FILE=compose.local.yml:assistant/compose.assistant.yml
+docker compose config -q && docker compose up -d --build        # recreates `api` once: it joins the `agent` network
+docker compose ps assistant                                     # healthy after about a minute
+docker compose exec assistant /opt/hermes/bin/hermes tools list --platform api_server   # every built-in must be "disabled"
+docker compose logs assistant-egress | tail                     # only openrouter.ai ALLOW; anything else DENY
+docker compose stop assistant                                   # stop answering; the data stays
+```
+
+Ask one question without any chat channel (this sends the question and the figures to the model provider, so use
+real data only after the shop's agreement allows it):
+
+```
+docker compose exec assistant /opt/hermes/bin/hermes -z "เดือนนี้ขายได้เท่าไหร่"
+```
+
+## Changing things
+
+- **Model**: change `model.default` and `provider_routing.only` together, to a provider listed as zero-data-retention
+  for that model (`https://openrouter.ai/api/v1/endpoints/zdr`), then run the 32-question set and the stale-figure test
+  from `spikes/hermes` before use. A model that does its own arithmetic or copies codes wrongly fails them.
+- **Persona**: `SOUL.md`. It is a copy of `spikes/hermes/SOUL.md`; change both.
+- **Another shop**: copy the `assistant` service under a new name with its own `assistant_data` volume, its own
+  env file and its own token. Never share a token or a data volume between shops.
+- **Telegram** (step 5): add `TELEGRAM_BOT_TOKEN` to `hermes.env` and `api.telegram.org` to `ASSISTANT_EGRESS_ALLOW`.
+
+## Known gaps
+
+- Hermes keeps its own conversation history and logs in the `assistant_data` volume. They hold questions and
+  figures; the retention and deletion policy (365 days, deletion on request) is task s4-6 and is not enforced yet.
+- `assistant-egress` is a 60-line proxy that is tested but not battle-hardened; replace it with squid if the shop
+  count grows.
+- "Zero retention" is the provider's declared policy as listed by OpenRouter, not something checked here.

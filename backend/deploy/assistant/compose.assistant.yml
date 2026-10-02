@@ -1,0 +1,96 @@
+# The owner-facing assistant (Hermes), as an overlay on compose.local.yml. Always start the stack with both files:
+#   COMPOSE_FILE=compose.local.yml:assistant/compose.assistant.yml docker compose ...
+# Starting compose.local.yml alone takes the `agent` network off `api` and the assistant loses its data source.
+#
+# What it can reach: AI-BCC's api (network `agent`, internal, nothing else on it) and the hosts named in
+# ASSISTANT_EGRESS_ALLOW through the allow-list proxy. It has no route to the database, the worker or the internet.
+# Relative paths below are relative to this repository's backend/deploy directory (the first compose file).
+
+x-assistant-image: &assistant-image nousresearch/hermes-agent:v2026.9.24@sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7
+
+x-assistant-lock: &assistant-lock
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  api:
+    networks: [internal, agent]
+
+  assistant-state-init:
+    <<: *assistant-lock
+    image: *assistant-image
+    user: "0:0"
+    entrypoint: ["sh", "-ceu", "chmod 0700 /opt/data && chown 10000:10000 /opt/data"]
+    cap_add: [CHOWN, FOWNER]
+    restart: "no"
+    volumes:
+      - assistant_data:/opt/data
+    network_mode: none
+
+  assistant-egress:
+    <<: *assistant-lock
+    image: *assistant-image
+    user: "10000:10000"
+    entrypoint: ["/opt/hermes/.venv/bin/python", "/assistant/egress_proxy.py", "3128"]
+    environment:
+      EGRESS_ALLOW: ${ASSISTANT_EGRESS_ALLOW:-openrouter.ai}
+    restart: unless-stopped
+    volumes:
+      - ./assistant:/assistant:ro
+    mem_limit: 128m
+    pids_limit: 64
+    init: true
+    networks: [agent, egress]
+
+  assistant:
+    <<: *assistant-lock
+    image: *assistant-image
+    user: "10000:10000"
+    entrypoint: ["/bin/sh", "/assistant/entrypoint.sh"]
+    # OPENROUTER_API_KEY, AIBCC_TOKEN and API_SERVER_KEY: written by assistant/set-secret.sh, mode 0600.
+    env_file: ./secrets/assistant/hermes.env
+    environment:
+      HERMES_HOME: /opt/data
+      HOME: /opt/data
+      AIBCC_URL: http://api:8080
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: "8642"
+      HTTPS_PROXY: http://assistant-egress:3128
+      HTTP_PROXY: http://assistant-egress:3128
+      NO_PROXY: api,localhost,127.0.0.1
+    volumes:
+      - assistant_data:/opt/data
+      - ./assistant:/assistant:ro
+    tmpfs:
+      - /tmp:size=64m
+    depends_on:
+      assistant-state-init:
+        condition: service_completed_successfully
+      assistant-egress:
+        condition: service_started
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/opt/hermes/.venv/bin/python", "/assistant/healthcheck.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
+    init: true
+    mem_limit: 1g
+    cpus: 1
+    pids_limit: 256
+    networks: [agent]
+
+networks:
+  agent:
+    driver: bridge
+    internal: true
+  egress:
+    driver: bridge
+
+volumes:
+  assistant_data:

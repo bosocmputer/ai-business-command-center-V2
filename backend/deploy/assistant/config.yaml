@@ -1,0 +1,44 @@
+# Hermes settings for one shop's assistant. The repo is the source of truth: entrypoint.sh copies this to
+# HERMES_HOME at every start. Secrets are never written here; ${NAME} is read from the container environment.
+model:
+  provider: openrouter
+  default: google/gemini-3.1-flash-lite
+
+# Only a provider that OpenRouter lists as zero-data-retention for this model may answer, and none that may
+# store data. Change the model and the provider together (see README).
+provider_routing:
+  only: [google-vertex]
+  data_collection: deny
+  require_parameters: true
+
+mcp_servers:
+  aibcc:
+    command: /opt/hermes/.venv/bin/python
+    args: ["/assistant/aibcc_mcp.py"]
+    env:
+      AIBCC_URL: "${AIBCC_URL}"
+      AIBCC_TOKEN: "${AIBCC_TOKEN}"
+
+# Built-in toolsets are chosen per channel: every channel must be listed or it gets the defaults
+# (web, browser, terminal, file, code execution). Verify with: hermes tools list --platform <channel>
+platform_toolsets:
+  cli: []
+  api_server: []
+  telegram: []
+
+tools:
+  tool_search:
+    enabled: "off"
+
+# Every one of these would send the owner's conversation to a model on its own, outside the pinned provider
+# rules above, or write memory and skills by itself. Off until each is reviewed (task s4-6).
+auxiliary:
+  title_generation:
+    enabled: false
+  background_review:
+    enabled: false
+compression:
+  enabled: false
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
