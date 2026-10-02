@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: current
 last_verified: 2026-10-02
 source_of_truth: [internal/viewer/report_service.go, internal/database/snapshot_store.go, internal/report/dashboard.go, internal/database/migrations/000031_recipient_ai_chat.sql]
 tags: [adr, agent, security, api]
@@ -9,8 +9,9 @@ tags: [adr, agent, security, api]
 
 ## Status
 
-Proposed. Not implemented. Written after the Hermes spike (`spikes/hermes/FINDINGS.md`), which showed what the
-assistant needs from the API.
+Accepted and implemented (migration 000041). Written after the Hermes spike (`spikes/hermes/FINDINGS.md`). Decisions taken by
+the project owner on 2026-10-02: customer names visible for the pilot shop (token setting, default masked), the assistant may start
+background fetches within the hourly budget, `compare` is in the first batch, internal network only (Telegram first), 90-day tokens.
 
 ## Context
 
@@ -105,8 +106,8 @@ copy are later steps.
 - Positive: one source of numbers; a stolen token reads only that recipient's permitted reports, only through snapshots, and can be revoked at
   once; the assistant can fail without affecting reports; the spike harness becomes the acceptance test (point it at this API).
 - Negative: stale or missing snapshots make the assistant answer "preparing" for rarely opened reports until they are fetched; the new reports
-  (aging, RFM, purchase frequency) have no scheduled summary run, so the first question for each triggers a background fetch. Snapshot-first
-  and stale revalidation are feature-flagged off on the V2 deployment and must be enabled for the tenant before this works end to end.
+  (aging, RFM, purchase frequency) have no scheduled summary run, so the first question for each triggers a background fetch. `RevalidateSnapshot` is called directly by the agent service,
+  so the viewer-facing snapshot-first and stale-revalidation flags do not need to be enabled for this API.
 - Masked names make some answers harder to act on ("who owes the most" returns an alias) until names are allowed.
 - Rollout: flag off, deploy migration, issue a token for the project owner's recipient only, run the spike battery against it.
   Rollback: set `AGENT_API_ENABLED=false` and revoke tokens; nothing else depends on it.

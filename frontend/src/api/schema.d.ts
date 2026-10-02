@@ -304,6 +304,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/agent-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Whether the assistant is enabled and the state of this recipient's token. Never repeats the token. */
+        get: operations["getRecipientAgentToken"];
+        put?: never;
+        /** @description Issues a new assistant token and revokes the previous one. The token is in this response only. The recipient must already have the assistant switch on. */
+        post: operations["issueRecipientAgentToken"];
+        /** @description Revokes the recipient's live token. Revoking when there is none changes nothing. */
+        delete: operations["revokeRecipientAgentToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Shop name, today in the shop's time zone, the reports this token may read and the remaining call budget. Read-only; internal network only. */
+        get: operations["getAgentContext"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/reports/{reportKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The stored numbers of one report for a period, with the period used and when SML was read. A report the token may not read answers exactly like one that does not exist. */
+        get: operations["getAgentReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The difference between two periods of one metric, computed on the server, with warnings when the periods differ in length, are unfinished or overlap. */
+        get: operations["compareAgentReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/deliveries/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description What the last card accepted for this recipient said for one report. */
+        get: operations["getAgentLatestDelivery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/invitation": {
         parameters: {
             query?: never;
@@ -1210,6 +1297,130 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AgentTokenInfo: {
+            /** @enum {string} */
+            status: "NONE" | "ACTIVE" | "EXPIRED";
+            namesVisible: boolean;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            expiresAt?: string;
+            /** Format: date-time */
+            lastUsedAt?: string;
+            calls24h: number;
+        };
+        AgentTokenStatus: {
+            /** @description False while the assistant is switched off for the whole system. */
+            enabled: boolean;
+            info: components["schemas"]["AgentTokenInfo"];
+        };
+        AgentIssuedToken: {
+            /** @description Shown once. Stored only as a hash. */
+            token: string;
+            info: components["schemas"]["AgentTokenInfo"];
+        };
+        AgentError: {
+            /** @enum {string} */
+            status: "UNAUTHORIZED" | "NO_DATA" | "INVALID_PERIOD" | "RATE_LIMITED" | "AGENT_DISABLED" | "ERROR";
+            /** @description Plain Thai the assistant can pass on. */
+            message: string;
+        };
+        AgentContext: {
+            shop: string;
+            timezone: string;
+            /** Format: date */
+            today: string;
+            reports: {
+                key: components["schemas"]["ReportKey"];
+                label: string;
+                category: string;
+                categoryLabel: string;
+                /** @enum {string} */
+                periodMode: "DATE_RANGE" | "AS_OF_DATE" | "CURRENT_ONLY";
+                supportsCompare: boolean;
+            }[];
+            limits: {
+                callsPerHour: number;
+                callsRemaining: number;
+            };
+            notes?: string[];
+        };
+        AgentReport: {
+            reportKey: components["schemas"]["ReportKey"];
+            label: string;
+            /** @enum {string} */
+            status: "READY" | "PREPARING" | "UNAVAILABLE";
+            message?: string;
+            period?: components["schemas"]["AgentPeriod"];
+            comparisonPeriod?: components["schemas"]["AgentPeriod"];
+            /**
+             * Format: date-time
+             * @description When SML was read, in the shop's time zone.
+             */
+            collectedAt?: string;
+            /** @enum {string} */
+            freshness?: "FRESH" | "STALE" | "DELIVERED";
+            /** Format: date-time */
+            deliveredAt?: string;
+            kpis?: {
+                key: string;
+                label: string;
+                /** @enum {string} */
+                unit: "THB" | "COUNT" | "PERCENT" | "QUANTITY" | "RATIO";
+                value: string;
+                comparison?: {
+                    previousValue?: string;
+                    delta?: string;
+                    percent?: string;
+                    direction?: string;
+                };
+            }[];
+            visualizations?: {
+                key?: string;
+                title?: string;
+                intent?: string;
+                unit?: string;
+                categories?: string[];
+                series?: {
+                    key?: string;
+                    label?: string;
+                    values?: string[];
+                }[];
+            }[];
+            warnings?: string[];
+            retryAfterSeconds?: number;
+        };
+        AgentPeriod: {
+            /** Format: date */
+            dateFrom: string;
+            /** Format: date */
+            dateTo: string;
+            mode?: string;
+        };
+        AgentCompare: {
+            reportKey: components["schemas"]["ReportKey"];
+            label: string;
+            /** @enum {string} */
+            status: "READY" | "PREPARING" | "UNAVAILABLE";
+            message?: string;
+            metric?: string;
+            metricLabel?: string;
+            unit?: string;
+            a?: components["schemas"]["AgentCompareSide"];
+            b?: components["schemas"]["AgentCompareSide"];
+            delta?: string;
+            /** @description Absent when the second period is zero. */
+            percent?: string;
+            warnings?: string[];
+            /** Format: date-time */
+            collectedAt?: string;
+            retryAfterSeconds?: number;
+        };
+        AgentCompareSide: {
+            period: components["schemas"]["AgentPeriod"];
+            days: number;
+            value: string;
+        };
         HealthStatus: {
             /** @enum {string} */
             status: "ok" | "ready";
@@ -2593,6 +2804,15 @@ export interface components {
         };
     };
     responses: {
+        /** @description A refusal the assistant can pass on. A report that is forbidden answers exactly like one that does not exist. */
+        AgentRefusal: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["AgentError"];
+            };
+        };
         Unauthorized: {
             headers: {
                 [name: string]: unknown;
@@ -3373,6 +3593,204 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getRecipientAgentToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+                recipientId: components["parameters"]["RecipientID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Token state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTokenStatus"];
+                };
+            };
+        };
+    };
+    issueRecipientAgentToken: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+                recipientId: components["parameters"]["RecipientID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description When false the assistant sees customer and supplier names as stable aliases. */
+                    namesVisible: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The new token, shown once. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentIssuedToken"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The assistant is switched off for the recipient or for the whole system. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemEnvelope"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    revokeRecipientAgentToken: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+                recipientId: components["parameters"]["RecipientID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The token state after revoking. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTokenStatus"];
+                };
+            };
+        };
+    };
+    getAgentContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentContext"];
+                };
+            };
+            401: components["responses"]["AgentRefusal"];
+            429: components["responses"]["AgentRefusal"];
+        };
+    };
+    getAgentReport: {
+        parameters: {
+            query?: {
+                dateFrom?: string;
+                dateTo?: string;
+            };
+            header?: never;
+            path: {
+                reportKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Report, PREPARING or UNAVAILABLE. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentReport"];
+                };
+            };
+            401: components["responses"]["AgentRefusal"];
+            404: components["responses"]["AgentRefusal"];
+            422: components["responses"]["AgentRefusal"];
+            429: components["responses"]["AgentRefusal"];
+        };
+    };
+    compareAgentReport: {
+        parameters: {
+            query: {
+                reportKey: string;
+                metric: string;
+                aFrom: string;
+                aTo: string;
+                bFrom: string;
+                bTo: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Comparison. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCompare"];
+                };
+            };
+            401: components["responses"]["AgentRefusal"];
+            404: components["responses"]["AgentRefusal"];
+            422: components["responses"]["AgentRefusal"];
+            429: components["responses"]["AgentRefusal"];
+        };
+    };
+    getAgentLatestDelivery: {
+        parameters: {
+            query: {
+                reportKey: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The delivered figures. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentReport"];
+                };
+            };
+            401: components["responses"]["AgentRefusal"];
+            404: components["responses"]["AgentRefusal"];
+            429: components["responses"]["AgentRefusal"];
         };
     };
     reissueRecipientInvitation: {

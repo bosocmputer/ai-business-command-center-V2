@@ -32,6 +32,7 @@ type Counts struct {
 	NotificationRuns       int64
 	AuditLogs              int64
 	ViewEvents             int64
+	AgentCalls             int64
 	Sessions               int64
 	IdempotencyRequests    int64
 	AccessLinks            int64

@@ -1,6 +1,6 @@
 import { apiRequest, newIdempotencyKey, queryString } from './client';
 import type {
-  AdminReportCatalog, AdminSession, AuditPage, CreateReportRunInput, DataPage, DeliveryPage, Recipient, RecipientPage, ReportDefinition,
+  AdminReportCatalog, AdminSession, AgentIssuedToken, AgentTokenStatus, AuditPage, CreateReportRunInput, DataPage, DeliveryPage, Recipient, RecipientPage, ReportDefinition,
   FlexPreview, FlexPreviewInput, LineQuotaStatus, MonitorHistory, MonitorSample, ReportMode, ReportModeItem, ReportModeMeasurement, NotificationExecution, ReportKey, ReportRowPage, ReportRowQueryInput, ReportRowQueryPage, ReportRun, ReportRunDetail, ReportRunPage, Schedule, ScheduleInput, SchedulePage, SchedulePatch,
   SMLConnectionInput, SMLConnectionStatus, SMLConnectionTestResult, Tenant, TenantInput, TenantPage, TenantPatch,
   DashboardRefresh, DashboardRefreshInput, DashboardRefreshResult, ExecutiveOverview, ReportDashboard, ViewerMe, ViewerTenant,
@@ -35,6 +35,9 @@ export const adminApi = {
   getRecipient: (tenantId: string, recipientId: string, signal?: AbortSignal) => apiRequest<Recipient>(`${api}/admin/tenants/${tenantId}/recipients/${recipientId}`, { signal }),
   inviteRecipient: (tenantId: string, invitationLabel: string, idempotencyKey = newIdempotencyKey('recipient')) => apiRequest<Recipient>(`${api}/admin/tenants/${tenantId}/recipients`, { method: 'POST', scope: 'admin', idempotencyKey, body: { invitationLabel } }),
   reissueRecipientInvitation: (tenantId: string, recipientId: string, idempotencyKey = newIdempotencyKey('recipient-reissue')) => apiRequest<Recipient>(`${api}/admin/tenants/${tenantId}/recipients/${recipientId}/invitation`, { method: 'POST', scope: 'admin', idempotencyKey }),
+  getAgentToken: (tenantId: string, recipientId: string, signal?: AbortSignal) => apiRequest<AgentTokenStatus>(`${api}/admin/tenants/${tenantId}/recipients/${recipientId}/agent-token`, { scope: 'admin', signal }),
+  issueAgentToken: (tenantId: string, recipientId: string, namesVisible: boolean) => apiRequest<AgentIssuedToken>(`${api}/admin/tenants/${tenantId}/recipients/${recipientId}/agent-token`, { method: 'POST', scope: 'admin', body: { namesVisible } }),
+  revokeAgentToken: (tenantId: string, recipientId: string) => apiRequest<AgentTokenStatus>(`${api}/admin/tenants/${tenantId}/recipients/${recipientId}/agent-token`, { method: 'DELETE', scope: 'admin' }),
   setRecipientAiChat: (tenantId: string, recipientId: string, enabled: boolean) => apiRequest<Recipient>(`${api}/admin/tenants/${tenantId}/recipients/${recipientId}/ai-chat`, { method: 'PUT', scope: 'admin', body: { enabled } }),
   replacePermissions: (tenantId: string, recipientId: string, reportKeys: ReportKey[], version: number) => apiRequest<Recipient>(`${api}/admin/tenants/${tenantId}/recipients/${recipientId}/permissions`, { method: 'PUT', scope: 'admin', body: { reportKeys, version } }),
   permissionDependencies: (tenantId: string, recipientId: string, signal?: AbortSignal) => apiRequest<PermissionDependencies>(`${api}/admin/tenants/${tenantId}/recipients/${recipientId}/permission-dependencies`, { signal }),

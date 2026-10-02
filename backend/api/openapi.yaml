@@ -16,6 +16,7 @@ tags:
   - name: Admin configuration
   - name: Admin operations
   - name: Viewer
+  - name: Agent
 paths:
   /api/v1/health/live:
     get:
@@ -399,6 +400,116 @@ paths:
               schema: {$ref: '#/components/schemas/Recipient'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/agent-token:
+    get:
+      tags: [Admin configuration]
+      operationId: getRecipientAgentToken
+      description: Whether the assistant is enabled and the state of this recipient's token. Never repeats the token.
+      security: [{AdminSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/TenantID'}
+        - {$ref: '#/components/parameters/RecipientID'}
+      responses:
+        '200':
+          description: Token state.
+          content: {application/json: {schema: {$ref: '#/components/schemas/AgentTokenStatus'}}}
+    post:
+      tags: [Admin configuration]
+      operationId: issueRecipientAgentToken
+      description: Issues a new assistant token and revokes the previous one. The token is in this response only. The recipient must already have the assistant switch on.
+      security: [{AdminSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/TenantID'}
+        - {$ref: '#/components/parameters/RecipientID'}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [namesVisible]
+              properties:
+                namesVisible: {type: boolean, description: When false the assistant sees customer and supplier names as stable aliases.}
+      responses:
+        '201':
+          description: The new token, shown once.
+          content: {application/json: {schema: {$ref: '#/components/schemas/AgentIssuedToken'}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: The assistant is switched off for the recipient or for the whole system., content: {application/json: {schema: {$ref: '#/components/schemas/ProblemEnvelope'}}}}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      tags: [Admin configuration]
+      operationId: revokeRecipientAgentToken
+      description: Revokes the recipient's live token. Revoking when there is none changes nothing.
+      security: [{AdminSession: []}]
+      parameters:
+        - {$ref: '#/components/parameters/TenantID'}
+        - {$ref: '#/components/parameters/RecipientID'}
+        - {$ref: '#/components/parameters/CSRFToken'}
+      responses:
+        '200':
+          description: The token state after revoking.
+          content: {application/json: {schema: {$ref: '#/components/schemas/AgentTokenStatus'}}}
+  /api/v1/agent/context:
+    get:
+      tags: [Agent]
+      operationId: getAgentContext
+      description: Shop name, today in the shop's time zone, the reports this token may read and the remaining call budget. Read-only; internal network only.
+      security: [{AgentToken: []}]
+      responses:
+        '200': {description: Context., content: {application/json: {schema: {$ref: '#/components/schemas/AgentContext'}}}}
+        '401': {$ref: '#/components/responses/AgentRefusal'}
+        '429': {$ref: '#/components/responses/AgentRefusal'}
+  /api/v1/agent/reports/{reportKey}:
+    get:
+      tags: [Agent]
+      operationId: getAgentReport
+      description: The stored numbers of one report for a period, with the period used and when SML was read. A report the token may not read answers exactly like one that does not exist.
+      security: [{AgentToken: []}]
+      parameters:
+        - {name: reportKey, in: path, required: true, schema: {type: string}}
+        - {name: dateFrom, in: query, schema: {type: string, format: date}}
+        - {name: dateTo, in: query, schema: {type: string, format: date}}
+      responses:
+        '200': {description: "Report, PREPARING or UNAVAILABLE.", content: {application/json: {schema: {$ref: '#/components/schemas/AgentReport'}}}}
+        '401': {$ref: '#/components/responses/AgentRefusal'}
+        '404': {$ref: '#/components/responses/AgentRefusal'}
+        '422': {$ref: '#/components/responses/AgentRefusal'}
+        '429': {$ref: '#/components/responses/AgentRefusal'}
+  /api/v1/agent/compare:
+    get:
+      tags: [Agent]
+      operationId: compareAgentReport
+      description: The difference between two periods of one metric, computed on the server, with warnings when the periods differ in length, are unfinished or overlap.
+      security: [{AgentToken: []}]
+      parameters:
+        - {name: reportKey, in: query, required: true, schema: {type: string}}
+        - {name: metric, in: query, required: true, schema: {type: string}}
+        - {name: aFrom, in: query, required: true, schema: {type: string, format: date}}
+        - {name: aTo, in: query, required: true, schema: {type: string, format: date}}
+        - {name: bFrom, in: query, required: true, schema: {type: string, format: date}}
+        - {name: bTo, in: query, required: true, schema: {type: string, format: date}}
+      responses:
+        '200': {description: Comparison., content: {application/json: {schema: {$ref: '#/components/schemas/AgentCompare'}}}}
+        '401': {$ref: '#/components/responses/AgentRefusal'}
+        '404': {$ref: '#/components/responses/AgentRefusal'}
+        '422': {$ref: '#/components/responses/AgentRefusal'}
+        '429': {$ref: '#/components/responses/AgentRefusal'}
+  /api/v1/agent/deliveries/latest:
+    get:
+      tags: [Agent]
+      operationId: getAgentLatestDelivery
+      description: What the last card accepted for this recipient said for one report.
+      security: [{AgentToken: []}]
+      parameters:
+        - {name: reportKey, in: query, required: true, schema: {type: string}}
+      responses:
+        '200': {description: The delivered figures., content: {application/json: {schema: {$ref: '#/components/schemas/AgentReport'}}}}
+        '401': {$ref: '#/components/responses/AgentRefusal'}
+        '404': {$ref: '#/components/responses/AgentRefusal'}
+        '429': {$ref: '#/components/responses/AgentRefusal'}
   /api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/invitation:
     post:
       tags: [Admin configuration]
@@ -1424,6 +1535,10 @@ components:
       type: apiKey
       in: cookie
       name: aibcc_viewer_session
+    AgentToken:
+      type: http
+      scheme: bearer
+      description: A per-recipient assistant token issued by an admin. Served on the internal network only.
   parameters:
     TenantID: {name: tenantId, in: path, required: true, schema: {type: string, format: uuid}}
     RecipientID: {name: recipientId, in: path, required: true, schema: {type: string, format: uuid}}
@@ -1436,6 +1551,9 @@ components:
     IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 8, maxLength: 200}}
     CSRFToken: {name: X-CSRF-Token, in: header, required: true, schema: {type: string, minLength: 32, maxLength: 256}}
   responses:
+    AgentRefusal:
+      description: A refusal the assistant can pass on. A report that is forbidden answers exactly like one that does not exist.
+      content: {application/json: {schema: {$ref: '#/components/schemas/AgentError'}}}
     Unauthorized: {$ref: '#/components/responses/Problem401'}
     Forbidden: {$ref: '#/components/responses/Problem403'}
     NotFound: {$ref: '#/components/responses/Problem404'}
@@ -1455,6 +1573,142 @@ components:
     Problem429: {description: Rate or concurrency limit exceeded., headers: {Retry-After: {schema: {type: integer}}}, content: {application/json: {schema: {$ref: '#/components/schemas/ProblemEnvelope'}}}}
     Problem503: {description: Service is temporarily unavailable., content: {application/json: {schema: {$ref: '#/components/schemas/ProblemEnvelope'}}}}
   schemas:
+    AgentTokenInfo:
+      type: object
+      required: [status, namesVisible, calls24h]
+      properties:
+        status: {type: string, enum: [NONE, ACTIVE, EXPIRED]}
+        namesVisible: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        lastUsedAt: {type: string, format: date-time}
+        calls24h: {type: integer}
+    AgentTokenStatus:
+      type: object
+      required: [enabled, info]
+      properties:
+        enabled: {type: boolean, description: False while the assistant is switched off for the whole system.}
+        info: {$ref: '#/components/schemas/AgentTokenInfo'}
+    AgentIssuedToken:
+      type: object
+      required: [token, info]
+      properties:
+        token: {type: string, description: Shown once. Stored only as a hash.}
+        info: {$ref: '#/components/schemas/AgentTokenInfo'}
+    AgentError:
+      type: object
+      required: [status, message]
+      properties:
+        status: {type: string, enum: [UNAUTHORIZED, NO_DATA, INVALID_PERIOD, RATE_LIMITED, AGENT_DISABLED, ERROR]}
+        message: {type: string, description: Plain Thai the assistant can pass on.}
+    AgentContext:
+      type: object
+      required: [shop, timezone, today, reports, limits]
+      properties:
+        shop: {type: string}
+        timezone: {type: string}
+        today: {type: string, format: date}
+        reports:
+          type: array
+          items:
+            type: object
+            required: [key, label, category, categoryLabel, periodMode, supportsCompare]
+            properties:
+              key: {$ref: '#/components/schemas/ReportKey'}
+              label: {type: string}
+              category: {type: string}
+              categoryLabel: {type: string}
+              periodMode: {type: string, enum: [DATE_RANGE, AS_OF_DATE, CURRENT_ONLY]}
+              supportsCompare: {type: boolean}
+        limits:
+          type: object
+          required: [callsPerHour, callsRemaining]
+          properties:
+            callsPerHour: {type: integer}
+            callsRemaining: {type: integer}
+        notes: {type: array, items: {type: string}}
+    AgentReport:
+      type: object
+      required: [reportKey, label, status]
+      properties:
+        reportKey: {$ref: '#/components/schemas/ReportKey'}
+        label: {type: string}
+        status: {type: string, enum: [READY, PREPARING, UNAVAILABLE]}
+        message: {type: string}
+        period: {$ref: '#/components/schemas/AgentPeriod'}
+        comparisonPeriod: {$ref: '#/components/schemas/AgentPeriod'}
+        collectedAt: {type: string, format: date-time, description: "When SML was read, in the shop's time zone."}
+        freshness: {type: string, enum: [FRESH, STALE, DELIVERED]}
+        deliveredAt: {type: string, format: date-time}
+        kpis:
+          type: array
+          items:
+            type: object
+            required: [key, label, unit, value]
+            properties:
+              key: {type: string}
+              label: {type: string}
+              unit: {type: string, enum: [THB, COUNT, PERCENT, QUANTITY, RATIO]}
+              value: {type: string}
+              comparison:
+                type: object
+                properties:
+                  previousValue: {type: string}
+                  delta: {type: string}
+                  percent: {type: string}
+                  direction: {type: string}
+        visualizations:
+          type: array
+          items:
+            type: object
+            properties:
+              key: {type: string}
+              title: {type: string}
+              intent: {type: string}
+              unit: {type: string}
+              categories: {type: array, items: {type: string}}
+              series:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    key: {type: string}
+                    label: {type: string}
+                    values: {type: array, items: {type: string}}
+        warnings: {type: array, items: {type: string}}
+        retryAfterSeconds: {type: integer}
+    AgentPeriod:
+      type: object
+      required: [dateFrom, dateTo]
+      properties:
+        dateFrom: {type: string, format: date}
+        dateTo: {type: string, format: date}
+        mode: {type: string}
+    AgentCompare:
+      type: object
+      required: [reportKey, label, status]
+      properties:
+        reportKey: {$ref: '#/components/schemas/ReportKey'}
+        label: {type: string}
+        status: {type: string, enum: [READY, PREPARING, UNAVAILABLE]}
+        message: {type: string}
+        metric: {type: string}
+        metricLabel: {type: string}
+        unit: {type: string}
+        a: {$ref: '#/components/schemas/AgentCompareSide'}
+        b: {$ref: '#/components/schemas/AgentCompareSide'}
+        delta: {type: string}
+        percent: {type: string, description: Absent when the second period is zero.}
+        warnings: {type: array, items: {type: string}}
+        collectedAt: {type: string, format: date-time}
+        retryAfterSeconds: {type: integer}
+    AgentCompareSide:
+      type: object
+      required: [period, days, value]
+      properties:
+        period: {$ref: '#/components/schemas/AgentPeriod'}
+        days: {type: integer}
+        value: {type: string}
     HealthStatus:
       type: object
       required: [status]

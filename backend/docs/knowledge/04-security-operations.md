@@ -120,3 +120,14 @@ Use the sanitized incident template. Record safe error codes, time windows, affe
 - Recording is best effort and asynchronous: a failure is logged by category and never fails the viewer's request. The same viewer doing the same thing within one minute is stored once.
 - Events are deleted with their recipient or tenant, and by the retention worker after 365 days (`viewEvents` in the retention log line).
 
+## Agent API (owner-facing assistant)
+
+- Routes under `/api/v1/agent/*` serve the assistant: `context`, `reports/{key}`, `compare`, `deliveries/latest`. All are `GET`, read-only, and answer from stored snapshots; the assistant never reaches SML. They are on the internal network only: the frontend proxy answers `404` for `/api/v1/agent/` so nothing reaches them through the public address. `AGENT_API_ENABLED` (default `false`) switches the whole surface off; off answers `503 AGENT_DISABLED` and does not touch cards or the web.
+- A token is `abcc_` plus 32 random bytes, stored only as an HMAC hash in `agent_tokens`, bound to one recipient in one tenant, valid 90 days. One live token per recipient and tenant: issuing a new one revokes the old in the same transaction. Admin issues, shows state and revokes at `/api/v1/admin/tenants/{t}/recipients/{r}/agent-token`; the token is in the issue response once and never repeated. Issue and revoke are audited as admin actions.
+- Every call re-checks the token (live, unexpired), the tenant (active, inside its access period), the recipient and membership (active) and the recipient's assistant switch. Every failure answers the same `401` body, so a caller cannot tell a revoked token from an expired one or a switched-off assistant.
+- Report permission comes from `recipient_report_permissions`. A report the token may not read, an unknown key and a missing report answer with the same status and the same bytes (`404 NO_DATA`); a test compares them. Agent errors are written without a request id for that reason.
+- Customer and supplier names are masked as stable per-tenant aliases (`ลูกค้า-7F3A`) unless the token was issued with `namesVisible`. The level belongs to the token, never to a request parameter. The visualizations that carry such names are listed in `report.PersonNameVisualizations`.
+- Limits: 60 answered calls per hour per token (refusals for rate do not count), 3 background fetches per hour per tenant. A missing or stale snapshot goes through `ReportStore.RevalidateSnapshot`; the answer is `PREPARING` with a retry time, or the stale numbers marked `STALE`.
+- `agent_calls` logs token, tool, report, period, outcome, duration and snapshot run id, with no values, names or question text; retention 365 days (`agentCalls` in the retention log line).
+- `compare` computes the difference on the server and warns about different period lengths, unfinished periods and overlap. The assistant is told not to do arithmetic.
+

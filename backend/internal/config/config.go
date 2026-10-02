@@ -47,6 +47,7 @@ type Config struct {
 	GenerationCacheEnabled       bool
 	StaleRevalidationEnabled     bool
 	HeavyChunkEnabled            bool
+	AgentAPIEnabled              bool
 	HeavyChunkTenantReports      []string
 	ScheduleChunkEnabled         bool
 	WatchdogEnabled              bool
@@ -191,6 +192,11 @@ func Load(lookup LookupFunc) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	// The assistant surface is off until an operator turns it on.
+	agentAPIEnabled, err := boolValue(lookup, "AGENT_API_ENABLED", false)
+	if err != nil {
+		return Config{}, err
+	}
 	heavyChunkEnabled, err := boolValue(lookup, "HEAVY_CHUNK_ENABLED", false)
 	if err != nil {
 		return Config{}, err
@@ -265,6 +271,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		GenerationCacheEnabled:       generationCacheEnabled,
 		StaleRevalidationEnabled:     staleRevalidationEnabled,
 		HeavyChunkEnabled:            heavyChunkEnabled,
+		AgentAPIEnabled:              agentAPIEnabled,
 		HeavyChunkTenantReports:      heavyChunkTenantReports,
 		ScheduleChunkEnabled:         scheduleChunkEnabled,
 		WatchdogEnabled:              watchdogEnabled,

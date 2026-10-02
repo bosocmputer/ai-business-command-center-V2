@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
-import { adminApi, ApiError, type AdminReportCatalog, type PermissionDependencies, type Recipient, type ReportKey, type Tenant } from '@/api';
+import { adminApi, ApiError, type AdminReportCatalog, type AgentTokenStatus, type PermissionDependencies, type Recipient, type ReportKey, type Tenant } from '@/api';
 import RecipientAiChatCard from '@/components/admin/RecipientAiChatCard.vue';
 import ReportPickerPanel from '@/components/admin/ReportPickerPanel.vue';
 import { beginAdminTenantContext, setAdminTenantContext } from '@/stores/adminTenantContext';
@@ -30,6 +30,9 @@ const dependencyLoading = ref(false);
 const dependencyError = ref('');
 const aiChatEnabled = ref(false);
 const aiChatSaving = ref(false);
+const agent = ref<AgentTokenStatus>();
+const agentBusy = ref(false);
+const issuedToken = ref<string>();
 const controller = new AbortController();
 
 const selectedSet = computed(() => new Set(selected.value));
@@ -49,6 +52,38 @@ async function loadDependencies(signal?: AbortSignal) {
   finally { dependencyLoading.value = false; }
 }
 
+// The assistant token is a separate concern from the permissions: a failure to read it must not stop the
+// permission page from opening, so the card simply shows no token section.
+async function loadAgentToken(signal?: AbortSignal) {
+  try { agent.value = await adminApi.getAgentToken(tenantId, recipientId, signal); }
+  catch { agent.value = undefined; }
+}
+
+async function issueAgentToken(namesVisible: boolean) {
+  if (agentBusy.value) return;
+  agentBusy.value = true;
+  try {
+    const issued = await adminApi.issueAgentToken(tenantId, recipientId, namesVisible);
+    issuedToken.value = issued.token;
+    agent.value = { enabled: true, info: issued.info };
+    toast.add({ severity: 'success', summary: 'ออกโทเคนผู้ช่วยแล้ว', detail: 'คัดลอกไว้ก่อนปิด เพราะดูอีกไม่ได้', life: 5000 });
+  } catch (cause) {
+    toast.add({ severity: 'error', summary: 'ออกโทเคนไม่สำเร็จ', detail: errorMessage(cause), life: 8000 });
+  } finally { agentBusy.value = false; }
+}
+
+async function revokeAgentToken() {
+  if (agentBusy.value) return;
+  agentBusy.value = true;
+  try {
+    agent.value = await adminApi.revokeAgentToken(tenantId, recipientId);
+    issuedToken.value = undefined;
+    toast.add({ severity: 'success', summary: 'ยกเลิกโทเคนผู้ช่วยแล้ว', life: 3000 });
+  } catch (cause) {
+    toast.add({ severity: 'error', summary: 'ยกเลิกโทเคนไม่สำเร็จ', detail: errorMessage(cause), life: 8000 });
+  } finally { agentBusy.value = false; }
+}
+
 async function load() {
   loading.value = true;
   error.value = '';
@@ -64,6 +99,7 @@ async function load() {
     baseline.value = [...recipientResult.reportKeys];
     aiChatEnabled.value = recipientResult.aiChatEnabled;
     await loadDependencies(controller.signal);
+    await loadAgentToken(controller.signal);
   } catch (cause) { error.value = errorMessage(cause); }
   finally { loading.value = false; }
 }
@@ -117,6 +153,8 @@ async function setAiChat(enabled: boolean) {
   try {
     const updated = await adminApi.setRecipientAiChat(tenantId, recipientId, enabled);
     aiChatEnabled.value = updated.aiChatEnabled;
+    // Turning the assistant off ends its access at once on the server; show that here too.
+    if (!updated.aiChatEnabled) { issuedToken.value = undefined; await loadAgentToken(); }
     toast.add({ severity: 'success', summary: updated.aiChatEnabled ? 'เปิดสิทธิ์คุยกับผู้ช่วย AI แล้ว' : 'ปิดสิทธิ์คุยกับผู้ช่วย AI แล้ว', life: 3000 });
   } catch (cause) {
     aiChatEnabled.value = !enabled;
@@ -145,6 +183,6 @@ onBeforeUnmount(() => { controller.abort('unmount'); window.removeEventListener(
       <ReportPickerPanel v-model="selected" :definitions="catalog.data" :locked-keys="lockedKeys" />
       <div v-if="dependencies?.items.length" class="mt-5 grid gap-2"><div class="font-semibold">ตาราง Active ที่ใช้สิทธิ์นี้</div><div v-for="item in dependencies.items" :key="item.reportKey" class="text-sm text-muted-color"><strong>{{ catalog.data.find((definition) => definition.reportKey === item.reportKey)?.label ?? item.reportKey }}</strong>: {{ item.schedules.map((schedule) => schedule.name).join(', ') }}<span v-if="item.additionalCount"> และอีก {{ item.additionalCount }} ตาราง</span></div></div>
     </div>
-    <RecipientAiChatCard class="mt-4" :enabled="aiChatEnabled" :status="recipient.status" :saving="aiChatSaving" @change="setAiChat" />
+    <RecipientAiChatCard class="mt-4" :enabled="aiChatEnabled" :status="recipient.status" :saving="aiChatSaving" :agent="agent" :agent-busy="agentBusy" :issued-token="issuedToken" @change="setAiChat" @issue="issueAgentToken" @revoke="revokeAgentToken" @dismiss-token="issuedToken = undefined" />
   </template>
 </template>

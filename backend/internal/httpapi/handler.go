@@ -51,6 +51,8 @@ type Dependencies struct {
 	Watchdog        WatchdogAPI
 	ViewerAuth      ViewerAPI
 	ViewerReports   ViewerReportAPI
+	Agent           AgentAPI
+	AgentEnabled    bool
 	RefreshPolicies RefreshPolicyAPI
 	LineWebhook     LineWebhookAPI
 	SecureCookies   bool
@@ -150,12 +152,18 @@ func NewHandler(dependencies Dependencies) http.Handler {
 		if dependencies.Incidents != nil {
 			registerIncidentRoutes(router, dependencies.AdminAuth, dependencies.Incidents)
 		}
+		if dependencies.Agent != nil {
+			registerAgentAdminRoutes(router, dependencies.AdminAuth, dependencies.Agent, dependencies.AgentEnabled)
+		}
 	}
 	if dependencies.ViewerAuth != nil {
 		registerViewerRoutes(router, dependencies.ViewerAuth, dependencies.SecureCookies, dependencies.ViewEvents)
 		if dependencies.ViewerReports != nil {
 			registerViewerReportRoutes(router, dependencies.ViewerAuth, dependencies.ViewerReports, dependencies.ViewEvents)
 		}
+	}
+	if dependencies.Agent != nil {
+		registerAgentRoutes(router, dependencies.Agent, dependencies.AgentEnabled)
 	}
 	router.NotFound(func(response http.ResponseWriter, request *http.Request) {
 		writeProblem(response, request, http.StatusNotFound, "NOT_FOUND", "The requested resource was not found.", false)

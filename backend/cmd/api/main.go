@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/agent"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/auth"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/config"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/database"
@@ -71,6 +72,7 @@ func main() {
 	viewerReportService := viewer.NewReportService(viewerService, database.NewReportStore(pool).ConfigureGenerationCache(cfg.GenerationCacheEnabled), time.Now).
 		ConfigureSnapshotFirst(cfg.SnapshotFirstEnabled, cfg.SnapshotFirstTenantIDs).
 		ConfigureStaleRevalidation(cfg.StaleRevalidationEnabled)
+	agentService := agent.NewService(database.NewAgentStore(pool), database.NewReportStore(pool), sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{})
 	periodObserver := func(preset report.Preset, mode report.ParameterKind, result string) {
 		logger.Info("schedule period resolved", "event", "schedule_period_resolution", "preset", preset, "mode", mode, "result", result, "schedulePeriodResolutionTotal", 1)
 	}
@@ -105,6 +107,8 @@ func main() {
 			Recipients:      recipientService,
 			ViewerAuth:      viewerService,
 			ViewerReports:   viewerReportService,
+			Agent:           agentService,
+			AgentEnabled:    cfg.AgentAPIEnabled,
 			RefreshPolicies: refreshPolicyService,
 			LineWebhook:     lineWebhookService,
 			Schedules:       scheduleService,
