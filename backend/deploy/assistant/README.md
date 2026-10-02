@@ -46,6 +46,33 @@ real data only after the shop's agreement allows it):
 docker compose exec assistant /opt/hermes/bin/hermes -z "เดือนนี้ขายได้เท่าไหร่"
 ```
 
+## What is kept, for how long, and how to delete it
+
+The assistant's own copy of a conversation is working memory, not the record. Hermes stores it in two places only
+(checked: `state.db` holds questions and answers; `logs/agent.log` held the start of each question until the log
+level was raised to WARNING).
+
+| What | Kept | Removed by |
+|---|---|---|
+| Conversations in `state.db` | until idle for `ASSISTANT_RETENTION_HOURS` (default 24) | `assistant-retention`, hourly (`prune` measures last activity, so a chat in use is not cut off) |
+| Log files | `ASSISTANT_LOG_RETENTION_DAYS` (default 7), WARNING and above, no question text | same sidecar |
+| A shop's deletion request | at once | `./assistant/forget.sh --all` or `--chat-id ID`: deletes the sessions, empties the logs, compacts the store |
+| Backups of the volume | 30 days, mode 0600 | `backup.sh` deletes older ones; a deletion request does not reach a backup until it expires |
+| Memory and skills the agent writes by itself | off | `memory`, `background_review` disabled in `config.yaml`; memory may later hold the owner's preferences only (never figures or customer names) |
+
+The 365 days the shop agreements allow is a ceiling, not a target: keeping less leaves less to protect. A record that
+must outlive the day belongs in AI-BCC (the `agent_conversations` table exists and is not written yet), where the
+shop-scoped delete already works. Context compression stays off because its model call is not bound by the
+provider pin above (the auxiliary client has no code that reads `provider_routing`); a long chat is bounded by the
+idle deletion and by the owner sending `/new`.
+
+## Updating
+
+Nothing updates itself: the image is pinned by digest, and the update check Hermes tries on its own is refused by
+the egress proxy. To update: `./assistant/backup.sh`; change the digest in `compose.assistant.yml`; `up -d`; run the
+32-question set and the stale-figure test (`spikes/hermes`) and `assistant/live_check.py`; if anything regresses,
+put the old digest back and, if the new version had migrated the store, restore the backup.
+
 ## Changing things
 
 - **Model**: change `model.default` and `provider_routing.only` together, to a provider listed as zero-data-retention

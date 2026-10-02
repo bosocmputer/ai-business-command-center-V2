@@ -30,6 +30,12 @@ tools:
   tool_search:
     enabled: "off"
 
+# The default INFO level writes the first part of every question into agent.log. Warnings and errors only.
+logging:
+  level: WARNING
+  max_size_mb: 5
+  backup_count: 3
+
 # Every one of these would send the owner's conversation to a model on its own, outside the pinned provider
 # rules above, or write memory and skills by itself. Off until each is reviewed (task s4-6).
 auxiliary:
