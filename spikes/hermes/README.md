@@ -3,8 +3,9 @@
 A throwaway harness that answers one question before the Agent API is designed: how does
 Hermes behave as the owner-facing assistant when every number must come from AI-BCC?
 
-Nothing here touches a real shop. `mock_api.py` is a stand-in for the Agent API with two
-invented shops and invented numbers. `aibcc_mcp.py` is the MCP shim Hermes calls. Findings are in
+Nothing here touches a real shop. `mock_api.py` is a stand-in for the Agent API (same routes and shapes as
+`/api/v1/agent/*`) with two invented shops and invented numbers. `aibcc_mcp.py` is the MCP shim Hermes calls
+(four tools: `context`, `get_report`, `compare`, `latest_delivery`). Findings are in
 [FINDINGS.md](FINDINGS.md).
 
 ## Run it
@@ -17,7 +18,7 @@ Needs Docker, the Hermes image `nousresearch/hermes-agent:v2026.9.24` and an Ope
 ./mkhome.sh                      # per-shop Hermes homes (config.yaml, SOUL.md)
 printf 'OPENROUTER_API_KEY=%s\n' "<key>" > openrouter.env && chmod 600 openrouter.env
 ./ask.sh a "เดือนนี้ขายได้เท่าไหร่" <model>
-./battery.sh <model>             # the 15-question set
+./battery.py <model>             # the 32-question pass/fail set with an automatic checker
 ```
 
 `tokens.env`, `openrouter.env`, `data/`, `home-*/` and `runs/` are local and ignored by git.

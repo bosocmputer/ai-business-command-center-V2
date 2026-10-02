@@ -17,6 +17,7 @@ docker run --rm --init --network hermes-spike --user 10000:10000 --cap-drop ALL 
   --entrypoint /opt/hermes/bin/hermes "$IMAGE" \
   -m "$MODEL" --provider openrouter --usage-file /opt/data/usage.json -z "$QUESTION" > "$RUN.out" 2> "$RUN.err" || echo "exit=$?" >> "$RUN.err"
 END=$(date +%s)
+echo "RUN=$RUN"
 echo "== shop $SHOP | $MODEL | $((END-START))s | Q: $QUESTION"
 cat "$RUN.out"
 echo "-- tool calls seen by the API:"

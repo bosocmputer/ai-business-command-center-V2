@@ -4,6 +4,8 @@ set -eu
 cd "$(dirname "$0")"
 umask 077
 set -a; . ./tokens.env; set +a
+# Hermes writes into these as uid 10000; open them up so this script can rewrite the config.
+docker run --rm --entrypoint sh -v "$PWD":/w "${IMAGE:-nousresearch/hermes-agent:v2026.9.24}" -c 'chmod -R a+rwX /w/home-a /w/home-b /w/data /w/runs 2>/dev/null; true'
 MODEL="${SPIKE_MODEL:-qwen/qwen3.8-27b:free}"
 for shop in a b; do
   upper=$(echo "$shop" | tr a-z A-Z)
