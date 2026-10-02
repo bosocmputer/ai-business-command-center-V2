@@ -101,7 +101,12 @@ put the old digest back and, if the new version had migrated the store, restore 
 - **Persona**: `SOUL.md`. It is a copy of `spikes/hermes/SOUL.md`; change both.
 - **Another shop**: copy the `assistant` service under a new name with its own `assistant_data` volume, its own
   env file and its own token. Never share a token or a data volume between shops.
-- **Telegram** (step 5): add `TELEGRAM_BOT_TOKEN` to `hermes.env` and `api.telegram.org` to `ASSISTANT_EGRESS_ALLOW`.
+- **Telegram**: a bot from @BotFather, one per deployment (never the Sentinel alert bot in `secrets/telegram`: that one
+  speaks to the operators). Run `set-secret.sh TELEGRAM_BOT_TOKEN` and `set-secret.sh TELEGRAM_ALLOWED_USERS` (the
+  numeric ids of the people allowed to chat; message @userinfobot to read your own), put
+  `ASSISTANT_EGRESS_ALLOW=openrouter.ai,api.telegram.org` in `.env.production`, then `up -d --force-recreate assistant`.
+  Without the allowed-users list the assistant does not start Telegram at all. Telegram sees every question and answer
+  (it is not end-to-end encrypted for bots), which belongs in the shop's agreement next to the model provider.
 
 ## Known gaps
 

@@ -5,6 +5,11 @@
 set -u
 HERMES=/opt/hermes/bin/hermes
 MAINT_HOUR="${MAINTENANCE_HOUR_UTC:-21}"
+# Fail closed: a bot token without a list of allowed people would let anyone who finds the bot ask for the shop's numbers.
+if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -z "${TELEGRAM_ALLOWED_USERS:-}" ]; then
+  echo '{"telegram":"not started: TELEGRAM_BOT_TOKEN is set but TELEGRAM_ALLOWED_USERS is empty"}'
+  unset TELEGRAM_BOT_TOKEN
+fi
 cp /assistant/config.yaml /opt/data/config.yaml
 cp /assistant/SOUL.md /opt/data/SOUL.md
 GW=""

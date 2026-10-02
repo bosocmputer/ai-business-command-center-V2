@@ -19,6 +19,13 @@ mcp_servers:
       AIBCC_URL: "${AIBCC_URL}"
       AIBCC_TOKEN: "${AIBCC_TOKEN}"
 
+# Telegram: only the people named in TELEGRAM_ALLOWED_USERS may message the bot, and only in a private chat. Anyone
+# else is ignored. (entrypoint.sh also refuses to start Telegram at all when that list is empty.)
+platforms:
+  telegram:
+    dm_policy: allowlist
+    group_policy: disabled
+
 # Built-in toolsets are chosen per channel: every channel must be listed or it gets the defaults
 # (web, browser, terminal, file, code execution). Verify with: hermes tools list --platform <channel>
 platform_toolsets:
