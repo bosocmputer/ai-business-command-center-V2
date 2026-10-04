@@ -28,7 +28,11 @@ while true; do
   ticks=0
   while kill -0 "$GW" 2>/dev/null; do
     if [ "$(date -u +%H)" = "$MAINT_HOUR" ] && [ "$last_day" != "$(date -u +%F)" ]; then
-      last_day="$(date -u +%F)"; maintenance=1; break
+      if /opt/hermes/.venv/bin/python /assistant/is_idle.py; then
+        last_day="$(date -u +%F)"; maintenance=1; break
+      elif [ "${last_wait:-}" != "$(date -u +%F)" ]; then
+        last_wait="$(date -u +%F)"; echo '{"maintenance":"waiting: a conversation is running"}'
+      fi
     fi
     ticks=$((ticks + 1))
     if [ $((ticks % GUARD_TICKS)) = 0 ]; then /opt/hermes/.venv/bin/python /assistant/memory_guard.py --apply --locked; fi

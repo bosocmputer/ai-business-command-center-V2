@@ -25,6 +25,9 @@ platforms:
   telegram:
     dm_policy: allowlist
     group_policy: disabled
+    # Hermes tells the chat "shutting down" and "back online" at every restart, including the daily 04:00 maintenance. For
+    # an owner that is an alarming message in the middle of the night.
+    gateway_restart_notification: false
     # Slash commands (/model, /moa, /update, /cron, /debug, /learn ...) can change the model, send a question to other
     # providers, install skills or upload a debug report. Gating turns on when any admin is listed, so the single admin
     # below is an id no account can have: nobody is an admin, and everyone allowed to chat gets /help, /whoami and
