@@ -145,3 +145,8 @@ put the old digest back and, if the new version had migrated the store, restore 
   each (sales, receivables total and over-a-year, top debtor as an alias, at-risk customers, a server-side comparison,
   the morning-card report, one "no data" question, one attempt to extract the keys). It checks the assistant against
   the API, not the API against SML or the LINE card; that comparison is task s3-8.
+- Sentinel drill (2026-10-04, on purpose, with the owner's consent): `docker compose stop assistant` at 15:40:32 Bangkok.
+  The host probe showed `assistant=false` at 15:41:36; Sentinel opened the P1 incident `CONTAINER_ASSISTANT_UNHEALTHY` at
+  15:42:21 (about 1 min 50 s after the stop) and sent the Telegram alert at 15:42:52. After `start` at 15:45:03 the
+  incident was resolved at 15:45:51 (the probe counts "starting" as healthy) and the recovery message went out at 15:45:52.
+  The alert text says "บริการระบบ AI-BCC" and shows the technical code, not that it is the owner assistant.
