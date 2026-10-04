@@ -12,13 +12,23 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import usage_ledger  # noqa: E402
 
+# Hermes does not price every model (it showed $0 for this one), so cost is worked out from tokens at the list price,
+# ignoring the cache discount: an upper bound. Keep in step with the model in config.yaml (USD per million tokens).
+PRICE_IN = float(os.environ.get("USAGE_PRICE_IN_PER_M", "0.25"))    # google/gemini-3.1-flash-lite via Google Vertex
+PRICE_OUT = float(os.environ.get("USAGE_PRICE_OUT_PER_M", "1.50"))
+
+
+def estimated_cost(tokens_in, tokens_out):
+    return tokens_in * PRICE_IN / 1e6 + tokens_out * PRICE_OUT / 1e6
+
+
 days = int(sys.argv[sys.argv.index("--days") + 1]) if "--days" in sys.argv else 7
 rows = usage_ledger.read_ledger() + usage_ledger.live_rows()
 by_day = {}
 for row in rows:
     by_day.setdefault(row["day"], []).append(row)
 
-print(f"{'วัน':10} {'เซสชัน':>7} {'คำถาม':>6} {'ไม่มีข้อมูล':>10} {'เรียก API':>9} {'token เข้า':>10} {'token ออก':>9} {'USD':>8} {'เวลากลาง':>8} {'ช้าสุด':>7}")
+print(f"{'วัน':10} {'เซสชัน':>7} {'คำถาม':>6} {'ไม่มีข้อมูล':>10} {'เรียก API':>9} {'token เข้า':>10} {'token ออก':>9} {'USD≤':>8} {'เวลากลาง':>8} {'ช้าสุด':>7}")
 total = {"sessions": 0, "turns": 0, "unanswered": 0, "tool_calls": 0, "in": 0, "out": 0, "cost": 0.0}
 topics = {}
 for day in sorted(by_day)[-days:]:
@@ -27,16 +37,16 @@ for day in sorted(by_day)[-days:]:
     maxes = [r["turn_max_s"] for r in group if r["turn_max_s"] is not None]
     turns = sum(r["turns"] for r in group)
     print(f"{day:10} {len(group):7} {turns:6} {sum(r['unanswered'] for r in group):10} {sum(r['tool_calls'] for r in group):9} "
-          f"{sum(r['in'] for r in group):10} {sum(r['out'] for r in group):9} {sum(r['cost_usd'] for r in group):8.4f} "
+          f"{sum(r['in'] for r in group):10} {sum(r['out'] for r in group):9} {estimated_cost(sum(r['in'] for r in group), sum(r['out'] for r in group)):8.4f} "
           f"{(statistics.median(p50s) if p50s else 0):8.1f} {(max(maxes) if maxes else 0):7.1f}")
     total["sessions"] += len(group); total["turns"] += turns; total["unanswered"] += sum(r["unanswered"] for r in group)
     total["tool_calls"] += sum(r["tool_calls"] for r in group); total["in"] += sum(r["in"] for r in group)
-    total["out"] += sum(r["out"] for r in group); total["cost"] += sum(r["cost_usd"] for r in group)
+    total["out"] += sum(r["out"] for r in group)
     for r in group:
         for name, count in r["topics"].items():
             topics[name] = topics.get(name, 0) + count
-print(f"รวม {days} วันล่าสุด: {total['sessions']} เซสชัน · {total['turns']} คำถาม · ตอบว่าไม่มีข้อมูล {total['unanswered']} · ค่าใช้จ่าย ${total['cost']:.4f}"
-      + (f" (เฉลี่ย ${total['cost'] / total['turns']:.4f}/คำถาม)" if total["turns"] else ""))
+print(f"รวม {days} วันล่าสุด: {total['sessions']} เซสชัน · {total['turns']} คำถาม · ตอบว่าไม่มีข้อมูล {total['unanswered']} · ค่าใช้จ่ายสูงสุดโดยประมาณ ${estimated_cost(total['in'], total['out']):.4f}"
+      + (f" (เฉลี่ย ${estimated_cost(total['in'], total['out']) / total['turns']:.4f}/คำถาม)" if total["turns"] else ""))
 if topics:
     print("หัวข้อที่ตอบว่าไม่มีข้อมูล (หมวดกว้าง ไม่ใช่ข้อความ):", ", ".join(f"{k}={v}" for k, v in sorted(topics.items(), key=lambda kv: -kv[1])))
 if os.path.exists(usage_ledger.UNANSWERED):
