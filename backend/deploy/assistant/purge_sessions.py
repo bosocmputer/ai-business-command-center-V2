@@ -6,14 +6,20 @@ deletes nothing. This picks sessions by last activity (or by chat id, or all) an
 the gateway holds the store open, and this reports that refusal instead of hiding it.
 
   purge_sessions.py --idle-hours N | --all | --chat-id ID
-Prints one JSON line: matched / deleted / failed. Exit status 1 if anything matched but was not deleted.
+Before a session is deleted its usage summary (counts and times, no text) is appended to the usage ledger; if that
+fails the session is still deleted (a deletion request must not wait on statistics) and the failure is counted.
+Prints one JSON line: matched / deleted / failed / ledger_failed. Exit status 1 if anything matched but was not deleted.
 """
 import argparse
 import json
+import os
 import sqlite3
 import subprocess
 import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import usage_ledger  # noqa: E402
 
 DB = "/opt/data/state.db"
 HERMES = "/opt/hermes/bin/hermes"
@@ -38,9 +44,14 @@ else:
     rows = store.execute("select id from sessions where last_activity_at < ?", (time.time() - args.idle_hours * 3600,)).fetchall()
 store.close()
 
-deleted = failed = 0
+reader = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+deleted = failed = ledger_failed = 0
 refused = False
 for (session_id,) in rows:
+    try:
+        usage_ledger.record(reader, session_id)
+    except Exception:  # noqa: BLE001 - statistics never block a deletion
+        ledger_failed += 1
     done = subprocess.run([HERMES, "sessions", "delete", "--yes", session_id], capture_output=True, text=True)
     output = done.stdout + done.stderr
     if "Refusing" in output:
@@ -49,5 +60,6 @@ for (session_id,) in rows:
         deleted += 1
     else:
         failed += 1
-print(json.dumps({"purge": "refused: the store is in use" if refused else "done", "matched": len(rows), "deleted": deleted, "failed": failed}))
+reader.close()
+print(json.dumps({"purge": "refused: the store is in use" if refused else "done", "matched": len(rows), "deleted": deleted, "failed": failed, "ledger_failed": ledger_failed}))
 sys.exit(1 if failed or refused else 0)

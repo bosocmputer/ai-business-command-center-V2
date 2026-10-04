@@ -11,6 +11,7 @@ result=ok
 /opt/hermes/.venv/bin/python /assistant/purge_sessions.py --idle-hours "$HOURS" > /tmp/purge.out 2>&1 || result=purge-failed
 cat /tmp/purge.out
 /opt/hermes/.venv/bin/python /assistant/memory_guard.py --apply
+/opt/hermes/.venv/bin/python -c "import sys; sys.path.insert(0, \"/assistant\"); import usage_ledger; usage_ledger.prune()" || result="$result,ledger-prune-failed"
 find /opt/data/logs -type f -mtime +"$LOG_DAYS" -delete 2>/dev/null
 "$HERMES" sessions optimize > /tmp/optimize.out 2>&1 || result="$result,optimize-failed"
 printf '{"maintenance":"%s","idle_hours":%s,"log_days":%s,"t":%s}\n' "$result" "$HOURS" "$LOG_DAYS" "$(date +%s)"

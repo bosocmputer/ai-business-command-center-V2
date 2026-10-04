@@ -86,6 +86,22 @@ generation** (their model calls are not bound by the provider pin), and the buil
 browser, code, cron, delegation), which let an assistant for numbers reach beyond numbers. Each can be reviewed one at a
 time; the order worth trying is skills (after memory has run for a few weeks), then scheduled messages.
 
+## Usage during the trial
+
+Conversations are deleted after 24 hours idle, so each session's summary is written to a ledger first
+(`/opt/data/usage/ledger.jsonl`, kept 400 days): counts, tokens, cost, how long answers took, how many answers said
+"no data", and a coarse topic bucket for those (stock, profit, purchase, tax, payroll, cash, customer, sales, other).
+No question or answer text, no user or chat id. The AI-BCC side is `agent_calls`, which already records every tool call
+without values.
+
+```
+cd backend/deploy && ./assistant/usage-report.sh 7
+```
+
+Off by default: keeping the owner's own words for the questions that could not be answered (first 160 characters, 30
+days, `usage/unanswered.jsonl`). It tells which report to build next, but it is the owner's wording, so turn it on only
+with their say-so: add `LOG_UNANSWERED_TEXT=true` to the `assistant` environment in `compose.assistant.yml`.
+
 ## Updating
 
 Nothing updates itself: the image is pinned by digest, and the update check Hermes tries on its own is refused by
