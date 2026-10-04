@@ -53,7 +53,11 @@ func (source *RuntimeProbeSource) Observations(now time.Time) []Observation {
 	}
 	source.reset("host-probe")
 	observations := make([]Observation, 0, 12)
-	for key, healthy := range map[string]bool{"api": probe.Containers.API, "worker": probe.Containers.Worker, "frontend": probe.Containers.Frontend, "postgres": probe.Containers.Postgres, "sentinel": probe.Containers.Sentinel} {
+	containers := map[string]bool{"api": probe.Containers.API, "worker": probe.Containers.Worker, "frontend": probe.Containers.Frontend, "postgres": probe.Containers.Postgres, "sentinel": probe.Containers.Sentinel}
+	if probe.Containers.Assistant != nil {
+		containers["assistant"] = *probe.Containers.Assistant
+	}
+	for key, healthy := range containers {
 		if healthy {
 			source.reset("container-" + key)
 			continue

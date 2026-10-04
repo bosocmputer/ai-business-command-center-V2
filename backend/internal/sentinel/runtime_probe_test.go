@@ -97,3 +97,71 @@ func TestRuntimeCapacityObservationCarriesContinuousMeasurement(t *testing.T) {
 		t.Fatalf("measurement = %+v", observation.Measurement)
 	}
 }
+
+func healthyHostProbe(now time.Time, assistant *bool) HostProbe {
+	backupAt, restoreAt := now, now
+	return HostProbe{
+		Version: 1, CheckedAt: now, Containers: HostContainers{API: true, Worker: true, Frontend: true, Postgres: true, Sentinel: true, Assistant: assistant},
+		DiskUsedPercent: 40, InodeUsedPercent: 10, MemoryAvailablePercent: 60, NTPSynchronized: true,
+		Backup: HostBackup{LastSuccessAt: &backupAt, ChecksumValid: true, RestoreVerifiedAt: &restoreAt, OffsiteConfigured: true},
+	}
+}
+
+func TestRuntimeProbeAssistantIsOptionalAndNeedsTwoBadRounds(t *testing.T) {
+	now := time.Date(2026, 10, 4, 1, 0, 0, 0, time.UTC)
+	yes, no := true, false
+
+	// Not deployed: the field is absent and nothing is raised, however many rounds pass.
+	absent := t.TempDir()
+	writeProbeFixture(t, absent, healthyHostProbe(now, nil))
+	source := NewRuntimeProbeSource(absent)
+	for round := 0; round < 3; round++ {
+		if got := source.Observations(now.Add(time.Duration(round) * time.Minute)); len(got) != 0 {
+			t.Fatalf("absent assistant raised %v", got)
+		}
+	}
+
+	// Deployed and healthy: nothing.
+	healthy := t.TempDir()
+	writeProbeFixture(t, healthy, healthyHostProbe(now, &yes))
+	if got := NewRuntimeProbeSource(healthy).Observations(now); len(got) != 0 {
+		t.Fatalf("healthy assistant raised %v", got)
+	}
+
+	// Deployed and down: one bad round waits, the second raises, a recovery resets the count.
+	down := t.TempDir()
+	writeProbeFixture(t, down, healthyHostProbe(now, &no))
+	source = NewRuntimeProbeSource(down)
+	if got := source.Observations(now); len(got) != 0 {
+		t.Fatalf("first bad round raised %v", got)
+	}
+	got := source.Observations(now.Add(time.Minute))
+	if len(got) != 1 || got[0].IncidentType != "NEXTSTEP_CONTAINER_UNHEALTHY" || got[0].SafeErrorCode != "CONTAINER_ASSISTANT_UNHEALTHY" || got[0].SubjectType != SubjectContainer {
+		t.Fatalf("second bad round=%v", got)
+	}
+	writeProbeFixture(t, down, healthyHostProbe(now.Add(2*time.Minute), &yes))
+	if got := source.Observations(now.Add(2 * time.Minute)); len(got) != 0 {
+		t.Fatalf("recovered assistant raised %v", got)
+	}
+	writeProbeFixture(t, down, healthyHostProbe(now.Add(3*time.Minute), &no))
+	if got := source.Observations(now.Add(3 * time.Minute)); len(got) != 0 {
+		t.Fatalf("a bad round after recovery must start counting again, got %v", got)
+	}
+}
+
+func TestWatchdogReportsAnUnhealthyAssistantOnlyWhenPresent(t *testing.T) {
+	now := time.Date(2026, 10, 4, 1, 0, 0, 0, time.UTC)
+	no := false
+	for name, assistant := range map[string]*bool{"absent": nil, "down": &no} {
+		directory := t.TempDir()
+		writeProbeFixture(t, directory, healthyHostProbe(now, assistant))
+		status := NewWatchdog(directory, func() time.Time { return now }).Status()
+		found := false
+		for _, code := range status.SafeErrorCodes {
+			found = found || code == "ASSISTANT_CONTAINER_UNHEALTHY"
+		}
+		if found != (name == "down") {
+			t.Fatalf("%s: codes=%v", name, status.SafeErrorCodes)
+		}
+	}
+}

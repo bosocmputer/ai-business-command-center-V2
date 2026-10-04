@@ -18,6 +18,9 @@ type HostContainers struct {
 	Frontend bool `json:"frontend"`
 	Postgres bool `json:"postgres"`
 	Sentinel bool `json:"sentinel"`
+	// Assistant is the owner-facing assistant, an optional service: absent means it is not deployed here and nothing is
+	// raised, present and false means its container exists and is not running or not healthy.
+	Assistant *bool `json:"assistant,omitempty"`
 }
 
 type HostBackup struct {
@@ -108,6 +111,9 @@ func (watchdog *Watchdog) Status() WatchdogStatus {
 		}
 		if !probe.Containers.Sentinel {
 			status.SafeErrorCodes = append(status.SafeErrorCodes, "SENTINEL_CONTAINER_UNHEALTHY")
+		}
+		if probe.Containers.Assistant != nil && !*probe.Containers.Assistant {
+			status.SafeErrorCodes = append(status.SafeErrorCodes, "ASSISTANT_CONTAINER_UNHEALTHY")
 		}
 		if probe.DiskUsedPercent >= 92 {
 			status.SafeErrorCodes = append(status.SafeErrorCodes, "HOST_DISK_CRITICAL")
