@@ -13,7 +13,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import usage_ledger  # noqa: E402
 
 # Hermes does not price every model (it showed $0 for this one), so cost is worked out from tokens at the list price,
-# ignoring the cache discount: an upper bound. Keep in step with the model in config.yaml (USD per million tokens).
+# ignoring the cache discount. It lands close to OpenRouter's bill (0.0081 against 0.0083 on one day) but a little under,
+# because side calls such as the memory review are not in the session totals. The OpenRouter line is the true total.
+# Keep in step with the model in config.yaml (USD per million tokens).
 PRICE_IN = float(os.environ.get("USAGE_PRICE_IN_PER_M", "0.25"))    # google/gemini-3.1-flash-lite via Google Vertex
 PRICE_OUT = float(os.environ.get("USAGE_PRICE_OUT_PER_M", "1.50"))
 
@@ -28,7 +30,7 @@ by_day = {}
 for row in rows:
     by_day.setdefault(row["day"], []).append(row)
 
-print(f"{'วัน':10} {'เซสชัน':>7} {'คำถาม':>6} {'ไม่มีข้อมูล':>10} {'เรียก API':>9} {'token เข้า':>10} {'token ออก':>9} {'USD≤':>8} {'เวลากลาง':>8} {'ช้าสุด':>7}")
+print(f"{'วัน':10} {'เซสชัน':>7} {'คำถาม':>6} {'ไม่มีข้อมูล':>10} {'เรียก API':>9} {'token เข้า':>10} {'token ออก':>9} {'USD≈':>8} {'เวลากลาง':>8} {'ช้าสุด':>7}")
 total = {"sessions": 0, "turns": 0, "unanswered": 0, "tool_calls": 0, "in": 0, "out": 0, "cost": 0.0}
 topics = {}
 for day in sorted(by_day)[-days:]:
@@ -45,7 +47,7 @@ for day in sorted(by_day)[-days:]:
     for r in group:
         for name, count in r["topics"].items():
             topics[name] = topics.get(name, 0) + count
-print(f"รวม {days} วันล่าสุด: {total['sessions']} เซสชัน · {total['turns']} คำถาม · ตอบว่าไม่มีข้อมูล {total['unanswered']} · ค่าใช้จ่ายสูงสุดโดยประมาณ ${estimated_cost(total['in'], total['out']):.4f}"
+print(f"รวม {days} วันล่าสุด: {total['sessions']} เซสชัน · {total['turns']} คำถาม · ตอบว่าไม่มีข้อมูล {total['unanswered']} · ค่าใช้จ่ายโดยประมาณ ${estimated_cost(total['in'], total['out']):.4f}"
       + (f" (เฉลี่ย ${estimated_cost(total['in'], total['out']) / total['turns']:.4f}/คำถาม)" if total["turns"] else ""))
 if topics:
     print("หัวข้อที่ตอบว่าไม่มีข้อมูล (หมวดกว้าง ไม่ใช่ข้อความ):", ", ".join(f"{k}={v}" for k, v in sorted(topics.items(), key=lambda kv: -kv[1])))

@@ -91,7 +91,7 @@ time; the order worth trying is skills (after memory has run for a few weeks), t
 Conversations are deleted after 24 hours idle, so each session's summary is written to a ledger first
 (`/opt/data/usage/ledger.jsonl`, kept 400 days): counts, tokens, cost, how long answers took, how many answers said
 "no data", and a coarse topic bucket for those (stock, profit, purchase, tax, payroll, cash, customer, sales, other).
-No question or answer text, no user or chat id. Cost in the report is worked out from tokens at the list price, ignoring the cache discount (an upper bound), because Hermes showed $0 for this model; `USAGE_PRICE_IN_PER_M` and `USAGE_PRICE_OUT_PER_M` must follow the model in `config.yaml`. The OpenRouter line is the true total. The AI-BCC side is `agent_calls`, which already records every tool call
+No question or answer text, no user or chat id. Cost in the report is worked out from tokens at the list price, ignoring the cache discount (close to the bill, a little under: side calls such as the memory review are not in the session totals), because Hermes showed $0 for this model; `USAGE_PRICE_IN_PER_M` and `USAGE_PRICE_OUT_PER_M` must follow the model in `config.yaml`. The OpenRouter line is the true total. The AI-BCC side is `agent_calls`, which already records every tool call
 without values.
 
 ```
