@@ -29,6 +29,23 @@ container_ok() {
   case "$state" in 'running healthy'|'running none') printf true ;; *) printf false ;; esac
 }
 
+# An optional service reports only when its container exists, so a deployment without it raises nothing. Output is the
+# JSON fragment to append to "containers" (empty when absent). A container that is still starting counts as healthy:
+# a planned restart must not alert, and one that never becomes healthy turns "unhealthy" after its start period.
+optional_container_json() {
+  service=$1
+  if [ "$docker_prefix" = unavailable ]; then return; fi
+  if [ -n "$docker_prefix" ]; then
+    container_id=$(sudo docker ps -aq --filter "label=com.docker.compose.project=$compose_project" --filter "label=com.docker.compose.service=$service" | head -1)
+  else
+    container_id=$(docker ps -aq --filter "label=com.docker.compose.project=$compose_project" --filter "label=com.docker.compose.service=$service" | head -1)
+  fi
+  if [ -z "$container_id" ]; then return; fi
+  if [ -n "$docker_prefix" ]; then state=$(sudo docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id" 2>/dev/null || true)
+  else state=$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id" 2>/dev/null || true); fi
+  case "$state" in 'running healthy'|'running none'|'running starting') printf ',"%s":true' "$service" ;; *) printf ',"%s":false' "$service" ;; esac
+}
+
 disk_used=$(df -P "$project_dir" | awk 'NR == 2 { gsub(/%/, "", $5); print $5 + 0 }')
 inode_used=$(df -Pi "$project_dir" | awk 'NR == 2 { gsub(/%/, "", $5); print $5 + 0 }')
 memory_available=$(awk '/MemTotal:/ { total=$2 } /MemAvailable:/ { available=$2 } END { if (total > 0) printf "%.2f", available * 100 / total; else print "0" }' /proc/meminfo)
@@ -68,8 +85,8 @@ if awk -F= '$1 == "OFFSITE_BACKUP_CONFIGURED" && $2 == "true" { found=1 } END { 
 checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 target="$runtime_dir/host/host-probe.json"
 temporary="$target.tmp.$$"
-printf '{"version":1,"checkedAt":"%s","containers":{"api":%s,"worker":%s,"frontend":%s,"postgres":%s,"sentinel":%s},"diskUsedPercent":%s,"inodeUsedPercent":%s,"memoryAvailablePercent":%s,"memoryCriticalSince":%s,"ntpSynchronized":%s,"backup":{"lastSuccessAt":%s,"checksumValid":%s,"restoreVerifiedAt":%s,"offsiteConfigured":%s}}\n' \
-  "$checked_at" "$(container_ok api)" "$(container_ok worker)" "$(container_ok frontend)" "$(container_ok postgres)" "$(container_ok sentinel)" \
+printf '{"version":1,"checkedAt":"%s","containers":{"api":%s,"worker":%s,"frontend":%s,"postgres":%s,"sentinel":%s%s},"diskUsedPercent":%s,"inodeUsedPercent":%s,"memoryAvailablePercent":%s,"memoryCriticalSince":%s,"ntpSynchronized":%s,"backup":{"lastSuccessAt":%s,"checksumValid":%s,"restoreVerifiedAt":%s,"offsiteConfigured":%s}}\n' \
+  "$checked_at" "$(container_ok api)" "$(container_ok worker)" "$(container_ok frontend)" "$(container_ok postgres)" "$(container_ok sentinel)" "$(optional_container_json assistant)" \
   "$disk_used" "$inode_used" "$memory_available" "$(json_time_or_null "$memory_critical_epoch")" "$ntp" \
   "$(json_time_or_null "$backup_epoch")" "$checksum_valid" "$(json_time_or_null "$restore_epoch")" "$offsite" > "$temporary"
 if [ "$(wc -c < "$temporary")" -gt 16384 ]; then rm -f "$temporary"; echo "Host probe exceeded 16 KB." >&2; exit 1; fi
