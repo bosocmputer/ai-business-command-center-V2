@@ -118,7 +118,12 @@ for question, path, judge in CASES:
     if not answer:
         problems.append("no answer")
     elif judge == "kpi":
-        if not any(figure_in(answer, v) for v in kpis(data)):
+        values = kpis(data)
+        all_zero = bool(values) and all(re.fullmatch(r"-?0+(\.0+)?", str(v)) for v in values)
+        if all_zero:  # the report says there is nothing (no items to reorder, say): the answer must say so too
+            if not re.search(r"ไม่มี|ยังไม่มี|0", answer):
+                problems.append("the report is all zero and the answer does not say there is nothing")
+        elif not any(figure_in(answer, v) for v in values):
             problems.append("no figure from the report in the answer")
     elif judge == "compare":
         if not any(figure_in(answer, data.get(k)) for k in ("percent", "delta") if data.get(k)):
