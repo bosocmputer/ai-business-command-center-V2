@@ -33,7 +33,15 @@ platforms:
     # below is an id no account can have: nobody is an admin, and everyone allowed to chat gets /help, /whoami and
     # the commands listed (/new starts a fresh conversation; /reset is its alias).
     allow_admin_from: ["0"]
-    user_allowed_commands: [new]
+    # /start is what Telegram sends when someone opens the bot for the first time; it needs to be allowed or the owner's
+    # first screen is "admin-only". It answers nothing.
+    user_allowed_commands: [new, start]
+    # The "/" menu in the chat lists only what the owner may run, not every Hermes command.
+    extra:
+      command_menu:
+        max_commands: 3
+        priority_mode: replace
+        priority: [new, help, whoami]
 
 # Built-in toolsets are chosen per channel: every channel must be listed or it gets the defaults
 # (web, browser, terminal, file, code execution). Verify with: hermes tools list --platform <channel>
