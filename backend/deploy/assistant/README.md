@@ -55,9 +55,11 @@ the answer. AI-BCC does not count those status checks against the 60 calls an ho
 report is still not ready after the wait, the assistant says so and asks the owner to try again in a minute or two.
 
 Reports "as of today" (receivables, stock) and the rolling 180-day customer reports are keyed to the date, so each day's
-first question would start a live fetch. `prewarm.py` fetches them every morning at 07:30 Bangkok (and last month's
-reports on the days they are missing), one after the other, within AI-BCC's 10 live fetches an hour, so the first
-question of the day is answered at once. It prints one JSON line to `docker logs` when it ends. Move the time with
+first question would start a live fetch, and last month's snapshots go stale too (they are not kept for good). `prewarm.py`
+fetches all 12 every morning at 07:30 Bangkok, one after the other. AI-BCC allows 10 live fetches an hour, so the last two
+are refused at first and it retries every five minutes until the budget frees, about an hour later, for at most two hours:
+so the owner's first questions are instant, and the last two reports are ready by about 08:40. It prints one JSON line to
+`docker logs` when it ends. Move the time with
 `ASSISTANT_PREWARM_FROM_MINUTE` (minute of the UTC day).
 
 ## What is kept, for how long, and how to delete it
