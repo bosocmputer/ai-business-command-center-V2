@@ -3,7 +3,10 @@ Description=Run AI-BCC V2 Sentinel host probe every minute
 
 [Timer]
 OnBootSec=30s
-OnUnitActiveSec=60s
+# Every minute on the minute by the wall clock. "OnUnitActiveSec=60s" counts from the last run, so a run missed at boot
+# (the clock stepped after a power loss, 2026-10-05) left the timer with nothing scheduled and Sentinel raised
+# HOST_PROBE_INVALID until someone restarted it. The other V2 timers use OnCalendar and recovered by themselves.
+OnCalendar=*-*-* *:*:00
 AccuracySec=5s
 Persistent=true
 

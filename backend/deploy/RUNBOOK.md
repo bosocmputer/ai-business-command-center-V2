@@ -255,3 +255,25 @@ ten minutes because PostgreSQL may still be executing the first query.
   key IDs, re-encrypt all SML/recipient secrets, verify zero records remain on
   the old key, then remove it. The current single-key runtime must not be changed
   in place before that migration support exists.
+
+## After a power loss or reboot (the V2 test server with a quick tunnel)
+
+Docker restarts every service by itself (`restart: unless-stopped`) and Postgres recovers its log (look for "automatic
+recovery in progress ... redo done" and no PANIC). Three things do not come back by themselves:
+
+1. **The quick tunnel.** It is a plain `cloudflared` process, not a service, and a quick tunnel gets a new random URL each
+   time it starts. From `.runtime` in the deployment directory: move `quick-tunnel.log` aside, then
+   `setsid nohup /usr/local/bin/cloudflared tunnel --url http://127.0.0.1:6324 --no-autoupdate --ha-connections 1 --protocol quic --pidfile quick-tunnel.pid > quick-tunnel.log 2>&1 < /dev/null &`
+   and read the `https://....trycloudflare.com` line from the log. Other `cloudflared-*.log` files in the home directory
+   belong to other projects: leave them alone.
+2. **`DASHBOARD_DOMAIN`.** Put the new host (no `https://`) in `.env.production` (keep a copy first), then
+   `docker compose --env-file .env.production up -d --no-build` recreates api, worker, sentinel and migrate. Check
+   `https://<host>/healthz`, `/api/v1/health/ready`, and that `/api/v1/agent/context` from outside is still 404.
+   Then change the LIFF endpoint URL and the LINE Login callback URL in the LINE Developers console to the new host, or
+   LINE login and the links in the cards point at a dead address.
+3. **The host probe timer** (needs root: `sudo`). If `/run/ai-bcc-v2/host/host-probe.json` is missing and Sentinel shows
+   `HOST_PROBE_INVALID`: `sudo systemctl restart aibcc-v2-host-probe.timer && sudo systemctl start aibcc-v2-host-probe.service`.
+   The timer file in `deploy/systemd` runs every minute by the wall clock so it re-arms itself; after changing it, copy it to
+   `/etc/systemd/system/` and `sudo systemctl daemon-reload`.
+
+A permanent fix for 1 and 2 is a named tunnel on a domain of your own (a fixed address, run as a service).
