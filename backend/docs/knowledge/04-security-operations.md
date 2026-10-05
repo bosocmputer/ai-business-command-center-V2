@@ -50,6 +50,11 @@ tags: [backend, security, operations, retention]
   records the internal window by an exact UUID, and suppresses PostgreSQL
   command tags so successful inserts cannot be misclassified as failures.
 
+## Container logs
+
+- Every service in the compose files writes Docker `json-file` logs capped at 20 MB x 5 files (100 MB). Docker keeps logs forever by default, and a worker in a sibling deployment once filled a disk with 27.8 GB of repeated error lines.
+- Worker lanes (`cmd/worker`, `runLane`) wait 1 s, 2 s, 4 s ... up to 30 s between consecutive errors and return to 1 s after a success or an idle pass, so a lost database cannot produce a tight error loop. Retention and LINE quota loops already wait a minute after an error.
+
 ## Nextstep Sentinel
 
 - Sentinel is a separate process and database pool. Report, Notification, and Delivery transactions never call the incident writer, so monitoring failure cannot roll back business work.

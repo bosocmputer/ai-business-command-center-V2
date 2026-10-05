@@ -201,93 +201,34 @@ func retentionLoop(ctx context.Context, logger *slog.Logger, retentionWorker *re
 }
 
 func deliveryLoop(ctx context.Context, logger *slog.Logger, deliveryWorker *delivery.Worker, lane int) {
-	for ctx.Err() == nil {
-		err := deliveryWorker.ProcessOne(ctx)
-		switch {
-		case err == nil:
-			continue
-		case errors.Is(err, delivery.ErrNoDeliveryReady):
-			timer := time.NewTimer(500 * time.Millisecond)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return
-			case <-timer.C:
-			}
-		case errors.Is(err, context.Canceled):
-			return
-		default:
-			logger.Error("delivery worker error", "lane", lane, "error", err)
-		}
-	}
+	runLane(ctx, logger, "delivery worker error",
+		func(err error) bool { return errors.Is(err, delivery.ErrNoDeliveryReady) },
+		deliveryWorker.ProcessOne, newErrorBackoff(errorBackoffInitial, errorBackoffMax), idleDelay, "lane", lane)
 }
 
 func notificationLoop(ctx context.Context, logger *slog.Logger, notificationWorker *notification.Worker) {
-	for ctx.Err() == nil {
-		err := notificationWorker.ProcessOne(ctx)
-		switch {
-		case err == nil:
-			continue
-		case errors.Is(err, notification.ErrNoExecutionReady):
-			timer := time.NewTimer(500 * time.Millisecond)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return
-			case <-timer.C:
-			}
-		case errors.Is(err, context.Canceled):
-			return
-		default:
-			logger.Error("notification worker error", "error", err)
-		}
-	}
+	runLane(ctx, logger, "notification worker error",
+		func(err error) bool { return errors.Is(err, notification.ErrNoExecutionReady) },
+		notificationWorker.ProcessOne, newErrorBackoff(errorBackoffInitial, errorBackoffMax), idleDelay)
 }
 
 func dueScheduleLoop(ctx context.Context, logger *slog.Logger, dueWorker *schedule.DueWorker) {
-	for ctx.Err() == nil {
+	step := func(ctx context.Context) error {
 		execution, err := dueWorker.ProcessOne(ctx)
-		switch {
-		case err == nil:
-			if execution.Status == schedule.ExecutionFailed {
-				logger.Warn("due schedule paused by readiness gate", "scheduleId", execution.ScheduleID, "safeErrorCode", execution.SafeErrorCode)
-			}
-		case errors.Is(err, schedule.ErrNoDueSchedule):
-			timer := time.NewTimer(500 * time.Millisecond)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return
-			case <-timer.C:
-			}
-		case errors.Is(err, context.Canceled):
-			return
-		default:
-			logger.Error("schedule worker error", "error", err)
+		if err == nil && execution.Status == schedule.ExecutionFailed {
+			logger.Warn("due schedule paused by readiness gate", "scheduleId", execution.ScheduleID, "safeErrorCode", execution.SafeErrorCode)
 		}
+		return err
 	}
+	runLane(ctx, logger, "schedule worker error",
+		func(err error) bool { return errors.Is(err, schedule.ErrNoDueSchedule) },
+		step, newErrorBackoff(errorBackoffInitial, errorBackoffMax), idleDelay)
 }
 
 func processLoop(ctx context.Context, logger *slog.Logger, reportWorker *worker.ReportWorker, lane int) {
-	for ctx.Err() == nil {
-		err := reportWorker.ProcessOne(ctx)
-		switch {
-		case err == nil:
-			continue
-		case errors.Is(err, report.ErrNoQueuedRun):
-			timer := time.NewTimer(500 * time.Millisecond)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return
-			case <-timer.C:
-			}
-		case errors.Is(err, context.Canceled):
-			return
-		default:
-			logger.Error("report worker lane error", "lane", lane, "error", err)
-		}
-	}
+	runLane(ctx, logger, "report worker lane error",
+		func(err error) bool { return errors.Is(err, report.ErrNoQueuedRun) },
+		reportWorker.ProcessOne, newErrorBackoff(errorBackoffInitial, errorBackoffMax), idleDelay, "lane", lane)
 }
 
 func heartbeatLoop(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool, workerID, workerType, hostname string, metadata map[string]any) {

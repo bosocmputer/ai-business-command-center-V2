@@ -8,6 +8,12 @@
 
 x-assistant-image: &assistant-image nousresearch/hermes-agent:v2026.9.24@sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7
 
+x-assistant-logging: &assistant-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 x-assistant-lock: &assistant-lock
   read_only: true
   cap_drop: [ALL]
@@ -27,6 +33,7 @@ services:
     restart: "no"
     volumes:
       - assistant_data:/opt/data
+    logging: *assistant-logging
     network_mode: none
 
   assistant-egress:
@@ -42,6 +49,7 @@ services:
     mem_limit: 128m
     pids_limit: 64
     init: true
+    logging: *assistant-logging
     networks: [agent, egress]
 
   assistant:
@@ -88,6 +96,7 @@ services:
     mem_limit: 1g
     cpus: 1
     pids_limit: 256
+    logging: *assistant-logging
     networks: [agent]
 
 networks:
