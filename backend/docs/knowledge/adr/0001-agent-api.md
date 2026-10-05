@@ -80,6 +80,7 @@ Report response (`status` is `READY`, `PREPARING` or `UNAVAILABLE`):
 - `compare` accepts only reports where `ComparisonSupported`, takes both periods from snapshots, and returns
   `{ metric, a:{period,value}, b:{period,value}, delta, percent, basis, warnings }`. It states the day counts of both periods and warns when
   they differ or when a period is partial, so the assistant never subtracts or divides.
+- Waiting for a live fetch (amended 2026-10-05): a `PREPARING` answer does not count against the hourly call limit for the first 240 an hour per token, so a client may poll every few seconds until `READY`. The assistant's tool does this for up to 100 seconds, which turned "ask again in a minute" into one reply. Past 240 they count like any other call. The separate limit of 10 distinct live fetches per tenant per hour is unchanged.
 - Errors: `401 UNAUTHORIZED`, `404 NO_DATA`, `422 INVALID_PERIOD` (one generic message), `429 RATE_LIMITED` with `Retry-After`,
   `503 AGENT_DISABLED`. No response names a permission, a tenant or another shop.
 

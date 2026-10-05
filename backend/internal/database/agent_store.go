@@ -49,12 +49,20 @@ func (store *AgentStore) TouchToken(ctx context.Context, tokenID uuid.UUID, now 
 	return err
 }
 
+// FreePreparingChecks is how many "still being prepared" answers an hour a token may collect without them counting
+// against the limit. The assistant waits for a report to be ready by asking every few seconds, and one wait must not
+// use up the hour. Past this many, they count like any other call, so a runaway loop is still stopped.
+const FreePreparingChecks = 240
+
 // CallsSince counts the calls that were answered; calls refused for being too frequent do not count against the
-// limit, so a caller that keeps asking is not locked out for ever.
+// limit, so a caller that keeps asking is not locked out for ever. The first FreePreparingChecks answers of
+// "preparing" do not count either.
 func (store *AgentStore) CallsSince(ctx context.Context, tokenID uuid.UUID, since time.Time) (int, error) {
 	var count int
 	err := store.pool.QueryRow(ctx, `
-		select count(*) from agent_calls where token_id = $1 and created_at >= $2 and outcome <> 'RATE_LIMITED'`, tokenID, since).Scan(&count)
+		select count(*) filter (where outcome not in ('RATE_LIMITED', 'PREPARING'))
+		     + greatest(0, count(*) filter (where outcome = 'PREPARING') - $3)
+		from agent_calls where token_id = $1 and created_at >= $2`, tokenID, since, FreePreparingChecks).Scan(&count)
 	return count, err
 }
 

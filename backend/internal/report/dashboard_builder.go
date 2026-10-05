@@ -62,7 +62,40 @@ func BuildDashboard(key Key, period, comparisonPeriod Period, currentSteps, prev
 	if !ComparisonSupported(key, period) {
 		SetComparisonUnavailable(&dashboard, "")
 	}
+	addDashboardQualityWarnings(&dashboard)
 	return dashboard, nil
+}
+
+// NegativeStockWarning is shown with a stock balance whose total is below zero. It says what the figure is built from,
+// so a reader does not mistake it for an accounting balance, and sends them to whoever keeps the stock.
+const NegativeStockWarning = "มูลค่าสต็อกคงเหลือรวมติดลบ ซึ่งผิดปกติ ตัวเลขนี้คำนวณจากความเคลื่อนไหวสินค้าตามสมุดสต็อกของ SML ถึงวันที่เลือก ควรตรวจกับผู้ดูแลสต็อกก่อนนำไปใช้"
+
+// addDashboardQualityWarnings adds the warnings that follow from the figures themselves.
+func addDashboardQualityWarnings(dashboard *Dashboard) {
+	if dashboard.ReportKey != StockBalance {
+		return
+	}
+	for _, metric := range dashboard.KPIs {
+		if metric.Key != "balance_amount" {
+			continue
+		}
+		if total, ok := new(big.Rat).SetString(metric.Value); ok && total.Sign() < 0 {
+			addQualityWarning(dashboard, NegativeStockWarning)
+		}
+	}
+}
+
+func addQualityWarning(dashboard *Dashboard, warning string) {
+	if warning == "" {
+		return
+	}
+	dashboard.Quality.Status = "WARNING"
+	for _, existing := range dashboard.Quality.Warnings {
+		if existing == warning {
+			return
+		}
+	}
+	dashboard.Quality.Warnings = append(dashboard.Quality.Warnings, warning)
 }
 
 // ComparisonSupported prevents unlike time windows and current-only reports
@@ -95,16 +128,7 @@ func SetComparisonUnavailable(dashboard *Dashboard, warning string) {
 		}
 		dashboard.Visualizations[visualizationIndex].Series = series
 	}
-	if warning == "" {
-		return
-	}
-	dashboard.Quality.Status = "WARNING"
-	for _, existing := range dashboard.Quality.Warnings {
-		if existing == warning {
-			return
-		}
-	}
-	dashboard.Quality.Warnings = append(dashboard.Quality.Warnings, warning)
+	addQualityWarning(dashboard, warning)
 }
 
 func buildDashboardMetrics(key Key, current, previous SummaryResult, currentSteps, previousSteps map[string][]map[string]string) ([]dashboardMetricInput, error) {

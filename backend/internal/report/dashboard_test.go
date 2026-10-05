@@ -264,3 +264,41 @@ func cashFixture(date, first, second string) map[string][]map[string]string {
 		{"doc_date": date, "doc_no": "CB1", "cash_amount": first, "card_amount": "10.00", "chq_amount": "5.00", "transfer_amount": second, "total_income_amount": "0", "coupon_amount": "0", "petty_cash_amount": "0", "total_amount": "165.00"},
 	}}
 }
+
+func TestStockBalanceDashboardWarnsWhenTheTotalIsNegative(t *testing.T) {
+	period := Period{Preset: AsOfRun, DateFrom: "2026-10-05", DateTo: "2026-10-05"}
+	comparison := Period{Preset: Custom, DateFrom: "2026-10-04", DateTo: "2026-10-04"}
+	row := func(code, amount string) map[string]string {
+		return map[string]string{"ic_code": code, "ic_name": "สินค้า " + code, "balance_amount": amount, "balance_qty": "1", "qty_in": "0", "amount_in": "0", "qty_out": "0", "amount_out": "0"}
+	}
+	build := func(rows ...map[string]string) Dashboard {
+		t.Helper()
+		dashboard, err := BuildDashboard(StockBalance, period, comparison, map[string][]map[string]string{"rows": rows}, map[string][]map[string]string{"rows": {}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return dashboard
+	}
+
+	negative := build(row("A", "-100.00"), row("B", "40.00"))
+	if negative.Quality.Status != "WARNING" || len(negative.Quality.Warnings) != 1 || negative.Quality.Warnings[0] != NegativeStockWarning {
+		t.Fatalf("a negative total must warn once: %+v", negative.Quality)
+	}
+	// One item below zero inside a positive total is ordinary and must not warn.
+	positive := build(row("A", "-100.00"), row("B", "400.00"))
+	if positive.Quality.Status != "OK" || len(positive.Quality.Warnings) != 0 {
+		t.Fatalf("a positive total must not warn: %+v", positive.Quality)
+	}
+	// Other reports never get the stock warning.
+	other, err := BuildDashboard(StockReorder, Period{Preset: AsOfRun, DateFrom: "2026-10-05", DateTo: "2026-10-05"}, comparison,
+		map[string][]map[string]string{"rows": {{"ic_code": "A", "ic_name": "สินค้า A", "balance_qty": "0", "purchase_point": "5", "purchase_balance_qty": "0"}}},
+		map[string][]map[string]string{"rows": {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, warning := range other.Quality.Warnings {
+		if warning == NegativeStockWarning {
+			t.Fatal("the stock reorder report must not carry the negative stock warning")
+		}
+	}
+}

@@ -122,8 +122,8 @@ func TestAgentTokenLifecycleAndEveryReasonToRefuse(t *testing.T) {
 	record(agent.OutcomePreparing, now) // asking again for the same report and period is not another fetch
 	record(agent.OutcomeRateLimited, now)
 	record(agent.OutcomeOK, now.Add(-2*time.Hour))
-	if used, err := store.CallsSince(ctx, second.TokenID, now.Add(-time.Hour)); err != nil || used != 3 {
-		t.Fatalf("answered calls in the last hour = %d, %v (want 3); a rate-limited refusal must not count", used, err)
+	if used, err := store.CallsSince(ctx, second.TokenID, now.Add(-time.Hour)); err != nil || used != 1 {
+		t.Fatalf("calls counted in the last hour = %d, %v (want 1: one answer; a rate-limited refusal and a \"preparing\" check do not count)", used, err)
 	}
 	if preparing, err := store.PreparingSince(ctx, tenantID, now.Add(-time.Hour)); err != nil || preparing != 1 {
 		t.Fatalf("fetches started = %d, %v", preparing, err)
@@ -134,6 +134,21 @@ func TestAgentTokenLifecycleAndEveryReasonToRefuse(t *testing.T) {
 	status, err := store.TokenInfo(ctx, tenantID, recipientID, now)
 	if err != nil || status.Status != "ACTIVE" || status.LastUsedAt == nil || status.Calls24h != 5 {
 		t.Fatalf("token info = %+v, %v", status, err)
+	}
+
+	// Waiting for a report means asking every few seconds. The first FreePreparingChecks of those are free; beyond that
+	// they count like any other call, so a runaway loop still reaches the limit.
+	for i := 0; i < 238; i++ {
+		record(agent.OutcomePreparing, now) // 240 "preparing" in all, with the two above
+	}
+	if used, err := store.CallsSince(ctx, second.TokenID, now.Add(-time.Hour)); err != nil || used != 1 {
+		t.Fatalf("240 preparing checks must still be free: counted %d, %v", used, err)
+	}
+	for i := 0; i < 3; i++ {
+		record(agent.OutcomePreparing, now)
+	}
+	if used, err := store.CallsSince(ctx, second.TokenID, now.Add(-time.Hour)); err != nil || used != 4 {
+		t.Fatalf("3 preparing checks past the free ones must count: counted %d (want 4), %v", used, err)
 	}
 
 	permitted, err := store.PermittedReports(ctx, second, now)

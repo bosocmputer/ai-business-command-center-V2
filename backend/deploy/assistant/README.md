@@ -46,6 +46,20 @@ real data only after the shop's agreement allows it):
 docker compose exec assistant /opt/hermes/bin/hermes -z "เดือนนี้ขายได้เท่าไหร่"
 ```
 
+## Slow reports: waiting and the morning prewarm
+
+A report that has to be fetched live from the shop's system takes 15 to 60 seconds (measured 15-58 s on 2026-10-05). The
+assistant does not tell the owner to ask again: `get_report` and `compare` in `aibcc_mcp.py` ask AI-BCC every 6 seconds
+while it answers `PREPARING`, for up to 100 seconds, and return the finished report, so the owner sees "typing" and then
+the answer. AI-BCC does not count those status checks against the 60 calls an hour (the first 240 an hour are free). If the
+report is still not ready after the wait, the assistant says so and asks the owner to try again in a minute or two.
+
+Reports "as of today" (receivables, stock) and the rolling 180-day customer reports are keyed to the date, so each day's
+first question would start a live fetch. `prewarm.py` fetches them every morning at 07:30 Bangkok (and last month's
+reports on the days they are missing), one after the other, within AI-BCC's 10 live fetches an hour, so the first
+question of the day is answered at once. It prints one JSON line to `docker logs` when it ends. Move the time with
+`ASSISTANT_PREWARM_FROM_MINUTE` (minute of the UTC day).
+
 ## What is kept, for how long, and how to delete it
 
 The assistant's own copy of a conversation is working memory, not the record. Hermes stores it in two places only

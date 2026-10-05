@@ -21,6 +21,10 @@ GW=""
 trap '[ -n "$GW" ] && kill -TERM "$GW" 2>/dev/null; [ -n "$GW" ] && wait "$GW"; exit 0' TERM INT
 last_day=""
 GUARD_TICKS="${MEMORY_GUARD_TICKS:-20}"   # 20 x 30 s = every 10 minutes
+# Once a day, from this minute of the UTC day (30 = 00:30 UTC = 07:30 Bangkok) for two hours, fetch the reports owners ask
+# about first so the first question of the day is not slow. It runs beside the gateway and does not stop it.
+PREWARM_FROM="${PREWARM_FROM_MINUTE:-30}"
+last_prewarm=""
 while true; do
   "$HERMES" gateway run &
   GW=$!
@@ -33,6 +37,11 @@ while true; do
       elif [ "${last_wait:-}" != "$(date -u +%F)" ]; then
         last_wait="$(date -u +%F)"; echo '{"maintenance":"waiting: a conversation is running"}'
       fi
+    fi
+    h=$(date -u +%H); m=$(date -u +%M); now_minute=$(( ${h#0} * 60 + ${m#0} ))
+    if [ "$now_minute" -ge "$PREWARM_FROM" ] && [ "$now_minute" -lt $((PREWARM_FROM + 120)) ] && [ "$last_prewarm" != "$(date -u +%F)" ]; then
+      last_prewarm="$(date -u +%F)"
+      /opt/hermes/.venv/bin/python /assistant/prewarm.py &
     fi
     ticks=$((ticks + 1))
     if [ $((ticks % GUARD_TICKS)) = 0 ]; then /opt/hermes/.venv/bin/python /assistant/memory_guard.py --apply --locked; fi
