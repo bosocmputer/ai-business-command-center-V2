@@ -118,6 +118,10 @@ A fifth rule, `morning_digest` ("send me a summary every morning"), has no thres
 sales against the same weekday last week, overdue receivables and the reorder count, limited to the reports that person
 may read. It waits until those reports are fresh, then sends once.
 
+**Known limit:** alerts are delivered to the people in `ALERT_CHAT_IDS`, not to the person who set the rule (the assistant does not
+yet know which Telegram user a rule came from). Before an owner is invited, put the owner's id in `ALERT_CHAT_IDS` (and expect that
+the rest of the team in that list sees the same alerts), or the owner would set an alert and never receive it.
+
 Everything is off until you switch it on, and on it only records:
 
 ```
