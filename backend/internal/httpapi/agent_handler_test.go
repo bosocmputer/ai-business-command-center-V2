@@ -248,3 +248,91 @@ func TestAdminTokenRoutesNeedCSRFAndExplainTheirRefusals(t *testing.T) {
 		t.Fatalf("no tokens while the whole assistant is off: %d %s", got.Code, got.Body.String())
 	}
 }
+
+type agentTestAlerts struct {
+	items map[agent.AlertRuleKey]agent.StoredAlert
+}
+
+func (store *agentTestAlerts) Alerts(context.Context, agent.Principal) ([]agent.StoredAlert, error) {
+	list := make([]agent.StoredAlert, 0)
+	for _, item := range store.items {
+		list = append(list, item)
+	}
+	return list, nil
+}
+func (store *agentTestAlerts) UpsertAlert(_ context.Context, _ agent.Principal, rule agent.AlertRuleKey, threshold string, enabled bool, _ string, _ time.Time) (agent.StoredAlert, error) {
+	if store.items == nil {
+		store.items = map[agent.AlertRuleKey]agent.StoredAlert{}
+	}
+	item := agent.StoredAlert{Rule: rule, Threshold: threshold, Enabled: enabled}
+	store.items[rule] = item
+	return item, nil
+}
+
+func agentAlertHandler(store *agentTestStore, alerts *agentTestAlerts) http.Handler {
+	now := time.Date(2026, 10, 1, 5, 0, 0, 0, time.UTC)
+	service := agent.NewService(store, agentTestSnapshots{}, agentTestHasher{}, bytes.NewReader(bytes.Repeat([]byte{3}, 64)), agent.Alias(agentTestHasher{}), func() time.Time { return now }, agent.Config{}).ConfigureAlerts(alerts)
+	return NewHandler(Dependencies{Readiness: readinessFunc(func(context.Context) error { return nil }), AdminAuth: &fakeAdminAuth{}, Agent: service, AgentEnabled: true})
+}
+
+func agentPut(handler http.Handler, path, token, body string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodPut, path, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
+}
+
+func TestAgentAlertsCanBeSetListedAndSwitchedOffOverHTTP(t *testing.T) {
+	store := newAgentStore()
+	store.permitted = []report.Key{report.ARAging, report.SalesGoodsServices}
+	handler := agentAlertHandler(store, &agentTestAlerts{})
+
+	set := agentPut(handler, "/api/v1/agent/alerts/ar_overdue", "abcc_token", `{"threshold":"500000"}`)
+	if set.Code != http.StatusOK || !strings.Contains(set.Body.String(), `"threshold":"500000"`) || !strings.Contains(set.Body.String(), `"enabled":true`) {
+		t.Fatalf("set: %d %s", set.Code, set.Body.String())
+	}
+	list := agentGet(handler, "/api/v1/agent/alerts", "abcc_token")
+	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"rule":"ar_overdue"`) || !strings.Contains(list.Body.String(), `"threshold":"500000"`) {
+		t.Fatalf("list: %d %s", list.Code, list.Body.String())
+	}
+	off := agentPut(handler, "/api/v1/agent/alerts/ar_overdue", "abcc_token", `{"enabled":false}`)
+	if off.Code != http.StatusOK || !strings.Contains(off.Body.String(), `"threshold":"500000"`) || strings.Contains(off.Body.String(), `"enabled":true`) {
+		t.Fatalf("off: %d %s", off.Code, off.Body.String())
+	}
+}
+
+func TestAgentAlertErrorsAreThaiAndForbiddenRulesLookMissing(t *testing.T) {
+	store := newAgentStore()
+	store.permitted = []report.Key{report.SalesGoodsServices} // not ar_aging
+	handler := agentAlertHandler(store, &agentTestAlerts{})
+
+	bad := agentPut(handler, "/api/v1/agent/alerts/sales_drop", "abcc_token", `{"threshold":"150"}`)
+	if bad.Code != http.StatusUnprocessableEntity || !strings.Contains(bad.Body.String(), "INVALID_ALERT") || !strings.Contains(bad.Body.String(), "เปอร์เซ็นต์") {
+		t.Fatalf("bad threshold: %d %s", bad.Code, bad.Body.String())
+	}
+	malformed := agentPut(handler, "/api/v1/agent/alerts/sales_drop", "abcc_token", `{"threshold":40,"extra":1}`)
+	if malformed.Code != http.StatusUnprocessableEntity || !strings.Contains(malformed.Body.String(), "INVALID_ALERT") {
+		t.Fatalf("malformed: %d %s", malformed.Code, malformed.Body.String())
+	}
+	forbidden := agentPut(handler, "/api/v1/agent/alerts/ar_overdue", "abcc_token", `{"threshold":"1000"}`)
+	missing := agentPut(handler, "/api/v1/agent/alerts/no_such_rule", "abcc_token", `{"threshold":"1000"}`)
+	if forbidden.Code != http.StatusNotFound || !bytes.Equal(forbidden.Body.Bytes(), missing.Body.Bytes()) {
+		t.Fatalf("a forbidden rule must answer like a missing one: %d %s / %d %s", forbidden.Code, forbidden.Body.String(), missing.Code, missing.Body.String())
+	}
+	if got := agentPut(handler, "/api/v1/agent/alerts/sales_drop", "abcc_other", `{"threshold":"40"}`); got.Code != http.StatusUnauthorized {
+		t.Fatalf("a wrong token must not set anything: %d", got.Code)
+	}
+}
+
+func TestAgentAlertsAnswerLikeNothingWhenNotConfigured(t *testing.T) {
+	handler := agentTestHandler(newAgentStore(), true) // service built without alerts
+	for _, got := range []*httptest.ResponseRecorder{agentGet(handler, "/api/v1/agent/alerts", "abcc_token"), agentPut(handler, "/api/v1/agent/alerts/sales_drop", "abcc_token", `{"threshold":"40"}`)} {
+		if got.Code != http.StatusNotFound || !strings.Contains(got.Body.String(), "NO_DATA") {
+			t.Fatalf("%d %s", got.Code, got.Body.String())
+		}
+	}
+}

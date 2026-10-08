@@ -48,11 +48,18 @@ type Config struct {
 	StaleRevalidationEnabled     bool
 	HeavyChunkEnabled            bool
 	AgentAPIEnabled              bool
-	HeavyChunkTenantReports      []string
-	ScheduleChunkEnabled         bool
-	WatchdogEnabled              bool
-	SentinelRuntimeDirectory     string
-	BackupPolicy                 string
+	// Alerts the assistant sets up are checked once a day by the worker. They are off until an operator turns them on,
+	// and then only record what they would have said (dry run) until sending is switched on too.
+	AgentAlertsEnabled       bool
+	AgentAlertDryRun         bool
+	AgentAlertWebhookURL     string
+	AgentAlertWebhookSecret  string
+	AgentAlertWebhookRoutes  []string
+	HeavyChunkTenantReports  []string
+	ScheduleChunkEnabled     bool
+	WatchdogEnabled          bool
+	SentinelRuntimeDirectory string
+	BackupPolicy             string
 }
 
 func Load(lookup LookupFunc) (Config, error) {
@@ -197,6 +204,33 @@ func Load(lookup LookupFunc) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	agentAlertsEnabled, err := boolValue(lookup, "AGENT_ALERTS_ENABLED", false)
+	if err != nil {
+		return Config{}, err
+	}
+	agentAlertDryRun, err := boolValue(lookup, "AGENT_ALERT_DRY_RUN", true)
+	if err != nil {
+		return Config{}, err
+	}
+	agentAlertWebhookURL := strings.TrimRight(strings.TrimSpace(valueOrDefault(lookup, "AGENT_ALERT_WEBHOOK_URL", "")), "/")
+	agentAlertWebhookSecret := strings.TrimSpace(valueOrDefault(lookup, "AGENT_ALERT_WEBHOOK_SECRET", ""))
+	agentAlertWebhookRoutes := make([]string, 0)
+	for _, route := range strings.Split(valueOrDefault(lookup, "AGENT_ALERT_WEBHOOK_ROUTES", ""), ",") {
+		if route = strings.TrimSpace(route); route != "" {
+			agentAlertWebhookRoutes = append(agentAlertWebhookRoutes, route)
+		}
+	}
+	if agentAlertsEnabled && !agentAlertDryRun {
+		if _, parseErr := url.Parse(agentAlertWebhookURL); parseErr != nil || !strings.HasPrefix(agentAlertWebhookURL, "http") {
+			return Config{}, fmt.Errorf("AGENT_ALERT_WEBHOOK_URL must be an http(s) URL when alerts are sent")
+		}
+		if len(agentAlertWebhookSecret) < 32 {
+			return Config{}, fmt.Errorf("AGENT_ALERT_WEBHOOK_SECRET must be at least 32 characters when alerts are sent")
+		}
+		if len(agentAlertWebhookRoutes) == 0 {
+			return Config{}, fmt.Errorf("AGENT_ALERT_WEBHOOK_ROUTES must name at least one route when alerts are sent")
+		}
+	}
 	heavyChunkEnabled, err := boolValue(lookup, "HEAVY_CHUNK_ENABLED", false)
 	if err != nil {
 		return Config{}, err
@@ -272,6 +306,11 @@ func Load(lookup LookupFunc) (Config, error) {
 		StaleRevalidationEnabled:     staleRevalidationEnabled,
 		HeavyChunkEnabled:            heavyChunkEnabled,
 		AgentAPIEnabled:              agentAPIEnabled,
+		AgentAlertsEnabled:           agentAlertsEnabled,
+		AgentAlertDryRun:             agentAlertDryRun,
+		AgentAlertWebhookURL:         agentAlertWebhookURL,
+		AgentAlertWebhookSecret:      agentAlertWebhookSecret,
+		AgentAlertWebhookRoutes:      agentAlertWebhookRoutes,
 		HeavyChunkTenantReports:      heavyChunkTenantReports,
 		ScheduleChunkEnabled:         scheduleChunkEnabled,
 		WatchdogEnabled:              watchdogEnabled,

@@ -19,6 +19,8 @@ const (
 	ToolGetReport      Tool = "get_report"
 	ToolCompare        Tool = "compare"
 	ToolLatestDelivery Tool = "latest_delivery"
+	ToolAlerts         Tool = "alerts"
+	ToolAlertSet       Tool = "alert_set"
 )
 
 type Outcome string
@@ -29,6 +31,7 @@ const (
 	OutcomeUnavailable   Outcome = "UNAVAILABLE"
 	OutcomeNoData        Outcome = "NO_DATA"
 	OutcomeInvalidPeriod Outcome = "INVALID_PERIOD"
+	OutcomeInvalidAlert  Outcome = "INVALID_ALERT"
 	OutcomeRateLimited   Outcome = "RATE_LIMITED"
 )
 

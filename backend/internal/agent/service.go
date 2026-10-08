@@ -48,6 +48,7 @@ type Service struct {
 	hasher    TokenHasher
 	entropy   io.Reader
 	alias     func(tenantID uuid.UUID, name string) string
+	alerts    AlertStore
 	now       func() time.Time
 	config    Config
 }

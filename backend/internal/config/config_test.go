@@ -302,3 +302,75 @@ func TestLoadValidatesOptionalLineChannelSecret(t *testing.T) {
 		}
 	}
 }
+
+func alertTestValues(extra map[string]string) func(string) (string, bool) {
+	secret := base64.StdEncoding.EncodeToString([]byte("01234567890123456789012345678901"))
+	values := map[string]string{
+		"DATABASE_URL":          "postgres://nextstep@localhost/nextstep?sslmode=disable",
+		"PUBLIC_BASE_URL":       "http://localhost:6324",
+		"ADMIN_PASSWORD_HASH":   "$argon2id$v=19$m=65536,t=3,p=2$c2FsdA$aGFzaA",
+		"SESSION_HMAC_KEY":      secret,
+		"ENCRYPTION_MASTER_KEY": secret,
+		"ENCRYPTION_KEY_ID":     "key-2026-01",
+		"SML_ALLOWED_CIDRS":     "10.0.0.0/8",
+	}
+	for key, value := range extra {
+		values[key] = value
+	}
+	return func(key string) (string, bool) { value, ok := values[key]; return value, ok }
+}
+
+func TestAlertsAreOffByDefaultAndRecordOnlyUntilSendingIsSwitchedOn(t *testing.T) {
+	cfg, err := Load(alertTestValues(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AgentAlertsEnabled || !cfg.AgentAlertDryRun {
+		t.Fatalf("alerts must be off and, if turned on, a dry run: %+v", cfg)
+	}
+	cfg, err = Load(alertTestValues(map[string]string{"AGENT_ALERTS_ENABLED": "true"}))
+	if err != nil || !cfg.AgentAlertsEnabled || !cfg.AgentAlertDryRun {
+		t.Fatalf("turning alerts on alone must stay a dry run, with no webhook needed: %+v %v", cfg, err)
+	}
+}
+
+func TestSendingAlertsNeedsAWebhookASecretAndRoutes(t *testing.T) {
+	good := map[string]string{
+		"AGENT_ALERTS_ENABLED": "true", "AGENT_ALERT_DRY_RUN": "false",
+		"AGENT_ALERT_WEBHOOK_URL":    " http://assistant:8644/ ",
+		"AGENT_ALERT_WEBHOOK_SECRET": strings.Repeat("s", 32),
+		"AGENT_ALERT_WEBHOOK_ROUTES": " alert-1, alert-2 ,,",
+	}
+	cfg, err := Load(alertTestValues(good))
+	if err != nil || cfg.AgentAlertDryRun || cfg.AgentAlertWebhookURL != "http://assistant:8644" || len(cfg.AgentAlertWebhookRoutes) != 2 || cfg.AgentAlertWebhookRoutes[1] != "alert-2" {
+		t.Fatalf("good config: %+v %v", cfg, err)
+	}
+	for name, change := range map[string]map[string]string{
+		"no url":       {"AGENT_ALERT_WEBHOOK_URL": ""},
+		"not http":     {"AGENT_ALERT_WEBHOOK_URL": "assistant:8644"},
+		"short secret": {"AGENT_ALERT_WEBHOOK_SECRET": "too-short"},
+		"no secret":    {"AGENT_ALERT_WEBHOOK_SECRET": ""},
+		"no routes":    {"AGENT_ALERT_WEBHOOK_ROUTES": " , "},
+		"bad dry-run":  {"AGENT_ALERT_DRY_RUN": "maybe"},
+		"bad enabled":  {"AGENT_ALERTS_ENABLED": "yes please"},
+	} {
+		values := map[string]string{}
+		for key, value := range good {
+			values[key] = value
+		}
+		for key, value := range change {
+			values[key] = value
+		}
+		_, err := Load(alertTestValues(values))
+		if err == nil {
+			t.Errorf("%s must be refused", name)
+		} else if strings.Contains(err.Error(), strings.Repeat("s", 32)) {
+			t.Errorf("%s: the error must not echo the secret: %v", name, err)
+		}
+	}
+	// A dry run needs none of it, so a half-finished setup cannot send by accident.
+	dry := map[string]string{"AGENT_ALERTS_ENABLED": "true", "AGENT_ALERT_DRY_RUN": "true", "AGENT_ALERT_WEBHOOK_SECRET": "short"}
+	if _, err := Load(alertTestValues(dry)); err != nil {
+		t.Fatalf("dry run with leftovers: %v", err)
+	}
+}

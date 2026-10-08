@@ -397,13 +397,17 @@ func scanTenant(row rowScanner) (tenant.Tenant, error) {
 }
 
 func insertAudit(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, actorHash []byte, action, resourceType, resourceID, requestID string, beforeJSON, afterJSON []byte, now time.Time) error {
+	return insertAuditAs(ctx, tx, tenantID, "ADMIN", actorHash, action, resourceType, resourceID, requestID, beforeJSON, afterJSON, now)
+}
+
+func insertAuditAs(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, actorType string, actorHash []byte, action, resourceType, resourceID, requestID string, beforeJSON, afterJSON []byte, now time.Time) error {
 	_, err := tx.Exec(ctx, `
 		insert into audit_logs (
 		  tenant_id, actor_type, actor_id_hash, action, resource_type, resource_id,
 		  request_id, before_json, after_json, result, created_at, expires_at
-		) values ($1, 'ADMIN', $2, $3, $4, $5, $6, $7, $8, 'SUCCESS', $9, $10)`,
+		) values ($1, $11, $2, $3, $4, $5, $6, $7, $8, 'SUCCESS', $9, $10)`,
 		tenantID, actorHash, action, resourceType, resourceID, requestID,
-		nullableJSON(beforeJSON), nullableJSON(afterJSON), now, now.AddDate(1, 0, 0),
+		nullableJSON(beforeJSON), nullableJSON(afterJSON), now, now.AddDate(1, 0, 0), actorType,
 	)
 	if err != nil {
 		return fmt.Errorf("insert audit event: %w", err)

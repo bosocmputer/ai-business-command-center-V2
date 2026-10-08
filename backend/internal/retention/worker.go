@@ -33,6 +33,7 @@ type Counts struct {
 	AuditLogs              int64
 	ViewEvents             int64
 	AgentCalls             int64
+	AgentAlertEvents       int64
 	Sessions               int64
 	IdempotencyRequests    int64
 	AccessLinks            int64

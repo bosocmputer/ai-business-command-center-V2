@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -19,6 +20,8 @@ type AgentAPI interface {
 	Report(ctx context.Context, principal agent.Principal, reportKey, dateFrom, dateTo string) (agent.ReportResponse, error)
 	Compare(ctx context.Context, principal agent.Principal, reportKey, metric, aFrom, aTo, bFrom, bTo string) (agent.CompareResponse, error)
 	LatestDelivery(ctx context.Context, principal agent.Principal, reportKey string) (agent.ReportResponse, error)
+	Alerts(ctx context.Context, principal agent.Principal) (agent.AlertsResponse, error)
+	SetAlert(ctx context.Context, principal agent.Principal, rule string, request agent.AlertSetRequest, requestID string) (agent.AlertView, error)
 	IssueToken(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID, namesVisible bool) (agent.IssuedToken, error)
 	RevokeToken(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID) error
 	TokenInfo(ctx context.Context, tenantID, recipientID uuid.UUID) (agent.TokenInfo, error)
@@ -87,10 +90,30 @@ func registerAgentRoutes(router chi.Router, api AgentAPI, enabled bool) {
 			result, err := api.LatestDelivery(request.Context(), agentPrincipal(request), request.URL.Query().Get("reportKey"))
 			respondAgent(response, result, err)
 		})
+		group.Get("/alerts", func(response http.ResponseWriter, request *http.Request) {
+			result, err := api.Alerts(request.Context(), agentPrincipal(request))
+			respondAgent(response, result, err)
+		})
+		group.Put("/alerts/{ruleKey}", func(response http.ResponseWriter, request *http.Request) {
+			var input agent.AlertSetRequest
+			decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 4096))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&input); err != nil {
+				writeAgentJSON(response, http.StatusUnprocessableEntity, agentError{Status: "INVALID_ALERT", Message: "คำขอตั้งการเตือนไม่ถูกต้อง ต้องมี threshold (ตัวเลข) และ enabled (true หรือ false)"})
+				return
+			}
+			result, err := api.SetAlert(request.Context(), agentPrincipal(request), chi.URLParam(request, "ruleKey"), input, requestID(request))
+			respondAgent(response, result, err)
+		})
 		group.NotFound(func(response http.ResponseWriter, _ *http.Request) {
 			writeAgentJSON(response, http.StatusNotFound, agentError{Status: "NO_DATA", Message: agent.MessageNoData})
 		})
 	})
+}
+
+func isInvalidAlert(err error) bool {
+	var invalid *agent.InvalidAlertError
+	return errors.As(err, &invalid)
 }
 
 func agentPrincipal(request *http.Request) agent.Principal {
@@ -102,8 +125,12 @@ func respondAgent(response http.ResponseWriter, result any, err error) {
 	switch {
 	case err == nil:
 		writeAgentJSON(response, http.StatusOK, result)
-	case errors.Is(err, agent.ErrNoData):
+	case errors.Is(err, agent.ErrNoData), errors.Is(err, agent.ErrAlertsUnavailable):
 		writeAgentJSON(response, http.StatusNotFound, agentError{Status: "NO_DATA", Message: agent.MessageNoData})
+	case isInvalidAlert(err):
+		var invalid *agent.InvalidAlertError
+		_ = errors.As(err, &invalid)
+		writeAgentJSON(response, http.StatusUnprocessableEntity, agentError{Status: "INVALID_ALERT", Message: invalid.Message})
 	case errors.Is(err, agent.ErrInvalidPeriod):
 		writeAgentJSON(response, http.StatusUnprocessableEntity, agentError{Status: "INVALID_PERIOD", Message: agent.MessageInvalidDates})
 	default:

@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/agent"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/alert"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/auth"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/config"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/database"
@@ -138,6 +140,17 @@ func main() {
 		go deliveryLoop(ctx, logger, deliveryWorker, lane)
 	}
 	go retentionLoop(ctx, logger, retentionWorker)
+	if cfg.AgentAlertsEnabled {
+		agentStore := database.NewAgentStore(pool)
+		// The daily check reads through the assistant's own service, so a rule sees what the owner would see.
+		source := agent.NewService(agentStore, reportStore, sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{})
+		var sender alert.Sender
+		if !cfg.AgentAlertDryRun {
+			sender = &alert.WebhookSender{BaseURL: cfg.AgentAlertWebhookURL, Secret: cfg.AgentAlertWebhookSecret, Routes: cfg.AgentAlertWebhookRoutes}
+		}
+		go alertLoop(ctx, logger, alert.NewEvaluator(agentStore, source, sender, cfg.AgentAlertDryRun, time.Now, logger))
+		logger.Info("agent alerts started", "dryRun", cfg.AgentAlertDryRun, "routes", len(cfg.AgentAlertWebhookRoutes))
+	}
 	if cfg.LineMessagingAccessToken != "" {
 		quotaID := workerID + "-quota"
 		go heartbeatLoop(ctx, logger, pool, quotaID, "DELIVERY", hostname, map[string]any{"stage": "quota-sync"})
@@ -148,6 +161,19 @@ func main() {
 	}
 	<-ctx.Done()
 	logger.Info("report worker stopping", "workerId", workerID)
+}
+
+// alertLoop looks for alerts to check and to deliver every five minutes. A rule is checked once a day, so most passes do nothing.
+func alertLoop(ctx context.Context, logger *slog.Logger, evaluator *alert.Evaluator) {
+	if !sleepContext(ctx, 30*time.Second) {
+		return
+	}
+	for {
+		evaluator.RunOnce(ctx)
+		if !sleepContext(ctx, 5*time.Minute) {
+			return
+		}
+	}
 }
 
 func lineQuotaLoop(ctx context.Context, logger *slog.Logger, quotaWorker *quota.Worker) {
@@ -195,7 +221,7 @@ func retentionLoop(ctx context.Context, logger *slog.Logger, retentionWorker *re
 			delay = time.Minute
 			continue
 		}
-		logger.Info("retention batch completed", "reportRows", counts.ReportRows, "reportRuns", counts.ReportRuns, "dashboardRefreshes", counts.DashboardRefreshes, "dashboardGenerations", counts.DashboardGenerations, "auditLogs", counts.AuditLogs, "viewEvents", counts.ViewEvents, "agentCalls", counts.AgentCalls, "deliveries", counts.Deliveries, "operationalIncidents", counts.OperationalIncidents, "maintenanceWindows", counts.MaintenanceWindows)
+		logger.Info("retention batch completed", "reportRows", counts.ReportRows, "reportRuns", counts.ReportRuns, "dashboardRefreshes", counts.DashboardRefreshes, "dashboardGenerations", counts.DashboardGenerations, "auditLogs", counts.AuditLogs, "viewEvents", counts.ViewEvents, "agentCalls", counts.AgentCalls, "agentAlertEvents", counts.AgentAlertEvents, "deliveries", counts.Deliveries, "operationalIncidents", counts.OperationalIncidents, "maintenanceWindows", counts.MaintenanceWindows)
 		delay = time.Hour
 	}
 }
