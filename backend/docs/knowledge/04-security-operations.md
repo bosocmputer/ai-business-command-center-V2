@@ -55,6 +55,7 @@ tags: [backend, security, operations, retention]
 - `POST /api/v1/agent/drafts/collection` (tool `draft_collection`) returns a payment-reminder text for one customer among the ten owing the most past their due date. The text is built in `internal/agent/draft.go` from the receivable report's `overdue_debtors` and `overdue_debtor_days` charts (same customers, same order) and the assistant-only list `agent_overdue_documents` (up to five oldest overdue documents per customer: number, due date, balance, days; customer names ride in point labels). Keys starting `agent_` are hidden from the web pages and are not returned by the assistant's report tool. The model never writes the numbers.
 - It writes nothing anywhere and sends nothing. `agent_calls` records `tool=draft` with the report key and an outcome only: no text, no customer name.
 - Needs the receivable report permission (otherwise the uniform NO_DATA answer) and a token that may see names (otherwise a plain refusal). A customer outside the top ten, or a name that matches several, returns the candidate names instead of a draft.
+- Only documents up to 365 days past their due date (`report.AgingChaseableDays`) are chased; the receivable report reports older overdue debts apart as old debts (`stale_overdue_amount`, `stale_overdue_debtors`, `stale_overdue_debtor_days`) and the draft tool answers `NOT_CHASEABLE` for them. A reminder says it counts only the recent part.
 - Reminder tone: friendly or formal. No deadline, fee or legal wording is ever generated.
 
 ## Assistant alerts

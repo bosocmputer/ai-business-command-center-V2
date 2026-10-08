@@ -22,6 +22,8 @@ func agingDashboard() report.Dashboard {
 		Visualizations: []report.DashboardVisualization{
 			visualization("overdue_debtors", report.UnitTHB, "641200.50", "52000.00", "1000.00"),
 			visualization("overdue_debtor_days", report.UnitCount, "95", "12", "3"),
+			{Key: "stale_overdue_debtors", Intent: report.IntentRanking, Unit: report.UnitTHB, Categories: []string{"บริษัท หนี้เก่า จำกัด"}, Series: []report.VisualizationSeries{{Key: "value", Values: []string{"108650.00"}}}},
+			{Key: "stale_overdue_debtor_days", Intent: report.IntentRanking, Unit: report.UnitCount, Categories: []string{"บริษัท หนี้เก่า จำกัด"}, Series: []report.VisualizationSeries{{Key: "value", Values: []string{"2498"}}}},
 			{Key: "agent_overdue_documents", Intent: report.IntentRanking, Unit: report.UnitTHB, Categories: []string{"INV-7", "INV-9", "INV-3"}, Series: []report.VisualizationSeries{
 				{Key: "value", Values: []string{"600000.00", "30000.50", "30000.00"}, PointLabels: []string{"บริษัท ก่อสร้างดี จำกัด", "บริษัท ก่อสร้างดี จำกัด", "ห้างหุ้นส่วน ปูนทอง"}},
 				{Key: "days_past_due", Values: []string{"95", "20", "12"}, PointLabels: []string{"2026-07-05", "2026-09-11", "2026-09-19"}},
@@ -168,5 +170,22 @@ func TestTheAssistantsReportToolDoesNotReturnTheDocumentList(t *testing.T) {
 		if strings.HasPrefix(visualization.Key, "agent_") {
 			t.Errorf("%s is for the draft tool only", visualization.Key)
 		}
+	}
+}
+
+func TestAnOldDebtGetsNoReminderAndIsSentToTheAccountantInstead(t *testing.T) {
+	service, store := draftService(agingDashboard(), report.ARAging)
+	got, err := service.DraftCollection(context.Background(), namedPrincipal, DraftRequest{Customer: "หนี้เก่า", Tone: "friendly"})
+	if err != nil || got.Status != "NOT_CHASEABLE" || got.Draft != "" || got.Customer != "บริษัท หนี้เก่า จำกัด" || got.OverdueAmount != "108650.00" || got.MaxDaysPastDue != 2498 ||
+		!strings.Contains(got.Message, "365 วัน") || !strings.Contains(got.Message, "ฝ่ายบัญชี") {
+		t.Fatalf("old debt = %+v %v", got, err)
+	}
+	if store.calls[len(store.calls)-1].Outcome != OutcomeNoData {
+		t.Errorf("outcome = %s", store.calls[len(store.calls)-1].Outcome)
+	}
+	ready, _ := service.DraftCollection(context.Background(), namedPrincipal, DraftRequest{Customer: "ปูนทอง", Tone: "friendly"})
+	joined := strings.Join(ready.Notes, " ")
+	if ready.Status != "READY" || !strings.Contains(joined, "ไม่เกิน 365 วัน") {
+		t.Errorf("a reminder must say it counts only debts up to a year past due: %+v", ready)
 	}
 }

@@ -23,6 +23,7 @@ const (
 
 	MessageDraftNeedsNames = "ร่างข้อความถึงลูกค้าต้องใช้ชื่อลูกค้า แต่การเข้าถึงนี้ปิดการแสดงชื่อไว้ จึงร่างให้ไม่ได้"
 	MessageDraftNote       = "นี่เป็นร่างที่ยังไม่ได้ส่งให้ใคร ระบบไม่ส่งเอง เจ้าของคัดลอกไปส่งเองและควรตรวจยอดกับใบแจ้งหนี้ก่อน"
+	MessageDraftRecentOnly = "ร่างนี้นับเฉพาะเอกสารที่เลยกำหนดไม่เกิน %d วัน หนี้ที่เลยกำหนดนานกว่านั้นไม่รวม และไม่ได้ร่างทวงให้"
 	MessageDraftStale      = "ยอดที่ใช้ในร่างเป็นข้อมูลชุดก่อนหน้า อาจไม่ใช่ยอดล่าสุด ควรตรวจยอดก่อนส่ง"
 )
 
@@ -89,7 +90,7 @@ func (service *Service) DraftCollection(ctx context.Context, principal Principal
 		service.record(ctx, principal, ToolDraft, key, period, outcomeOf(snapshot.state), started, snapshot.runID())
 		return DraftResponse{Status: snapshot.state.status(), Message: snapshot.message(), RetryAfterSeconds: snapshot.retryAfter}, nil
 	}
-	debtors := overdueDebtors(snapshot.snapshot.Dashboard)
+	debtors := overdueDebtors(snapshot.snapshot.Dashboard, "overdue_debtors", "overdue_debtor_days", true)
 	var matches []overdueDebtor
 	for _, debtor := range debtors {
 		if strings.Contains(normalizeName(debtor.Name), query) {
@@ -106,8 +107,20 @@ func (service *Service) DraftCollection(ctx context.Context, principal Principal
 	}
 	switch {
 	case len(matches) == 0:
+		var old []overdueDebtor
+		for _, debtor := range overdueDebtors(snapshot.snapshot.Dashboard, "stale_overdue_debtors", "stale_overdue_debtor_days", false) {
+			if strings.Contains(normalizeName(debtor.Name), query) {
+				old = append(old, debtor)
+			}
+		}
+		if len(old) == 1 {
+			response.Status, response.Customer, response.OverdueAmount, response.MaxDaysPastDue = "NOT_CHASEABLE", old[0].Name, old[0].Amount.FloatString(2), old[0].DaysPastDue
+			response.Message = fmt.Sprintf("รายนี้เป็นหนี้เก่าที่เลยกำหนดเกิน %d วัน จึงไม่ร่างข้อความทวงให้ ควรให้ฝ่ายบัญชีทบทวนว่าจะติดตามหรือตัดหนี้", report.AgingChaseableDays)
+			service.record(ctx, principal, ToolDraft, key, period, OutcomeNoData, started, snapshot.runID())
+			return response, nil
+		}
 		response.Status = "NOT_FOUND"
-		response.Message = fmt.Sprintf("ร่างข้อความได้เฉพาะลูกหนี้เลยกำหนดที่ค้างสูงสุด %d รายแรก และไม่พบชื่อที่ระบุในกลุ่มนี้", draftTopOverdue)
+		response.Message = fmt.Sprintf("ร่างข้อความได้เฉพาะลูกหนี้ที่เลยกำหนดไม่เกิน %d วันและค้างสูงสุด %d รายแรก และไม่พบชื่อที่ระบุในกลุ่มนี้", report.AgingChaseableDays, draftTopOverdue)
 		for _, debtor := range debtors {
 			response.Candidates = append(response.Candidates, debtor.Name)
 		}
@@ -130,7 +143,7 @@ func (service *Service) DraftCollection(ctx context.Context, principal Principal
 	response.Status, response.Tone = "READY", tone
 	response.Customer, response.OverdueAmount, response.MaxDaysPastDue = debtor.Name, debtor.Amount.FloatString(2), debtor.DaysPastDue
 	response.Draft = collectionDraft(tone, principal.ShopName, debtor, asOf)
-	response.Notes = []string{MessageDraftNote}
+	response.Notes = []string{MessageDraftNote, fmt.Sprintf(MessageDraftRecentOnly, report.AgingChaseableDays)}
 	if snapshot.stale {
 		response.Notes = append(response.Notes, MessageDraftStale)
 	}
@@ -155,16 +168,18 @@ type overdueDocument struct {
 
 // overdueDebtors reads the two charts the receivable report builds side by side: the amount each customer owes past
 // the due date, and how many days the oldest of those documents is past due. Same customers, same order.
-func overdueDebtors(dashboard report.Dashboard) []overdueDebtor {
+func overdueDebtors(dashboard report.Dashboard, amountKey, daysKey string, withDocuments bool) []overdueDebtor {
 	var amounts, days, documents *report.DashboardVisualization
 	for index := range dashboard.Visualizations {
 		switch dashboard.Visualizations[index].Key {
-		case "overdue_debtors":
+		case amountKey:
 			amounts = &dashboard.Visualizations[index]
-		case "overdue_debtor_days":
+		case daysKey:
 			days = &dashboard.Visualizations[index]
 		case "agent_overdue_documents":
-			documents = &dashboard.Visualizations[index]
+			if withDocuments {
+				documents = &dashboard.Visualizations[index]
+			}
 		}
 	}
 	if amounts == nil || len(amounts.Series) == 0 {

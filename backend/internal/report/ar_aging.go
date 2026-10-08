@@ -43,6 +43,10 @@ const (
 	// reminder can name them.
 	agingDraftDocumentsText = "5"
 	agingDraftDocuments     = 5
+	// agingChaseableDaysText: a document more than this many days past its due date is an old debt for the
+	// accountant to review, not one a shop writes a reminder about.
+	agingChaseableDaysText = "365"
+	agingChaseableDays     = 365
 )
 
 // agingBuckets lists the overdue buckets in age order with their Thai labels and
@@ -184,7 +188,8 @@ summary_metrics as (
     coalesce(sum(balance) filter (where bucket = 'NOT_DUE'), 0) as _metric_not_due_amount,
     coalesce(sum(balance) filter (where bucket = 'NO_DUE_DATE'), 0) as _metric_no_due_date_amount,
     coalesce(sum(balance) filter (where bucket = 'CREDIT'), 0) as _metric_credit_amount,
-    coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_OVER_365'), 0) as _metric_over_year_amount
+    coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_OVER_365'), 0) as _metric_over_year_amount,
+    coalesce(sum(balance) filter (where bucket in ('OVERDUE_1_30', 'OVERDUE_31_60', 'OVERDUE_61_90', 'OVERDUE_91_120', 'OVERDUE_120_PLUS') and days_past_due > ` + agingChaseableDaysText + `), 0) as _metric_stale_overdue_amount
   from bucketed
 ),
 bucket_row as (
@@ -237,6 +242,7 @@ overdue_rows as (
   from bucketed b
   left join ar_customer c on c.code = b.cust_code
   where b.bucket in ('OVERDUE_1_30', 'OVERDUE_31_60', 'OVERDUE_61_90', 'OVERDUE_91_120', 'OVERDUE_120_PLUS') and b.balance > 0
+    and b.days_past_due <= ` + agingChaseableDaysText + `
   group by b.cust_code
   having sum(b.balance) > 0
   order by sum(b.balance) desc, b.cust_code
@@ -257,9 +263,29 @@ overdue_doc_rows as (
     from bucketed b
     left join ar_customer c on c.code = b.cust_code
     where b.bucket in ('OVERDUE_1_30', 'OVERDUE_31_60', 'OVERDUE_61_90', 'OVERDUE_91_120', 'OVERDUE_120_PLUS') and b.balance > 0
+      and b.days_past_due <= ` + agingChaseableDaysText + `
       and b.cust_code in (select cust_code from overdue_rows)
   ) ranked
   where ranked.position <= ` + agingDraftDocumentsText + `
+),
+stale_rows as (
+  select 'stale'::text as _summary_kind, b.cust_code, max(coalesce(c.name_1, '')) as cust_name,
+    sum(b.balance) as balance,
+    sum(b.balance) as overdue_balance,
+    null::numeric as bucket_not_due, null::numeric as bucket_overdue_1_30, null::numeric as bucket_overdue_31_60,
+    null::numeric as bucket_overdue_61_90, null::numeric as bucket_overdue_91_120, null::numeric as bucket_overdue_over_120,
+    null::numeric as bucket_no_due_date, null::numeric as bucket_credit,
+    null::numeric as doc_age_0_30, null::numeric as doc_age_31_60, null::numeric as doc_age_61_90,
+    null::numeric as doc_age_91_180, null::numeric as doc_age_181_365, null::numeric as doc_age_over_365,
+    max(b.days_past_due) as max_days_past_due, null::text as doc_no, null::date as due_date
+  from bucketed b
+  left join ar_customer c on c.code = b.cust_code
+  where b.bucket in ('OVERDUE_1_30', 'OVERDUE_31_60', 'OVERDUE_61_90', 'OVERDUE_91_120', 'OVERDUE_120_PLUS') and b.balance > 0
+    and b.days_past_due > ` + agingChaseableDaysText + `
+  group by b.cust_code
+  having sum(b.balance) > 0
+  order by sum(b.balance) desc, b.cust_code
+  limit ` + agingSummaryDebtorRowsText + `
 ),
 selected_rows as (
   select * from bucket_row
@@ -269,6 +295,8 @@ selected_rows as (
   select * from overdue_rows
   union all
   select * from overdue_doc_rows
+  union all
+  select * from stale_rows
 )
 select selected_rows.*, summary_metrics.*,
   (selected_rows._summary_kind is null)::text as _summary_metric_row
@@ -283,12 +311,13 @@ type agingTotals struct {
 	notDue, noDueDate    *big.Rat
 	credit               *big.Rat
 	overYear             *big.Rat
+	staleOverdue         *big.Rat
 	buckets              map[string]*big.Rat
 	docAges              map[string]*big.Rat
 }
 
 func newAgingTotals() *agingTotals {
-	totals := &agingTotals{total: new(big.Rat), overdue: new(big.Rat), notDue: new(big.Rat), noDueDate: new(big.Rat), credit: new(big.Rat), overYear: new(big.Rat), buckets: map[string]*big.Rat{}, docAges: map[string]*big.Rat{}}
+	totals := &agingTotals{total: new(big.Rat), overdue: new(big.Rat), notDue: new(big.Rat), noDueDate: new(big.Rat), credit: new(big.Rat), overYear: new(big.Rat), staleOverdue: new(big.Rat), buckets: map[string]*big.Rat{}, docAges: map[string]*big.Rat{}}
 	for _, bucket := range agingBuckets {
 		totals.buckets[bucket.code] = new(big.Rat)
 	}
@@ -334,6 +363,9 @@ func agingTotalsFromSummary(steps map[string][]map[string]string, rows []map[str
 		return nil, err
 	}
 	if totals.overYear, err = read("over_year_amount"); err != nil {
+		return nil, err
+	}
+	if totals.staleOverdue, err = read("stale_overdue_amount"); err != nil {
 		return nil, err
 	}
 	totals.customers, _ = strconv.Atoi(integerText(summaryMetricOr(steps, "customer_count", "0")))
@@ -388,6 +420,11 @@ func agingTotalsFromDetail(rows []map[string]string) (*agingTotals, error) {
 		if bucket != agingBucketCredit {
 			customers[row["cust_code"]] = struct{}{}
 		}
+		if agingOverdueBucket(bucket) {
+			if days, _ := strconv.Atoi(integerText(row["days_past_due"])); days > agingChaseableDays {
+				totals.staleOverdue.Add(totals.staleOverdue, balance)
+			}
+		}
 		totals.documents++
 	}
 	for _, bucket := range agingBuckets {
@@ -410,14 +447,15 @@ func agingTotalsFromDetail(rows []map[string]string) (*agingTotals, error) {
 
 func (totals *agingTotals) metrics() map[string]string {
 	return map[string]string{
-		"customer_count":     strconv.Itoa(totals.customers),
-		"document_count":     strconv.Itoa(totals.documents),
-		"total_balance":      money(totals.total),
-		"overdue_amount":     money(totals.overdue),
-		"not_due_amount":     money(totals.notDue),
-		"no_due_date_amount": money(totals.noDueDate),
-		"credit_amount":      money(totals.credit),
-		"over_year_amount":   money(totals.overYear),
+		"customer_count":       strconv.Itoa(totals.customers),
+		"document_count":       strconv.Itoa(totals.documents),
+		"total_balance":        money(totals.total),
+		"overdue_amount":       money(totals.overdue),
+		"not_due_amount":       money(totals.notDue),
+		"no_due_date_amount":   money(totals.noDueDate),
+		"credit_amount":        money(totals.credit),
+		"over_year_amount":     money(totals.overYear),
+		"stale_overdue_amount": money(totals.staleOverdue),
 	}
 }
 
@@ -487,23 +525,24 @@ func buildAgingVisualizations(rows []map[string]string) ([]DashboardVisualizatio
 	if err != nil {
 		return nil, err
 	}
-	overdue, overdueDays, overdueDocs, err := buildOverdueDebtors(rows)
+	overdue, err := buildOverdueDebtors(rows)
 	if err != nil {
 		return nil, err
 	}
-	return compactVisualizations(composition, docAges, debtors, overdue, overdueDays, overdueDocs), nil
+	return append(compactVisualizations(composition, docAges, debtors), overdue...), nil
 }
 
-// buildOverdueDebtors ranks the customers who owe the most past their due date and says how long the oldest of their
-// overdue documents has been overdue. Two charts with the same customers in the same order, one in baht and one in days,
-// because a chart has one unit. A third list, kept for the assistant and hidden from people (its key starts with
-// "agent_"), names up to five of each such customer's oldest overdue documents so a payment reminder can say which.
-// A summary run carries these as its own rows; a detail run adds them up from the documents.
-func buildOverdueDebtors(rows []map[string]string) (DashboardVisualization, DashboardVisualization, DashboardVisualization, error) {
+// buildOverdueDebtors ranks the customers who owe the most past their due date, in two groups that are never mixed: the
+// ones a shop can write a reminder about (overdue up to agingChaseableDays) and the old debts an accountant should review
+// (overdue longer). Each group is a pair of charts with the same customers in the same order, one in baht and one in
+// days, because a chart has one unit. For the reminder group a third list, kept for the assistant and hidden from people
+// (its key starts with "agent_"), names up to five of each customer's oldest overdue documents so a reminder can say
+// which. A summary run carries these as its own rows; a detail run adds them up from the documents.
+func buildOverdueDebtors(rows []map[string]string) ([]DashboardVisualization, error) {
 	type document struct {
-		no, due, label string
-		amount         *big.Rat
-		days           int
+		no, due string
+		amount  *big.Rat
+		days    int
 	}
 	type debtor struct {
 		code, name string
@@ -511,80 +550,101 @@ func buildOverdueDebtors(rows []map[string]string) (DashboardVisualization, Dash
 		days       int
 		documents  []document
 	}
-	none := DashboardVisualization{}
-	byCustomer := map[string]*debtor{}
+	groups := map[string]map[string]*debtor{"overdue": {}, "stale": {}}
 	summary := false
 	for _, row := range realSummaryRows(rows) {
 		if row["_summary_kind"] != "" {
 			summary = true
 		}
 	}
-	get := func(row map[string]string) *debtor {
-		item := byCustomer[row["cust_code"]]
+	get := func(group string, row map[string]string) *debtor {
+		item := groups[group][row["cust_code"]]
 		if item == nil {
 			item = &debtor{code: row["cust_code"], name: row["cust_name"], amount: new(big.Rat)}
-			byCustomer[row["cust_code"]] = item
+			groups[group][row["cust_code"]] = item
 		}
 		return item
 	}
 	for _, row := range realSummaryRows(rows) {
 		kind := row["_summary_kind"]
 		switch {
-		case summary && kind == "overdue", !summary && agingOverdueBucket(row["bucket"]):
-			text, daysText := row["overdue_balance"], row["max_days_past_due"]
+		case summary && (kind == "overdue" || kind == "stale"), !summary && agingOverdueBucket(row["bucket"]):
+			group, text, daysText := kind, row["overdue_balance"], row["max_days_past_due"]
+			days, _ := strconv.Atoi(integerText(daysText))
 			if !summary {
 				text, daysText = row["balance"], row["days_past_due"]
+				days, _ = strconv.Atoi(integerText(daysText))
+				group = "overdue"
+				if days > agingChaseableDays {
+					group = "stale"
+				}
 			}
 			amount, err := decimal(text)
 			if err != nil {
-				return none, none, none, fieldDecimalError("overdue_balance", err)
+				return nil, fieldDecimalError("overdue_balance", err)
 			}
 			if amount.Sign() <= 0 {
 				continue
 			}
-			days, _ := strconv.Atoi(integerText(daysText))
-			item := get(row)
+			item := get(group, row)
 			item.amount.Add(item.amount, amount)
 			item.days = max(item.days, days)
-			if !summary {
+			if !summary && group == "overdue" {
 				item.documents = append(item.documents, document{no: row["doc_no"], due: dateOnly(row["due_date"]), amount: amount, days: days})
 			}
 		case summary && kind == "overdue_doc":
 			amount, err := decimal(row["balance"])
 			if err != nil {
-				return none, none, none, fieldDecimalError("balance", err)
+				return nil, fieldDecimalError("balance", err)
 			}
 			days, _ := strconv.Atoi(integerText(row["max_days_past_due"]))
-			item := get(row)
+			item := get("overdue", row)
 			item.documents = append(item.documents, document{no: row["doc_no"], due: dateOnly(row["due_date"]), amount: amount, days: days})
 		}
 	}
-	items := make([]*debtor, 0, len(byCustomer))
-	for _, item := range byCustomer {
-		if item.amount.Sign() > 0 {
-			items = append(items, item)
+	ranked := func(group string) []*debtor {
+		items := make([]*debtor, 0, len(groups[group]))
+		for _, item := range groups[group] {
+			if item.amount.Sign() > 0 {
+				items = append(items, item)
+			}
 		}
-	}
-	sort.Slice(items, func(i, j int) bool {
-		if comparison := items[i].amount.Cmp(items[j].amount); comparison != 0 {
-			return comparison > 0
+		sort.Slice(items, func(i, j int) bool {
+			if comparison := items[i].amount.Cmp(items[j].amount); comparison != 0 {
+				return comparison > 0
+			}
+			return items[i].code < items[j].code
+		})
+		if len(items) > dashboardTopLimit {
+			items = items[:dashboardTopLimit]
 		}
-		return items[i].code < items[j].code
-	})
-	if len(items) > dashboardTopLimit {
-		items = items[:dashboardTopLimit]
+		return items
 	}
-	if len(items) == 0 {
-		return none, none, none, nil
+	pair := func(items []*debtor, amountKey, amountTitle, daysKey, daysTitle string) (DashboardVisualization, DashboardVisualization, []string) {
+		if len(items) == 0 {
+			return DashboardVisualization{}, DashboardVisualization{}, nil
+		}
+		categories, amounts, days := make([]string, len(items)), make([]string, len(items)), make([]string, len(items))
+		for index, item := range items {
+			categories[index] = item.name
+			if categories[index] == "" {
+				categories[index] = item.code
+			}
+			amounts[index], days[index] = money(item.amount), strconv.Itoa(item.days)
+		}
+		return DashboardVisualization{Key: amountKey, Title: amountTitle, Intent: IntentRanking, Unit: UnitTHB, Categories: categories,
+				Series: []VisualizationSeries{{Key: "value", Label: "ยอดเลยกำหนด", Values: amounts}}},
+			DashboardVisualization{Key: daysKey, Title: daysTitle, Intent: IntentRanking, Unit: UnitCount, Categories: slicesClone(categories),
+				Series: []VisualizationSeries{{Key: "value", Label: "จำนวนวันที่เลยกำหนด", Values: days}}}, categories
 	}
-	categories, amounts, days := make([]string, len(items)), make([]string, len(items)), make([]string, len(items))
+	recent := ranked("overdue")
+	recentAmounts, recentDays, recentNames := pair(recent, "overdue_debtors", fmt.Sprintf("ลูกหนี้เลยกำหนดไม่เกิน %d วัน (ทวงได้) สูงสุด", agingChaseableDays),
+		"overdue_debtor_days", "เลยกำหนดมานานสุด (วัน) ของลูกหนี้ที่ทวงได้")
+	staleAmounts, staleDays, _ := pair(ranked("stale"), "stale_overdue_debtors", fmt.Sprintf("หนี้เก่าเลยกำหนดเกิน %d วัน (ควรทบทวน/ตัดหนี้) สูงสุด", agingChaseableDays),
+		"stale_overdue_debtor_days", "เลยกำหนดมานานสุด (วัน) ของหนี้เก่า")
+	var documents DashboardVisualization
 	var docNumbers, docAmounts, docDays, docCustomers, docDue []string
-	for index, item := range items {
-		categories[index] = item.name
-		if categories[index] == "" {
-			categories[index] = item.code
-		}
-		amounts[index], days[index] = money(item.amount), strconv.Itoa(item.days)
+	for index, item := range recent {
 		sort.SliceStable(item.documents, func(i, j int) bool {
 			if item.documents[i].days != item.documents[j].days {
 				return item.documents[i].days > item.documents[j].days
@@ -598,23 +658,18 @@ func buildOverdueDebtors(rows []map[string]string) (DashboardVisualization, Dash
 			docNumbers = append(docNumbers, doc.no)
 			docAmounts = append(docAmounts, money(doc.amount))
 			docDays = append(docDays, strconv.Itoa(doc.days))
-			docCustomers = append(docCustomers, categories[index])
+			docCustomers = append(docCustomers, recentNames[index])
 			docDue = append(docDue, doc.due)
 		}
 	}
-	ranking := DashboardVisualization{Key: "overdue_debtors", Title: "ลูกหนี้เลยกำหนดสูงสุด", Intent: IntentRanking, Unit: UnitTHB, Categories: categories,
-		Series: []VisualizationSeries{{Key: "value", Label: "ยอดเลยกำหนด", Values: amounts}}}
-	ranked := DashboardVisualization{Key: "overdue_debtor_days", Title: "เลยกำหนดมานานสุด (วัน) ของลูกหนี้เลยกำหนดสูงสุด", Intent: IntentRanking, Unit: UnitCount, Categories: slicesClone(categories),
-		Series: []VisualizationSeries{{Key: "value", Label: "จำนวนวันที่เลยกำหนด", Values: days}}}
-	if len(docNumbers) == 0 {
-		return ranking, ranked, none, nil
+	if len(docNumbers) > 0 {
+		documents = DashboardVisualization{Key: agentVisualizationPrefix + "overdue_documents", Title: "เอกสารที่เลยกำหนดของลูกหนี้ที่ทวงได้", Intent: IntentRanking, Unit: UnitTHB, Categories: docNumbers,
+			Series: []VisualizationSeries{
+				{Key: "value", Label: "ยอดค้างของเอกสาร", Values: docAmounts, PointLabels: docCustomers},
+				{Key: "days_past_due", Label: "จำนวนวันที่เลยกำหนด", Values: docDays, PointLabels: docDue},
+			}}
 	}
-	documents := DashboardVisualization{Key: agentVisualizationPrefix + "overdue_documents", Title: "เอกสารที่เลยกำหนดของลูกหนี้เลยกำหนดสูงสุด", Intent: IntentRanking, Unit: UnitTHB, Categories: docNumbers,
-		Series: []VisualizationSeries{
-			{Key: "value", Label: "ยอดค้างของเอกสาร", Values: docAmounts, PointLabels: docCustomers},
-			{Key: "days_past_due", Label: "จำนวนวันที่เลยกำหนด", Values: docDays, PointLabels: docDue},
-		}}
-	return ranking, ranked, documents, nil
+	return compactVisualizations(recentAmounts, recentDays, documents, staleAmounts, staleDays), nil
 }
 
 // agentVisualizationPrefix marks a visualization that exists for the assistant. The web pages leave it out and the
@@ -631,5 +686,8 @@ func dateOnly(value string) string {
 	}
 	return value
 }
+
+// AgingChaseableDays is how many days past its due date a document can be and still get a payment reminder.
+const AgingChaseableDays = agingChaseableDays
 
 func slicesClone(values []string) []string { return append([]string(nil), values...) }

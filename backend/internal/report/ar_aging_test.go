@@ -30,7 +30,7 @@ func agingSummaryFixture() map[string][]map[string]string {
 	metrics := map[string]string{
 		"_metric_row_count": "7", "_metric_customer_count": "2", "_metric_total_balance": "5500.00", "_metric_overdue_amount": "850.00",
 		"_metric_not_due_amount": "1000.00", "_metric_no_due_date_amount": "4000.00", "_metric_credit_amount": "-350.00",
-		"_metric_over_year_amount": "4250.00",
+		"_metric_over_year_amount": "4250.00", "_metric_stale_overdue_amount": "250.00",
 	}
 	merge := func(row map[string]string) map[string]string {
 		for key, value := range metrics {
@@ -44,8 +44,8 @@ func agingSummaryFixture() map[string][]map[string]string {
 			"doc_age_0_30": "1000.00", "doc_age_31_60": "500.00", "doc_age_61_90": "0", "doc_age_91_180": "100.00", "doc_age_181_365": "0", "doc_age_over_365": "4250.00"}),
 		merge(map[string]string{"_summary_kind": "ranking", "cust_code": "C2", "cust_name": "ลูกค้า 2", "balance": "3800.00", "overdue_balance": "100.00"}),
 		merge(map[string]string{"_summary_kind": "ranking", "cust_code": "C1", "cust_name": "ลูกค้า 1", "balance": "1750.00", "overdue_balance": "750.00"}),
-		merge(map[string]string{"_summary_kind": "overdue", "cust_code": "C1", "cust_name": "ลูกค้า 1", "balance": "750.00", "overdue_balance": "750.00", "max_days_past_due": "400"}),
-		merge(map[string]string{"_summary_kind": "overdue_doc", "cust_code": "C1", "cust_name": "ลูกค้า 1", "balance": "250.00", "overdue_balance": "250.00", "max_days_past_due": "400", "doc_no": "D3", "due_date": "2025-08-27"}),
+		merge(map[string]string{"_summary_kind": "overdue", "cust_code": "C1", "cust_name": "ลูกค้า 1", "balance": "500.00", "overdue_balance": "500.00", "max_days_past_due": "12"}),
+		merge(map[string]string{"_summary_kind": "stale", "cust_code": "C1", "cust_name": "ลูกค้า 1", "balance": "250.00", "overdue_balance": "250.00", "max_days_past_due": "400"}),
 		merge(map[string]string{"_summary_kind": "overdue_doc", "cust_code": "C1", "cust_name": "ลูกค้า 1", "balance": "500.00", "overdue_balance": "500.00", "max_days_past_due": "12", "doc_no": "D2", "due_date": "2026-09-19"}),
 		merge(map[string]string{"_summary_kind": "overdue_doc", "cust_code": "C2", "cust_name": "ลูกค้า 2", "balance": "100.00", "overdue_balance": "100.00", "max_days_past_due": "75", "doc_no": "D5", "due_date": "2026-07-18"}),
 		merge(map[string]string{"_summary_kind": "overdue", "cust_code": "C2", "cust_name": "ลูกค้า 2", "balance": "100.00", "overdue_balance": "100.00", "max_days_past_due": "75"}),
@@ -59,7 +59,7 @@ func TestAgingDetailRowsSummariseToTheHandCheckedTotals(t *testing.T) {
 	}
 	want := map[string]string{
 		"customer_count": "2", "document_count": "7", "total_balance": "5500.00", "overdue_amount": "850.00",
-		"not_due_amount": "1000.00", "no_due_date_amount": "4000.00", "credit_amount": "-350.00", "over_year_amount": "4250.00",
+		"not_due_amount": "1000.00", "no_due_date_amount": "4000.00", "credit_amount": "-350.00", "over_year_amount": "4250.00", "stale_overdue_amount": "250.00",
 	}
 	for name, value := range want {
 		if summary.Metrics[name] != value {
@@ -143,15 +143,20 @@ func TestAgingDashboardIsTheSameFromDetailAndFromSummary(t *testing.T) {
 		}
 		// Who to chase first: only what is past its due date (not the 4,000 with no due date), biggest first, with how long.
 		overdue, days := byKey["overdue_debtors"], byKey["overdue_debtor_days"]
-		if len(overdue.Categories) != 2 || overdue.Categories[0] != "ลูกค้า 1" || overdue.Series[0].Values[0] != "750.00" || overdue.Series[0].Values[1] != "100.00" ||
-			len(days.Categories) != 2 || days.Categories[0] != "ลูกค้า 1" || days.Series[0].Values[0] != "400" || days.Series[0].Values[1] != "75" || days.Unit != UnitCount {
+		if len(overdue.Categories) != 2 || overdue.Categories[0] != "ลูกค้า 1" || overdue.Series[0].Values[0] != "500.00" || overdue.Series[0].Values[1] != "100.00" ||
+			len(days.Categories) != 2 || days.Categories[0] != "ลูกค้า 1" || days.Series[0].Values[0] != "12" || days.Series[0].Values[1] != "75" || days.Unit != UnitCount {
 			t.Errorf("%s: overdue debtors = %+v, days = %+v", name, overdue, days)
+		}
+		// A debt more than a year past due is an old debt to review, not one to write a reminder about: it is kept apart.
+		stale, staleDays := byKey["stale_overdue_debtors"], byKey["stale_overdue_debtor_days"]
+		if len(stale.Categories) != 1 || stale.Categories[0] != "ลูกค้า 1" || stale.Series[0].Values[0] != "250.00" || staleDays.Series[0].Values[0] != "400" {
+			t.Errorf("%s: old debts = %+v, days = %+v", name, stale, staleDays)
 		}
 		// The documents behind those amounts, oldest first within a customer, for the assistant only.
 		documents := byKey["agent_overdue_documents"]
-		if got := strings.Join(documents.Categories, ","); got != "D3,D2,D5" || strings.Join(documents.Series[0].Values, ",") != "250.00,500.00,100.00" ||
-			strings.Join(documents.Series[0].PointLabels, ",") != "ลูกค้า 1,ลูกค้า 1,ลูกค้า 2" || strings.Join(documents.Series[1].PointLabels, ",") != "2025-08-27,2026-09-19,2026-07-18" ||
-			strings.Join(documents.Series[1].Values, ",") != "400,12,75" {
+		if got := strings.Join(documents.Categories, ","); got != "D2,D5" || strings.Join(documents.Series[0].Values, ",") != "500.00,100.00" ||
+			strings.Join(documents.Series[0].PointLabels, ",") != "ลูกค้า 1,ลูกค้า 2" || strings.Join(documents.Series[1].PointLabels, ",") != "2026-09-19,2026-07-18" ||
+			strings.Join(documents.Series[1].Values, ",") != "12,75" {
 			t.Errorf("%s: overdue documents = %+v", name, documents)
 		}
 		if len(debtors.Categories) != 2 || debtors.Categories[0] != "ลูกค้า 2" {

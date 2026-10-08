@@ -544,7 +544,7 @@ paths:
     post:
       tags: [Agent]
       operationId: postAgentCollectionDraft
-      description: Writes a payment reminder for one of the ten customers owing the most past their due date, from the receivable report's own figures, for the owner to copy and send. Nothing is sent and nothing is written to SML; the call log records that a draft was made, never its text or the customer. Needs a token that may see names and the receivable report; without the report it answers exactly like a missing report.
+      description: Writes a payment reminder for one of the ten customers owing the most past their due date (no more than a year past due; older debts are reported apart for review), from the receivable report's own figures, for the owner to copy and send. Nothing is sent and nothing is written to SML; the call log records that a draft was made, never its text or the customer. Needs a token that may see names and the receivable report; without the report it answers exactly like a missing report.
       security: [{AgentToken: []}]
       requestBody:
         required: true
@@ -552,7 +552,7 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/AgentDraftRequest'}
       responses:
-        '200': {description: "A draft, or why there is none (PREPARING, UNAVAILABLE, NOT_FOUND, AMBIGUOUS).", content: {application/json: {schema: {$ref: '#/components/schemas/AgentDraft'}}}}
+        '200': {description: "A draft, or why there is none (PREPARING, UNAVAILABLE, NOT_FOUND, AMBIGUOUS, NOT_CHASEABLE for a debt more than a year past due).", content: {application/json: {schema: {$ref: '#/components/schemas/AgentDraft'}}}}
         '401': {$ref: '#/components/responses/AgentRefusal'}
         '404': {$ref: '#/components/responses/AgentRefusal'}
         '422': {$ref: '#/components/responses/AgentRefusal'}
@@ -1679,7 +1679,7 @@ components:
       type: object
       required: [status]
       properties:
-        status: {type: string, enum: [READY, PREPARING, UNAVAILABLE, NOT_FOUND, AMBIGUOUS]}
+        status: {type: string, enum: [READY, PREPARING, UNAVAILABLE, NOT_FOUND, AMBIGUOUS, NOT_CHASEABLE]}
         message: {type: string}
         customer: {type: string}
         overdueAmount: {type: string, description: "Baht past the due date, as plain digits."}

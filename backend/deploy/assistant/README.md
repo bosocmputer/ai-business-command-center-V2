@@ -56,6 +56,10 @@ fee and threatens nothing. Nothing is sent and nothing is written to SML: the ow
 customer names (a reminder without a name is not a reminder). The call log records that a draft was made, never its text
 or the customer. Quotations and purchase orders are not drafted yet.
 
+Only debts up to 365 days past their due date get a reminder. Older ones are old debts for the accountant: the receivable
+report keeps them apart (KPI `stale_overdue_amount` and two charts), the draft tool answers `NOT_CHASEABLE` for them and
+the assistant says so instead of writing a letter about a debt from years ago.
+
 ## Alerts: the assistant speaks first
 
 The owner sets alerts in their own words ("tell me when overdue receivables pass 500,000") and the assistant stores them

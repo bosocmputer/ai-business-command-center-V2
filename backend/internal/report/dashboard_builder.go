@@ -208,6 +208,7 @@ func buildDashboardMetrics(key Key, current, previous SummaryResult, currentStep
 			metric("total_balance", "ยอดค้างรวม", UnitTHB), metric("overdue_amount", "ยอดเลยกำหนด", UnitTHB),
 			metric("no_due_date_amount", "ไม่ระบุวันครบกำหนด", UnitTHB), metric("over_year_amount", "ค้างเกิน 1 ปีนับจากวันที่ออกใบ", UnitTHB),
 			metric("customer_count", "จำนวนลูกหนี้ที่ค้าง", UnitCount),
+			metric("stale_overdue_amount", "เลยกำหนดเกิน 1 ปี (หนี้เก่า ควรทบทวน)", UnitTHB),
 		}, nil
 	case ARCustomerMovement:
 		currentDebit, currentCredit, err := movementTotalsFromSummary(current, currentSteps["rows"])

@@ -434,7 +434,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Writes a payment reminder for one of the ten customers owing the most past their due date, from the receivable report's own figures, for the owner to copy and send. Nothing is sent and nothing is written to SML; the call log records that a draft was made, never its text or the customer. Needs a token that may see names and the receivable report; without the report it answers exactly like a missing report. */
+        /** @description Writes a payment reminder for one of the ten customers owing the most past their due date (no more than a year past due; older debts are reported apart for review), from the receivable report's own figures, for the owner to copy and send. Nothing is sent and nothing is written to SML; the call log records that a draft was made, never its text or the customer. Needs a token that may see names and the receivable report; without the report it answers exactly like a missing report. */
         post: operations["postAgentCollectionDraft"];
         delete?: never;
         options?: never;
@@ -1415,7 +1415,7 @@ export interface components {
         };
         AgentDraft: {
             /** @enum {string} */
-            status: "READY" | "PREPARING" | "UNAVAILABLE" | "NOT_FOUND" | "AMBIGUOUS";
+            status: "READY" | "PREPARING" | "UNAVAILABLE" | "NOT_FOUND" | "AMBIGUOUS" | "NOT_CHASEABLE";
             message?: string;
             customer?: string;
             /** @description Baht past the due date, as plain digits. */
@@ -3974,7 +3974,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description A draft, or why there is none (PREPARING, UNAVAILABLE, NOT_FOUND, AMBIGUOUS). */
+            /** @description A draft, or why there is none (PREPARING, UNAVAILABLE, NOT_FOUND, AMBIGUOUS, NOT_CHASEABLE for a debt more than a year past due). */
             200: {
                 headers: {
                     [name: string]: unknown;
