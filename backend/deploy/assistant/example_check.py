@@ -114,11 +114,15 @@ for question, path, judge in CASES:
         skipped += 1
         continue
     answer, seconds = ask(question)
+    # AI-BCC refreshes a stale report when it is asked, so the figure the assistant saw can be newer than the one fetched
+    # above. Take the key from both sides of the question and accept either.
+    after = get(path) if path and judge in ("kpi", "compare") else {}
+    data_before = data
     problems = []
     if not answer:
         problems.append("no answer")
     elif judge == "kpi":
-        values = kpis(data)
+        values = kpis(data_before) + kpis(after)
         all_zero = bool(values) and all(re.fullmatch(r"-?0+(\.0+)?", str(v)) for v in values)
         if all_zero:  # the report says there is nothing (no items to reorder, say): the answer must say so too
             if not re.search(r"ไม่มี|ยังไม่มี|0", answer):
@@ -126,7 +130,7 @@ for question, path, judge in CASES:
         elif not any(figure_in(answer, v) for v in values):
             problems.append("no figure from the report in the answer")
     elif judge == "compare":
-        if not any(figure_in(answer, data.get(k)) for k in ("percent", "delta") if data.get(k)):
+        if not any(figure_in(answer, source.get(k)) for source in (data_before, after) for k in ("percent", "delta") if source.get(k)):
             problems.append("neither the percent nor the difference from the server is in the answer")
     elif judge.startswith("names:"):
         names = categories(data, judge.split(":", 1)[1])[:3]
