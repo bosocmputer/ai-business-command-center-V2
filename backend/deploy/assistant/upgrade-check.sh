@@ -56,7 +56,7 @@ for _ in $(seq 1 40); do
   if docker exec "$NAME" "$PY" /assistant/healthcheck.py >/dev/null 2>&1; then ok=1; break; fi
   sleep 3
 done
-if [ "$ok" = 1 ]; then echo "ok"; else echo; fail "the gateway did not become healthy in 2 minutes"; docker logs --tail 15 "$NAME" 2>&1 | cut -c1-200; fi
+if [ "$ok" = 1 ]; then echo "ok"; else echo; fail "the gateway did not become healthy in 2 minutes"; docker exec "$NAME" sh -c 'head -c 700 /opt/data/gateway_state.json' 2>&1; echo; docker logs --tail 15 "$NAME" 2>&1 | cut -c1-200; fi
 
 printf "2. no built-in tool enabled on any channel except memory ... "
 bad=""
