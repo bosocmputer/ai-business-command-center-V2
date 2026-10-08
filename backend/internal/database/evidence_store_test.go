@@ -41,8 +41,8 @@ func TestEvidenceCaseKeepsTheProofAfterNormalRetentionDeletesIt(t *testing.T) {
 		exec(`
 			insert into report_runs (id, tenant_id, report_key, source, result_kind, idempotency_key, status, period_preset, period_from, period_to,
 			  queued_at, started_at, finished_at, source_finished_at, expires_at, created_at, updated_at, dashboard_json)
-			values ($1, $2, 'sales_goods_services', 'SCHEDULE', 'SUMMARY', $3, 'SUCCEEDED', 'YESTERDAY', '2026-10-07', '2026-10-07', $4, $4, $4, $4, $5, $4, $4, '{"kpis":[{"key":"total_amount","value":"123456.00"}]}'::jsonb)`,
-			id, tenant, "evidence-"+id.String(), now.Add(-time.Hour), now.Add(-time.Minute)) // already expired: retention will delete it
+			values ($1, $2, 'sales_goods_services', 'SCHEDULE', 'SUMMARY', $3, 'SUCCEEDED', 'YESTERDAY', '2026-10-07', '2026-10-07', $4, $4, $4, $4, $5, $6, $6, '{"kpis":[{"key":"total_amount","value":"123456.00"}]}'::jsonb)`,
+			id, tenant, "evidence-"+id.String(), now.Add(-time.Hour), now.Add(-time.Minute), now.AddDate(-1, -1, 0)) // older than a year: retention will delete it
 	}
 	recipient := uuid.New()
 	exec(`insert into line_recipients (id, line_user_id_hash, line_user_id_ciphertext, line_user_id_nonce, encryption_key_id, status, verified_at) values ($1, $2, '\x01', '\x02', 'test', 'ACTIVE', $3)`, recipient, []byte(recipient.String()), now)
