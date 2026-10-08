@@ -442,6 +442,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/lookup/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Asks the shop's system one narrow question about one customer or item the master data copy already knows (customer_balance, customer_recent_sales, item_stock), read live and kept for five minutes. The statements are fixed text; the code is the only value used and must be a known record. Limited to two at once and thirty a shop per hour. Customer lookups need a token that may see names. A kind the recipient has no report for answers exactly like a missing report. The call log records the kind only. */
+        get: operations["getAgentLookup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/search": {
         parameters: {
             query?: never;
@@ -1468,6 +1485,36 @@ export interface components {
             notes?: string[];
             retryAfterSeconds?: number;
         };
+        AgentLookup: {
+            /** @enum {string} */
+            status: "READY" | "NOT_FOUND" | "BUSY" | "UNAVAILABLE";
+            message?: string;
+            /** @enum {string} */
+            kind: "customer_balance" | "customer_recent_sales" | "item_stock";
+            subject?: {
+                code: string;
+                name: string;
+            };
+            figures?: {
+                key: string;
+                label: string;
+                /** @description THB, COUNT, or the name of the item's unit. */
+                unit: string;
+                value: string;
+            }[];
+            tables?: {
+                title: string;
+                columns: string[];
+                rows: string[][];
+            }[];
+            /**
+             * Format: date-time
+             * @description When the shop's system was read.
+             */
+            asOf?: string;
+            cached?: boolean;
+            notes?: string[];
+        };
         AgentSearch: {
             /** @enum {string} */
             status: "READY" | "NOT_SYNCED" | "UNAVAILABLE";
@@ -1519,7 +1566,7 @@ export interface components {
         };
         AgentError: {
             /** @enum {string} */
-            status: "UNAUTHORIZED" | "NO_DATA" | "INVALID_PERIOD" | "INVALID_ALERT" | "INVALID_DRAFT" | "INVALID_SEARCH" | "RATE_LIMITED" | "AGENT_DISABLED" | "ERROR";
+            status: "UNAUTHORIZED" | "NO_DATA" | "INVALID_PERIOD" | "INVALID_ALERT" | "INVALID_DRAFT" | "INVALID_SEARCH" | "INVALID_LOOKUP" | "RATE_LIMITED" | "AGENT_DISABLED" | "ERROR";
             /** @description Plain Thai the assistant can pass on. */
             message: string;
         };
@@ -4064,6 +4111,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentDraft"];
+                };
+            };
+            401: components["responses"]["AgentRefusal"];
+            404: components["responses"]["AgentRefusal"];
+            422: components["responses"]["AgentRefusal"];
+            429: components["responses"]["AgentRefusal"];
+        };
+    };
+    getAgentLookup: {
+        parameters: {
+            query: {
+                /** @description A code returned by the search route. */
+                code: string;
+            };
+            header?: never;
+            path: {
+                kind: "customer_balance" | "customer_recent_sales" | "item_stock";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The figures, or why there are none (NOT_FOUND, BUSY, UNAVAILABLE). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentLookup"];
                 };
             };
             401: components["responses"]["AgentRefusal"];

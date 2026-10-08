@@ -389,6 +389,9 @@ func TestMasterDataCopyIsOffUntilSwitchedOn(t *testing.T) {
 	if err != nil || cfg.MasterSyncEnabled {
 		t.Fatalf("default: %v %v", cfg.MasterSyncEnabled, err)
 	}
+	if cfg.AgentLiveLookupsEnabled {
+		t.Fatal("live lookups are off by default")
+	}
 	if cfg.MasterSyncStartMinute != 6*60+30 || cfg.MasterSyncWindowMinutes != 240 {
 		t.Fatalf("the copy starts at 06:30 and runs four hours by default: %d %d", cfg.MasterSyncStartMinute, cfg.MasterSyncWindowMinutes)
 	}

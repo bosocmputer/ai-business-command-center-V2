@@ -18,6 +18,7 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/executionmode"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/httpapi"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/line"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/lookup"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/monitor"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/operations"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/recipient"
@@ -74,6 +75,10 @@ func main() {
 		ConfigureStaleRevalidation(cfg.StaleRevalidationEnabled)
 	agentStore := database.NewAgentStore(pool)
 	agentService := agent.NewService(agentStore, database.NewReportStore(pool), sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{}).ConfigureAlerts(agentStore).ConfigureMaster(database.NewMasterStore(pool))
+	if cfg.AgentLiveLookupsEnabled {
+		// A narrow client: a few thousand rows and a few megabytes are far more than any one lookup returns.
+		agentService.ConfigureLookups(lookup.NewRunner(smlService, sml.NewClient(smlPolicy, 25*time.Second, 4*1024*1024, 5_000), time.Now))
+	}
 	periodObserver := func(preset report.Preset, mode report.ParameterKind, result string) {
 		logger.Info("schedule period resolved", "event", "schedule_period_resolution", "preset", preset, "mode", mode, "result", result, "schedulePeriodResolutionTotal", 1)
 	}

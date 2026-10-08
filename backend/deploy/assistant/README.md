@@ -55,6 +55,17 @@ figures). Switch: `MASTER_SYNC_ENABLED=true` (off by default). Customers and sup
 report about them; an item search needs a report about items; otherwise the uniform "no data" answer. At most ten matches.
 An empty answer from SML never replaces an existing copy. The call log records the kind searched, never the words.
 
+## Live lookups: one customer or item, right now
+
+`lookup` asks the shop's system one narrow question about one customer or item that `search_master` found: `customer_balance`
+(total owed, split into overdue up to a year, old debts, not yet due, no due date, credit, plus the five oldest open
+documents; built on the receivable report's own base so it agrees with the report), `customer_recent_sales` (sales in the
+last 365 days and the latest five sales documents) and `item_stock` (on hand, to receive, to deliver, reserved, reorder point).
+Switch: `AGENT_LIVE_LOOKUPS_ENABLED=true` (off by default). The statements are fixed text and the only value used is a code
+the master data copy already holds; an unknown code never reaches the shop's system. Answers are kept five minutes, two run at
+once, a shop gets 30 real reads an hour (then BUSY), and the call log keeps the kind only. Customer lookups need a token that
+sees names and the matching report permission. Not built yet: price, document by number, supplier balance.
+
 ## Drafts: a reminder the owner copies and sends
 
 `draft_collection` writes a payment reminder for one of the ten customers who owe the most past their due date

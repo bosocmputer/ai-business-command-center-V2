@@ -557,6 +557,21 @@ paths:
         '404': {$ref: '#/components/responses/AgentRefusal'}
         '422': {$ref: '#/components/responses/AgentRefusal'}
         '429': {$ref: '#/components/responses/AgentRefusal'}
+  /api/v1/agent/lookup/{kind}:
+    get:
+      tags: [Agent]
+      operationId: getAgentLookup
+      description: Asks the shop's system one narrow question about one customer or item the master data copy already knows (customer_balance, customer_recent_sales, item_stock), read live and kept for five minutes. The statements are fixed text; the code is the only value used and must be a known record. Limited to two at once and thirty a shop per hour. Customer lookups need a token that may see names. A kind the recipient has no report for answers exactly like a missing report. The call log records the kind only.
+      security: [{AgentToken: []}]
+      parameters:
+        - {name: kind, in: path, required: true, schema: {type: string, enum: [customer_balance, customer_recent_sales, item_stock]}}
+        - {name: code, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 80}, description: "A code returned by the search route."}
+      responses:
+        '200': {description: "The figures, or why there are none (NOT_FOUND, BUSY, UNAVAILABLE).", content: {application/json: {schema: {$ref: '#/components/schemas/AgentLookup'}}}}
+        '401': {$ref: '#/components/responses/AgentRefusal'}
+        '404': {$ref: '#/components/responses/AgentRefusal'}
+        '422': {$ref: '#/components/responses/AgentRefusal'}
+        '429': {$ref: '#/components/responses/AgentRefusal'}
   /api/v1/agent/search:
     get:
       tags: [Agent]
@@ -1717,6 +1732,41 @@ components:
         candidates: {type: array, items: {type: string}, description: "Names the owner can choose from (AMBIGUOUS, NOT_FOUND)."}
         notes: {type: array, items: {type: string}}
         retryAfterSeconds: {type: integer}
+    AgentLookup:
+      type: object
+      required: [status, kind]
+      properties:
+        status: {type: string, enum: [READY, NOT_FOUND, BUSY, UNAVAILABLE]}
+        message: {type: string}
+        kind: {type: string, enum: [customer_balance, customer_recent_sales, item_stock]}
+        subject:
+          type: object
+          required: [code, name]
+          properties:
+            code: {type: string}
+            name: {type: string}
+        figures:
+          type: array
+          items:
+            type: object
+            required: [key, label, unit, value]
+            properties:
+              key: {type: string}
+              label: {type: string}
+              unit: {type: string, description: "THB, COUNT, or the name of the item's unit."}
+              value: {type: string}
+        tables:
+          type: array
+          items:
+            type: object
+            required: [title, columns, rows]
+            properties:
+              title: {type: string}
+              columns: {type: array, items: {type: string}}
+              rows: {type: array, items: {type: array, items: {type: string}}}
+        asOf: {type: string, format: date-time, description: "When the shop's system was read."}
+        cached: {type: boolean}
+        notes: {type: array, items: {type: string}}
     AgentSearch:
       type: object
       required: [status, totalFound]
@@ -1768,7 +1818,7 @@ components:
       type: object
       required: [status, message]
       properties:
-        status: {type: string, enum: [UNAUTHORIZED, NO_DATA, INVALID_PERIOD, INVALID_ALERT, INVALID_DRAFT, INVALID_SEARCH, RATE_LIMITED, AGENT_DISABLED, ERROR]}
+        status: {type: string, enum: [UNAUTHORIZED, NO_DATA, INVALID_PERIOD, INVALID_ALERT, INVALID_DRAFT, INVALID_SEARCH, INVALID_LOOKUP, RATE_LIMITED, AGENT_DISABLED, ERROR]}
         message: {type: string, description: Plain Thai the assistant can pass on.}
     AgentContext:
       type: object

@@ -413,6 +413,10 @@ func (agentTestMaster) SearchMaster(context.Context, uuid.UUID, agent.MasterKind
 	return agent.MasterResult{Matches: []agent.MasterMatch{{Code: "A01", Name: "ปูนซีเมนต์", Unit: "ถุง"}}, Total: 1, SyncedAt: &synced}, nil
 }
 
+func (agentTestMaster) MasterRecord(context.Context, uuid.UUID, agent.MasterKind, string) (agent.MasterMatch, bool, error) {
+	return agent.MasterMatch{Code: "A01", Name: "ปูนซีเมนต์"}, true, nil
+}
+
 func TestAgentSearchReturnsMatchesAndExplainsABadQuery(t *testing.T) {
 	store := newAgentStore()
 	store.permitted = []report.Key{report.StockBalance}
@@ -426,5 +430,37 @@ func TestAgentSearchReturnsMatchesAndExplainsABadQuery(t *testing.T) {
 	bad := agentGet(handler, "/api/v1/agent/search?kind=item&q=x", "abcc_token")
 	if bad.Code != http.StatusUnprocessableEntity || !strings.Contains(bad.Body.String(), "INVALID_SEARCH") || !strings.Contains(bad.Body.String(), "อย่างน้อย 2 ตัวอักษร") {
 		t.Fatalf("bad query: %d %s", bad.Code, bad.Body.String())
+	}
+}
+
+type agentTestLive struct{}
+
+func (agentTestLive) Lookup(context.Context, uuid.UUID, agent.LookupKind, string, string) (agent.LookupResult, error) {
+	return agent.LookupResult{Found: true, AsOf: time.Date(2026, 10, 1, 5, 0, 0, 0, time.UTC), Figures: []agent.Figure{{Key: "on_hand", Label: "คงเหลือ", Unit: "ถุง", Value: "1250"}}}, nil
+}
+
+func TestAgentLookupReturnsFiguresAndRefusesLikeAMissingReport(t *testing.T) {
+	store := newAgentStore()
+	store.permitted = []report.Key{report.StockBalance}
+	now := time.Date(2026, 10, 1, 5, 0, 0, 0, time.UTC)
+	service := agent.NewService(store, agentTestSnapshots{}, agentTestHasher{}, bytes.NewReader(bytes.Repeat([]byte{3}, 64)), agent.Alias(agentTestHasher{}), func() time.Time { return now }, agent.Config{}).
+		ConfigureMaster(agentTestMaster{}).ConfigureLookups(agentTestLive{})
+	handler := NewHandler(Dependencies{Readiness: readinessFunc(func(context.Context) error { return nil }), AdminAuth: &fakeAdminAuth{}, Agent: service, AgentEnabled: true})
+	ok := agentGet(handler, "/api/v1/agent/lookup/item_stock?code=A01", "abcc_token")
+	if ok.Code != http.StatusOK || !strings.Contains(ok.Body.String(), `"value":"1250"`) || !strings.Contains(ok.Body.String(), `"status":"READY"`) {
+		t.Fatalf("lookup: %d %s", ok.Code, ok.Body.String())
+	}
+	missing := agentGet(handler, "/api/v1/agent/reports/no_such_report", "abcc_token")
+	forbidden := agentGet(handler, "/api/v1/agent/lookup/customer_balance?code=A01", "abcc_token") // no receivable report
+	if forbidden.Code != http.StatusNotFound || !bytes.Equal(forbidden.Body.Bytes(), missing.Body.Bytes()) {
+		t.Fatalf("a forbidden lookup must answer like a missing report: %d %s", forbidden.Code, forbidden.Body.String())
+	}
+	bad := agentGet(handler, "/api/v1/agent/lookup/item_stock?code=", "abcc_token")
+	if bad.Code != http.StatusUnprocessableEntity || !strings.Contains(bad.Body.String(), "INVALID_LOOKUP") {
+		t.Fatalf("empty code: %d %s", bad.Code, bad.Body.String())
+	}
+	bare := agentTestHandler(store, true)
+	if got := agentGet(bare, "/api/v1/agent/lookup/item_stock?code=A01", "abcc_token"); got.Code != http.StatusNotFound || !bytes.Equal(got.Body.Bytes(), missing.Body.Bytes()) {
+		t.Fatalf("lookups that are not switched on must answer like a missing report: %d %s", got.Code, got.Body.String())
 	}
 }

@@ -145,5 +145,15 @@ def search_master(kind: str, query: str) -> str:
     return call("/search", {"kind": kind, "q": query})
 
 
+@mcp.tool()
+def lookup(kind: str, code: str) -> str:
+    """Ask the shop's system one narrow question about ONE customer or item, read live right now. kind is one of:
+    customer_balance (what the customer owes now: total, overdue up to a year, old debts, no-due-date, and the oldest open documents),
+    customer_recent_sales (sales in the last 365 days and the latest sales documents) or item_stock (on hand, to receive, to deliver,
+    reserved, reorder point). code is the exact code from search_master: find it there first, never guess a code. Give the owner
+    the figures exactly as returned and say they were read live (asOf). Use get_report instead for totals over the whole shop."""
+    return call("/lookup/" + urllib.parse.quote(kind, safe=""), {"code": code})
+
+
 if __name__ == "__main__":
     mcp.run()

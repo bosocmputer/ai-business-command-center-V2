@@ -25,6 +25,15 @@ func (master *fakeMaster) SearchMaster(_ context.Context, _ uuid.UUID, kind Mast
 	return master.result, nil
 }
 
+func (master *fakeMaster) MasterRecord(_ context.Context, _ uuid.UUID, kind MasterKind, code string) (MasterMatch, bool, error) {
+	for _, match := range master.result.Matches {
+		if match.Code == code {
+			return match, true, nil
+		}
+	}
+	return MasterMatch{}, false, nil
+}
+
 func searchService(master *fakeMaster, permitted ...report.Key) (*Service, *fakeStore) {
 	store := &fakeStore{permitted: permitted}
 	return newService(store, &fakeSnapshots{}).ConfigureMaster(master), store

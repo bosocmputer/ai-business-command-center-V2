@@ -687,6 +687,10 @@ func dateOnly(value string) string {
 	return value
 }
 
+// ARAgingBaseSQL is the open-document CTEs the receivable report is built on (as-of date is $1), for lookups that
+// ask the same question about one customer so the answer agrees with the report.
+const ARAgingBaseSQL = arAgingBaseSQL
+
 // AgingChaseableDays is how many days past its due date a document can be and still get a payment reminder.
 const AgingChaseableDays = agingChaseableDays
 

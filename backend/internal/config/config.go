@@ -52,7 +52,9 @@ type Config struct {
 	// and then only record what they would have said (dry run) until sending is switched on too.
 	AgentAlertsEnabled bool
 	// The worker copies the shop's customers, suppliers and items from SML once a day for the assistant's search.
-	MasterSyncEnabled       bool
+	MasterSyncEnabled bool
+	// The assistant can ask the shop's system one narrow live question about a known customer or item. Off until switched on.
+	AgentLiveLookupsEnabled bool
 	MasterSyncStartMinute   int
 	MasterSyncWindowMinutes int
 	AgentAlertDryRun        bool
@@ -211,6 +213,10 @@ func Load(lookup LookupFunc) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	liveLookupsEnabled, err := boolValue(lookup, "AGENT_LIVE_LOOKUPS_ENABLED", false)
+	if err != nil {
+		return Config{}, err
+	}
 	masterSyncEnabled, err := boolValue(lookup, "MASTER_SYNC_ENABLED", false)
 	if err != nil {
 		return Config{}, err
@@ -335,6 +341,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		AgentAPIEnabled:              agentAPIEnabled,
 		AgentAlertsEnabled:           agentAlertsEnabled,
 		MasterSyncEnabled:            masterSyncEnabled,
+		AgentLiveLookupsEnabled:      liveLookupsEnabled,
 		MasterSyncStartMinute:        masterSyncStartMinute,
 		MasterSyncWindowMinutes:      masterSyncWindowMinutes,
 		AgentAlertDryRun:             agentAlertDryRun,

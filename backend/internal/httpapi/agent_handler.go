@@ -23,6 +23,7 @@ type AgentAPI interface {
 	Alerts(ctx context.Context, principal agent.Principal) (agent.AlertsResponse, error)
 	SetAlert(ctx context.Context, principal agent.Principal, rule string, request agent.AlertSetRequest, requestID string) (agent.AlertView, error)
 	DraftCollection(ctx context.Context, principal agent.Principal, request agent.DraftRequest) (agent.DraftResponse, error)
+	LiveLookup(ctx context.Context, principal agent.Principal, kind, code string) (agent.LookupResponse, error)
 	SearchMaster(ctx context.Context, principal agent.Principal, kind, query string) (agent.SearchResponse, error)
 	DraftPurchaseOrder(ctx context.Context, principal agent.Principal) (agent.PurchaseDraftResponse, error)
 	IssueToken(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID, namesVisible bool) (agent.IssuedToken, error)
@@ -119,6 +120,10 @@ func registerAgentRoutes(router chi.Router, api AgentAPI, enabled bool) {
 			result, err := api.DraftCollection(request.Context(), agentPrincipal(request), input)
 			respondAgent(response, result, err)
 		})
+		group.Get("/lookup/{kind}", func(response http.ResponseWriter, request *http.Request) {
+			result, err := api.LiveLookup(request.Context(), agentPrincipal(request), chi.URLParam(request, "kind"), request.URL.Query().Get("code"))
+			respondAgent(response, result, err)
+		})
 		group.Get("/search", func(response http.ResponseWriter, request *http.Request) {
 			query := request.URL.Query()
 			result, err := api.SearchMaster(request.Context(), agentPrincipal(request), query.Get("kind"), query.Get("q"))
@@ -136,6 +141,11 @@ func registerAgentRoutes(router chi.Router, api AgentAPI, enabled bool) {
 
 func isInvalidAlert(err error) bool {
 	var invalid *agent.InvalidAlertError
+	return errors.As(err, &invalid)
+}
+
+func isInvalidLookup(err error) bool {
+	var invalid *agent.InvalidLookupError
 	return errors.As(err, &invalid)
 }
 
@@ -158,12 +168,16 @@ func respondAgent(response http.ResponseWriter, result any, err error) {
 	switch {
 	case err == nil:
 		writeAgentJSON(response, http.StatusOK, result)
-	case errors.Is(err, agent.ErrNoData), errors.Is(err, agent.ErrAlertsUnavailable), errors.Is(err, agent.ErrMasterUnavailable):
+	case errors.Is(err, agent.ErrNoData), errors.Is(err, agent.ErrAlertsUnavailable), errors.Is(err, agent.ErrMasterUnavailable), errors.Is(err, agent.ErrLookupUnavailable):
 		writeAgentJSON(response, http.StatusNotFound, agentError{Status: "NO_DATA", Message: agent.MessageNoData})
 	case isInvalidAlert(err):
 		var invalid *agent.InvalidAlertError
 		_ = errors.As(err, &invalid)
 		writeAgentJSON(response, http.StatusUnprocessableEntity, agentError{Status: "INVALID_ALERT", Message: invalid.Message})
+	case isInvalidLookup(err):
+		var invalid *agent.InvalidLookupError
+		_ = errors.As(err, &invalid)
+		writeAgentJSON(response, http.StatusUnprocessableEntity, agentError{Status: "INVALID_LOOKUP", Message: invalid.Message})
 	case isInvalidSearch(err):
 		var invalid *agent.InvalidSearchError
 		_ = errors.As(err, &invalid)

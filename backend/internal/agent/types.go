@@ -23,6 +23,7 @@ const (
 	ToolAlertSet       Tool = "alert_set"
 	ToolDraft          Tool = "draft"
 	ToolSearch         Tool = "search"
+	ToolLookup         Tool = "lookup"
 )
 
 type Outcome string
@@ -36,6 +37,7 @@ const (
 	OutcomeInvalidAlert  Outcome = "INVALID_ALERT"
 	OutcomeInvalidDraft  Outcome = "INVALID_DRAFT"
 	OutcomeInvalidSearch Outcome = "INVALID_SEARCH"
+	OutcomeInvalidLookup Outcome = "INVALID_LOOKUP"
 	OutcomeRateLimited   Outcome = "RATE_LIMITED"
 )
 

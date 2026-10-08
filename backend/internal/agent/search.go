@@ -39,6 +39,8 @@ type MasterResult struct {
 
 type MasterStore interface {
 	SearchMaster(ctx context.Context, tenantID uuid.UUID, kind MasterKind, words []string, limit int) (MasterResult, error)
+	// MasterRecord finds one record by its exact code, for a live lookup to name the record it is about.
+	MasterRecord(ctx context.Context, tenantID uuid.UUID, kind MasterKind, code string) (MasterMatch, bool, error)
 }
 
 var ErrMasterUnavailable = errors.New("master data search is not available")

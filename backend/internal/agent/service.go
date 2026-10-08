@@ -50,6 +50,7 @@ type Service struct {
 	alias     func(tenantID uuid.UUID, name string) string
 	alerts    AlertStore
 	master    MasterStore
+	live      LiveSource
 	now       func() time.Time
 	config    Config
 }

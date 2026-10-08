@@ -156,3 +156,17 @@ func (store *MasterStore) SearchMaster(ctx context.Context, tenantID uuid.UUID, 
 	}
 	return result, rows.Err()
 }
+
+// MasterRecord finds one record by its exact code (inactive ones too: an old customer can still owe money).
+func (store *MasterStore) MasterRecord(ctx context.Context, tenantID uuid.UUID, kind agent.MasterKind, code string) (agent.MasterMatch, bool, error) {
+	var match agent.MasterMatch
+	err := store.pool.QueryRow(ctx, `select code, name, phone, unit, supplier_code from master_items where tenant_id = $1 and kind = $2 and code = $3`,
+		tenantID, string(kind), code).Scan(&match.Code, &match.Name, &match.Phone, &match.Unit, &match.SupplierCode)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return agent.MasterMatch{}, false, nil
+	}
+	if err != nil {
+		return agent.MasterMatch{}, false, fmt.Errorf("read master record: %w", err)
+	}
+	return match, true, nil
+}

@@ -38,6 +38,7 @@ x-app-environment: &app-environment
   # Alerts the owner sets by talking to the assistant. Off; when on, a dry run (records, sends nothing) until sending is switched on.
   AGENT_ALERTS_ENABLED: ${AGENT_ALERTS_ENABLED:-false}
   MASTER_SYNC_ENABLED: ${MASTER_SYNC_ENABLED:-false}
+  AGENT_LIVE_LOOKUPS_ENABLED: ${AGENT_LIVE_LOOKUPS_ENABLED:-false}
   MASTER_SYNC_START_MINUTE: ${MASTER_SYNC_START_MINUTE:-390}
   MASTER_SYNC_WINDOW_MINUTES: ${MASTER_SYNC_WINDOW_MINUTES:-240}
   AGENT_ALERT_DRY_RUN: ${AGENT_ALERT_DRY_RUN:-true}

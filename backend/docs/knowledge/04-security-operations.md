@@ -57,6 +57,12 @@ tags: [backend, security, operations, retention]
 - This is personal data (names, phone numbers) copied into the AI-BCC database: it is covered by the same backups, is removed with the shop (`on delete cascade`), is never returned to a token that may not see names (customers and suppliers), and the call log keeps the kind of search only, never the words. Add it to the shop agreement's list of what AI-BCC stores.
 - `GET /api/v1/agent/search?kind=&q=` (tool `search_master`) returns at most ten matches. Words must all appear in the name, code or phone digits.
 
+## Assistant live lookups
+
+- `GET /api/v1/agent/lookup/{kind}?code=` (tool `lookup`; kinds `customer_balance`, `customer_recent_sales`, `item_stock`) reads the shop's SML live for one known record. Off by default (`AGENT_LIVE_LOOKUPS_ENABLED`); runs in the API process with a narrow SML client (25 s, 5,000 rows).
+- Safety: fixed SELECT text; the code must exist in `master_items` for the tenant and kind and is rendered as a quoted literal; at most two statements per question; 2 at once, 30 real reads per tenant per hour (in memory, resets on restart), answers kept 5 minutes; each lookup needs a report permission (receivable aging, sales, or stock balance/reorder) and, for customers, a token that sees names; otherwise the uniform NO_DATA answer.
+- `agent_calls` records `tool=lookup` and the kind as `report_key`; never the code, name or figures.
+
 ## Assistant drafts
 
 - `POST /api/v1/agent/drafts/collection` (tool `draft_collection`) returns a payment-reminder text for one customer among the ten owing the most past their due date. The text is built in `internal/agent/draft.go` from the receivable report's `overdue_debtors` and `overdue_debtor_days` charts (same customers, same order) and the assistant-only list `agent_overdue_documents` (up to five oldest overdue documents per customer: number, due date, balance, days; customer names ride in point labels). Keys starting `agent_` are hidden from the web pages and are not returned by the assistant's report tool. The model never writes the numbers.
