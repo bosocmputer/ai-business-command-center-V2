@@ -1,6 +1,6 @@
 ---
 status: current
-last_verified: 2026-07-21
+last_verified: 2026-10-08
 source_of_truth: [cmd/api/main.go, cmd/worker/main.go, cmd/sentinel/main.go, internal/database/pool.go, internal/httpapi/operations_handler.go, internal/httpapi/incident_handler.go, internal/database/sentinel_subject_store.go, internal/failure/catalog.go, deploy/compose.production.yml]
 tags: [backend, architecture, multitenant]
 ---
@@ -31,6 +31,15 @@ Sentinel monitor (independent process)
 - `cmd/sentinel` observes terminal state and runtime probes without joining business transactions or querying SML.
 - PostgreSQL stores configuration, encrypted credentials, sessions, permissions, schedules, report/snapshot state, delivery state, audit, idempotency, leases, and circuits.
 - JavaWS and LINE are external dependencies with explicit timeout and safe failure behavior.
+
+## Owner assistant (added 2026-10)
+
+An optional overlay (`deploy/assistant/compose.assistant.yml`) runs the Hermes agent beside the stack on an internal `agent` network with
+an allow-list egress proxy. It reaches only the API's read-mostly `/api/v1/agent/*` surface with a per-recipient bearer token; it has
+no route to the database, the worker or SML, and no built-in tools except memory. The API serves it stored report snapshots, a daily
+read-only copy of master data, and a few narrow live lookups (`internal/lookup`). The worker adds three loops for it: the daily alert and
+morning-digest check (`internal/alert`, delivered by a signed webhook, no model involved), the daily master data copy (`internal/master`)
+and retention of its logs. See [Security and operations](04-security-operations.md) and the [Agent API ADR](adr/0001-agent-api.md).
 
 ## Multi-tenant Isolation
 

@@ -1,7 +1,7 @@
 ---
 status: current
 last_verified: 2026-10-08
-source_of_truth: [backend/cmd/onboarding-check, backend/internal/onboarding, backend/deploy/onboard-check.sh]
+source_of_truth: [cmd/onboarding-check, internal/onboarding, deploy/onboard-check.sh]
 tags: [onboarding, runbook]
 ---
 

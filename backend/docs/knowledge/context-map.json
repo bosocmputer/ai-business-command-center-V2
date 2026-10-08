@@ -148,15 +148,28 @@
       "id": "agent-api",
       "sourcePatterns": [
         "internal/agent/**",
+        "internal/alert/**",
+        "internal/master/**",
+        "internal/lookup/**",
+        "internal/onboarding/**",
+        "internal/thaifmt/**",
         "internal/httpapi/agent_handler.go",
         "internal/database/agent_store.go",
-        "internal/database/migrations/000041_agent_api.sql"
+        "internal/database/agent_alert_store.go",
+        "internal/database/master_store.go",
+        "internal/database/evidence_store.go",
+        "internal/database/onboarding_store.go",
+        "cmd/evidence/**",
+        "cmd/onboarding-check/**",
+        "deploy/assistant/**"
       ],
       "excludePatterns": [
         "**/*_test.go"
       ],
       "contextDocuments": [
         "docs/knowledge/04-security-operations.md",
+        "docs/knowledge/05-new-shop-onboarding.md",
+        "docs/knowledge/06-multi-shop-conditions.md",
         "docs/knowledge/adr/0001-agent-api.md"
       ],
       "fallback": false

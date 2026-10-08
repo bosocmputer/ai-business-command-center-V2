@@ -1,7 +1,7 @@
 ---
 status: current
 last_verified: 2026-10-08
-source_of_truth: [backend/cmd/evidence, backend/deploy/assistant/upgrade-check.sh, backend/internal/agent/service.go]
+source_of_truth: [cmd/evidence, deploy/assistant/upgrade-check.sh, internal/agent/service.go]
 tags: [operations, scaling, runbook]
 ---
 
