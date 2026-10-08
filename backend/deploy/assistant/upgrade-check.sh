@@ -52,11 +52,25 @@ fail() { echo "  FAIL $1"; failed=$((failed + 1)); }
 
 printf "1. gateway healthy ... "
 ok=0
+# The candidate has a made-up Telegram token, so the gateway reports "degraded" with only telegram failed: that is the expected
+# state. Anything else failed (api_server, webhook) or a state that is neither running nor degraded is a real problem.
+cat > /tmp/gateway_ok.py <<'PYEOF'
+import json, sys
+try:
+    state = json.load(open("/opt/data/gateway_state.json"))
+except (OSError, ValueError):
+    sys.exit(1)
+platforms = state.get("platforms", {})
+others_broken = [name for name, info in platforms.items() if name != "telegram" and info.get("state") != "connected"]
+good = state.get("gateway_state") in ("running", "degraded") and state.get("session_store", {}).get("status") == "ok" and not others_broken and "webhook" in platforms
+sys.exit(0 if good else 1)
+PYEOF
 for _ in $(seq 1 40); do
-  if docker exec "$NAME" "$PY" /assistant/healthcheck.py >/dev/null 2>&1; then ok=1; break; fi
+  if docker exec -i "$NAME" "$PY" - < /tmp/gateway_ok.py >/dev/null 2>&1; then ok=1; break; fi
   sleep 3
 done
-if [ "$ok" = 1 ]; then echo "ok"; else echo; fail "the gateway did not become healthy in 2 minutes"; docker exec "$NAME" sh -c 'head -c 700 /opt/data/gateway_state.json' 2>&1; echo; docker logs --tail 15 "$NAME" 2>&1 | cut -c1-200; fi
+rm -f /tmp/gateway_ok.py
+if [ "$ok" = 1 ]; then echo "ok"; else echo; fail "the gateway did not become healthy in 2 minutes (only telegram may be failed)"; docker exec "$NAME" sh -c 'head -c 900 /opt/data/gateway_state.json' 2>&1; echo; docker logs --tail 15 "$NAME" 2>&1 | cut -c1-200; fi
 
 printf "2. no built-in tool enabled on any channel except memory ... "
 bad=""
