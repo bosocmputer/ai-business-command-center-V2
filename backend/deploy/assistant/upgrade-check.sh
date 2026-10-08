@@ -26,8 +26,10 @@ cleanup() {
   rm -f "$ENVFILE"
 }
 trap cleanup EXIT INT TERM
-# The live secrets minus everything that would reach people: no Telegram bot, no allowed users, no alert destinations.
-grep -v -E '^(TELEGRAM_|ALERT_)' secrets/assistant/hermes.env > "$ENVFILE"
+# The live secrets minus everything that would reach people: no Telegram bot, no allowed users, no real alert destination.
+grep -v -E '^(TELEGRAM_|ALERT_CHAT_IDS)' secrets/assistant/hermes.env > "$ENVFILE"
+# The webhook channel must exist in the candidate so its tools can be checked; with no bot token and a made-up chat id nothing can be sent.
+echo 'ALERT_CHAT_IDS=1' >> "$ENVFILE"
 echo "pulling $IMAGE"
 docker pull -q "$IMAGE" >/dev/null
 docker volume create "$VOLUME" >/dev/null
