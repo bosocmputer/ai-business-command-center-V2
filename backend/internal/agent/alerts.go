@@ -74,7 +74,8 @@ func (err *InvalidAlertError) Error() string { return "alert threshold is not va
 // commas and spaces ignored, inside the rule's range. It returns the number and its plain text form.
 func ParseAlertThreshold(def AlertRuleDef, raw string) (*big.Rat, string, error) {
 	invalid := &InvalidAlertError{Message: fmt.Sprintf("เกณฑ์ของ “%s” ต้องเป็น%s ระหว่าง %s ถึง %s", def.Label, unitPhrase(def.Unit), groupDigits(def.Min), groupDigits(def.Max))}
-	cleaned := strings.NewReplacer(",", "", " ", "", "_", "").Replace(strings.TrimSpace(raw))
+	cleaned := stripUnitWords(strings.TrimSpace(raw))
+	cleaned = strings.NewReplacer(",", "", " ", "", "_", "").Replace(cleaned)
 	if cleaned == "" || strings.ContainsAny(cleaned, "eE+-") {
 		return nil, "", invalid
 	}
@@ -96,6 +97,25 @@ func ParseAlertThreshold(def AlertRuleDef, raw string) (*big.Rat, string, error)
 		text = strings.TrimSuffix(strings.TrimRight(text, "0"), ".")
 	}
 	return value, text, nil
+}
+
+// stripUnitWords drops the unit a person naturally says after or before a number ("40%", "500,000 บาท", "3 รายการ"), so the
+// assistant does not have to be trusted to send bare digits. Anything else that is not a number is still refused.
+func stripUnitWords(text string) string {
+	words := []string{"เปอร์เซ็นต์", "เปอร์เซนต์", "รายการ", "บาท", "%", "฿"}
+	for _, word := range words { // at most one unit before the number...
+		if trimmed := strings.TrimPrefix(text, word); trimmed != text {
+			text = strings.TrimSpace(trimmed)
+			break
+		}
+	}
+	for _, word := range words { // ...and at most one after it
+		if trimmed := strings.TrimSuffix(text, word); trimmed != text {
+			text = strings.TrimSpace(trimmed)
+			break
+		}
+	}
+	return text
 }
 
 func unitPhrase(unit AlertUnit) string {

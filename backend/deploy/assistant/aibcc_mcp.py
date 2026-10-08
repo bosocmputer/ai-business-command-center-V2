@@ -100,7 +100,7 @@ def alerts() -> str:
 def alert_set(rule_key: str, threshold: str = "", enabled: bool = True) -> str:
     """Set, change or switch off ONE alert, only when the owner clearly asks for it in this conversation.
     rule_key is one of the keys from alerts(). threshold is the number the owner said, as digits (baht, a count of items or a
-    percent depending on the rule); leave it empty to switch a rule off (enabled=false) or back on with its old threshold.
+    percent depending on the rule), digits only without a unit such as "%" or "baht"; leave it empty to switch a rule off (enabled=false) or back on with its old threshold.
     This changes only the owner's own alert settings. Read the result back to the owner."""
     return call("/alerts/" + urllib.parse.quote(rule_key, safe=""), method="PUT", body={"threshold": threshold, "enabled": enabled})
 

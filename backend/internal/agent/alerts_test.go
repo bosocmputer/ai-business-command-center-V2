@@ -65,6 +65,17 @@ func TestAlertThresholdsAreCheckedAgainstTheRulesOwnRange(t *testing.T) {
 		{percent, "100", ""},
 		{percent, "0", ""},
 		{percent, "40.5", ""},
+		{percent, "40%", "40"},
+		{percent, " 40 % ", "40"},
+		{percent, "40 เปอร์เซ็นต์", "40"},
+		{money, "500,000 บาท", "500000"},
+		{money, "฿500000", "500000"},
+		{money, "500000บาท", "500000"},
+		{count, "3 รายการ", "3"},
+		{count, "รายการ", ""},
+		{percent, "%", ""},
+		{percent, "40%%", ""},
+		{money, "5แสนบาท", ""},
 	}
 	for _, c := range cases {
 		_, text, err := ParseAlertThreshold(c.def, c.raw)
