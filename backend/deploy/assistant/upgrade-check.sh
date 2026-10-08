@@ -63,7 +63,7 @@ for platform in cli api_server telegram webhook; do
     bad="$bad $platform(unreadable)"; continue
   fi
   extra=$(echo "$listing" | grep -E '^ *[^ ]+ enabled ' | grep -v -E ' enabled +memory( |$)' || true)
-  if [ -n "$extra" ]; then bad="$bad $platform"; fi
+  if [ -n "$extra" ]; then bad="$bad $platform"; echo; echo "$extra" | sed 's/^/    /' | cut -c1-120; fi
 done
 if [ -z "$bad" ]; then echo "ok${skipped:+ (not listed by the candidate:$skipped; the live assistant is checked below)}"; else echo; fail "a built-in tool other than memory is enabled (or the list could not be read) on:$bad"; fi
 
