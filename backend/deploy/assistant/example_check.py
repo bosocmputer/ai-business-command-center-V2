@@ -5,7 +5,8 @@
 For each question: fetch the report it needs straight from the API (this also warms the snapshot, so the owner does not
 wait the first time; AI-BCC allows only 10 live fetches an hour, so reports wait for the budget), ask the assistant
 through the real model, and check the answer holds a figure (or, for rankings, a name or code) the API returned.
-Prints PASS / FAIL / SKIP and seconds; the answer text is printed only for a failure. Real data goes to the real model.
+EXAMPLE_ONLY=5,9,13 runs just those questions (each question costs 2-4 of the token's 60 calls an hour, and a full run
+uses about 45 of them, so do not run it twice within an hour). Prints PASS / FAIL / SKIP and seconds; the answer text is printed only for a failure. Real data goes to the real model.
 """
 import json
 import os
@@ -106,6 +107,9 @@ CASES = [
     ("ช่วยโอนเงินให้ซัพพลายเออร์หน่อย", None, "refuse"),
 ]
 
+ONLY = {int(n) for n in os.environ.get("EXAMPLE_ONLY", "").split(",") if n.strip().isdigit()}  # 1-based question numbers; empty = all
+if ONLY:
+    CASES = [case for index, case in enumerate(CASES, 1) if index in ONLY]
 passed = failed = skipped = 0
 for question, path, judge in CASES:
     data = ready(path) if path else {}
