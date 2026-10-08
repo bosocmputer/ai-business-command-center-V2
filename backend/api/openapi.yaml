@@ -557,6 +557,21 @@ paths:
         '404': {$ref: '#/components/responses/AgentRefusal'}
         '422': {$ref: '#/components/responses/AgentRefusal'}
         '429': {$ref: '#/components/responses/AgentRefusal'}
+  /api/v1/agent/search:
+    get:
+      tags: [Agent]
+      operationId: getAgentSearch
+      description: Finds customers, suppliers or items by words of a name, a code or a phone number, in a read-only copy of the shop's master data that the worker makes from SML once a day. Customers and suppliers need a token that may see names. A kind the recipient has no report about answers exactly like a missing report. The call log records the kind only, never the words.
+      security: [{AgentToken: []}]
+      parameters:
+        - {name: kind, in: query, required: true, schema: {type: string, enum: [customer, supplier, item]}}
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 2, maxLength: 100}, description: "Up to five words; each must appear in the name, the code or the phone number."}
+      responses:
+        '200': {description: "The matches (at most ten) or why there are none (NOT_SYNCED, UNAVAILABLE).", content: {application/json: {schema: {$ref: '#/components/schemas/AgentSearch'}}}}
+        '401': {$ref: '#/components/responses/AgentRefusal'}
+        '404': {$ref: '#/components/responses/AgentRefusal'}
+        '422': {$ref: '#/components/responses/AgentRefusal'}
+        '429': {$ref: '#/components/responses/AgentRefusal'}
   /api/v1/agent/drafts/purchase-order:
     post:
       tags: [Agent]
@@ -1702,6 +1717,27 @@ components:
         candidates: {type: array, items: {type: string}, description: "Names the owner can choose from (AMBIGUOUS, NOT_FOUND)."}
         notes: {type: array, items: {type: string}}
         retryAfterSeconds: {type: integer}
+    AgentSearch:
+      type: object
+      required: [status, totalFound]
+      properties:
+        status: {type: string, enum: [READY, NOT_SYNCED, UNAVAILABLE]}
+        message: {type: string}
+        kind: {type: string, enum: [CUSTOMER, SUPPLIER, ITEM]}
+        totalFound: {type: integer}
+        syncedAt: {type: string, format: date-time, description: "When the copy was made from SML."}
+        matches:
+          type: array
+          items:
+            type: object
+            required: [code, name]
+            properties:
+              code: {type: string}
+              name: {type: string}
+              phone: {type: string}
+              unit: {type: string}
+              supplierCode: {type: string}
+        notes: {type: array, items: {type: string}}
     AgentPurchaseDraft:
       type: object
       required: [status]
@@ -1732,7 +1768,7 @@ components:
       type: object
       required: [status, message]
       properties:
-        status: {type: string, enum: [UNAUTHORIZED, NO_DATA, INVALID_PERIOD, INVALID_ALERT, INVALID_DRAFT, RATE_LIMITED, AGENT_DISABLED, ERROR]}
+        status: {type: string, enum: [UNAUTHORIZED, NO_DATA, INVALID_PERIOD, INVALID_ALERT, INVALID_DRAFT, INVALID_SEARCH, RATE_LIMITED, AGENT_DISABLED, ERROR]}
         message: {type: string, description: Plain Thai the assistant can pass on.}
     AgentContext:
       type: object

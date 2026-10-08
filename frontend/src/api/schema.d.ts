@@ -442,6 +442,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Finds customers, suppliers or items by words of a name, a code or a phone number, in a read-only copy of the shop's master data that the worker makes from SML once a day. Customers and suppliers need a token that may see names. A kind the recipient has no report about answers exactly like a missing report. The call log records the kind only, never the words. */
+        get: operations["getAgentSearch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/drafts/purchase-order": {
         parameters: {
             query?: never;
@@ -1451,6 +1468,27 @@ export interface components {
             notes?: string[];
             retryAfterSeconds?: number;
         };
+        AgentSearch: {
+            /** @enum {string} */
+            status: "READY" | "NOT_SYNCED" | "UNAVAILABLE";
+            message?: string;
+            /** @enum {string} */
+            kind?: "CUSTOMER" | "SUPPLIER" | "ITEM";
+            totalFound: number;
+            /**
+             * Format: date-time
+             * @description When the copy was made from SML.
+             */
+            syncedAt?: string;
+            matches?: {
+                code: string;
+                name: string;
+                phone?: string;
+                unit?: string;
+                supplierCode?: string;
+            }[];
+            notes?: string[];
+        };
         AgentPurchaseDraft: {
             /** @enum {string} */
             status: "READY" | "PREPARING" | "UNAVAILABLE" | "NOTHING_TO_ORDER";
@@ -1481,7 +1519,7 @@ export interface components {
         };
         AgentError: {
             /** @enum {string} */
-            status: "UNAUTHORIZED" | "NO_DATA" | "INVALID_PERIOD" | "INVALID_ALERT" | "INVALID_DRAFT" | "RATE_LIMITED" | "AGENT_DISABLED" | "ERROR";
+            status: "UNAUTHORIZED" | "NO_DATA" | "INVALID_PERIOD" | "INVALID_ALERT" | "INVALID_DRAFT" | "INVALID_SEARCH" | "RATE_LIMITED" | "AGENT_DISABLED" | "ERROR";
             /** @description Plain Thai the assistant can pass on. */
             message: string;
         };
@@ -4026,6 +4064,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentDraft"];
+                };
+            };
+            401: components["responses"]["AgentRefusal"];
+            404: components["responses"]["AgentRefusal"];
+            422: components["responses"]["AgentRefusal"];
+            429: components["responses"]["AgentRefusal"];
+        };
+    };
+    getAgentSearch: {
+        parameters: {
+            query: {
+                kind: "customer" | "supplier" | "item";
+                /** @description Up to five words; each must appear in the name, the code or the phone number. */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The matches (at most ten) or why there are none (NOT_SYNCED, UNAVAILABLE). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentSearch"];
                 };
             };
             401: components["responses"]["AgentRefusal"];

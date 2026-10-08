@@ -383,3 +383,13 @@ func TestSendingAlertsNeedsAWebhookASecretAndRoutes(t *testing.T) {
 		t.Fatalf("dry run with leftovers: %v", err)
 	}
 }
+
+func TestMasterDataCopyIsOffUntilSwitchedOn(t *testing.T) {
+	cfg, err := Load(alertTestValues(nil))
+	if err != nil || cfg.MasterSyncEnabled {
+		t.Fatalf("default: %v %v", cfg.MasterSyncEnabled, err)
+	}
+	if cfg, err = Load(alertTestValues(map[string]string{"MASTER_SYNC_ENABLED": "true"})); err != nil || !cfg.MasterSyncEnabled {
+		t.Fatalf("on: %v %v", cfg.MasterSyncEnabled, err)
+	}
+}

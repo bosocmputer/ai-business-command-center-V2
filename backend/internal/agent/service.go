@@ -49,6 +49,7 @@ type Service struct {
 	entropy   io.Reader
 	alias     func(tenantID uuid.UUID, name string) string
 	alerts    AlertStore
+	master    MasterStore
 	now       func() time.Time
 	config    Config
 }

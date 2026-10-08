@@ -50,6 +50,13 @@ tags: [backend, security, operations, retention]
   records the internal window by an exact UUID, and suppresses PostgreSQL
   command tags so successful inserts cannot be misclassified as failures.
 
+## Master data copy (assistant search)
+
+- `master_items` holds a copy of a shop's customers, suppliers and items: code, name, phone number (people), unit and supplier code (items), active flag. No business figures. `master_sync` records the last good copy, the last try and a short error code.
+- The worker (`MASTER_SYNC_ENABLED=true`, off by default) copies each kind once a day after 06:30 shop time, only for shops whose SML connection is READY and whose assistant has a live token, using three fixed SELECTs through the read-only SML client. A failed try is retried after 30 minutes and leaves the last good copy and its time untouched. An empty result never replaces an existing copy. Rows that disappear from SML disappear from the copy at the next copy.
+- This is personal data (names, phone numbers) copied into the AI-BCC database: it is covered by the same backups, is removed with the shop (`on delete cascade`), is never returned to a token that may not see names (customers and suppliers), and the call log keeps the kind of search only, never the words. Add it to the shop agreement's list of what AI-BCC stores.
+- `GET /api/v1/agent/search?kind=&q=` (tool `search_master`) returns at most ten matches. Words must all appear in the name, code or phone digits.
+
 ## Assistant drafts
 
 - `POST /api/v1/agent/drafts/collection` (tool `draft_collection`) returns a payment-reminder text for one customer among the ten owing the most past their due date. The text is built in `internal/agent/draft.go` from the receivable report's `overdue_debtors` and `overdue_debtor_days` charts (same customers, same order) and the assistant-only list `agent_overdue_documents` (up to five oldest overdue documents per customer: number, due date, balance, days; customer names ride in point labels). Keys starting `agent_` are hidden from the web pages and are not returned by the assistant's report tool. The model never writes the numbers.

@@ -135,5 +135,15 @@ def draft_purchase_order() -> str:
     return call_waiting("/drafts/purchase-order", method="POST", payload={})
 
 
+@mcp.tool()
+def search_master(kind: str, query: str) -> str:
+    """Find a customer, supplier or item by a name, a code or a phone number the owner said. kind is customer, supplier or item.
+    query is one to five words; every word must appear in the name, the code or the phone number. Returns at most ten matches
+    (code, name, phone for people, unit for items) and how many were found. Use it to turn a name the owner says into the exact
+    name or code before asking a report, and when the owner asks for a phone number or a code. Give the owner only what they asked
+    for. It reads a copy made from the shop's system once a day (syncedAt says when)."""
+    return call("/search", {"kind": kind, "q": query})
+
+
 if __name__ == "__main__":
     mcp.run()

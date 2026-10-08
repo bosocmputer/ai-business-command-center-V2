@@ -22,6 +22,7 @@ const (
 	ToolAlerts         Tool = "alerts"
 	ToolAlertSet       Tool = "alert_set"
 	ToolDraft          Tool = "draft"
+	ToolSearch         Tool = "search"
 )
 
 type Outcome string
@@ -34,6 +35,7 @@ const (
 	OutcomeInvalidPeriod Outcome = "INVALID_PERIOD"
 	OutcomeInvalidAlert  Outcome = "INVALID_ALERT"
 	OutcomeInvalidDraft  Outcome = "INVALID_DRAFT"
+	OutcomeInvalidSearch Outcome = "INVALID_SEARCH"
 	OutcomeRateLimited   Outcome = "RATE_LIMITED"
 )
 

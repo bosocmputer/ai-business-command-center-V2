@@ -20,6 +20,7 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/database"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/delivery"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/line"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/master"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/notification"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/quota"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/recipient"
@@ -140,6 +141,11 @@ func main() {
 		go deliveryLoop(ctx, logger, deliveryWorker, lane)
 	}
 	go retentionLoop(ctx, logger, retentionWorker)
+	if cfg.MasterSyncEnabled {
+		syncer := master.NewSyncer(database.NewMasterStore(pool), master.SMLSource{Connections: connections, Client: sml.NewClient(policy, 3*time.Minute, 32*1024*1024, 100_000)}, logger, time.Now)
+		go masterLoop(ctx, logger, syncer)
+		logger.Info("master data copy started")
+	}
 	if cfg.AgentAlertsEnabled {
 		agentStore := database.NewAgentStore(pool)
 		// The daily check reads through the assistant's own service, so a rule sees what the owner would see.
@@ -163,6 +169,28 @@ func main() {
 	}
 	<-ctx.Done()
 	logger.Info("report worker stopping", "workerId", workerID)
+}
+
+// masterLoop looks for shops whose master data is due every five minutes. A copy is made once a day, so most passes do nothing.
+func masterLoop(ctx context.Context, logger *slog.Logger, syncer *master.Syncer) {
+	timer := time.NewTimer(45 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					logger.Error("master copy panicked", "safeErrorCode", "MASTER_COPY_PANIC")
+				}
+			}()
+			syncer.RunOnce(ctx)
+		}()
+		timer.Reset(5 * time.Minute)
+	}
 }
 
 // alertLoop looks for alerts to check and to deliver every five minutes. A rule is checked once a day, so most passes do nothing.

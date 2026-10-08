@@ -37,6 +37,7 @@ x-app-environment: &app-environment
   AGENT_API_ENABLED: ${AGENT_API_ENABLED:-false}
   # Alerts the owner sets by talking to the assistant. Off; when on, a dry run (records, sends nothing) until sending is switched on.
   AGENT_ALERTS_ENABLED: ${AGENT_ALERTS_ENABLED:-false}
+  MASTER_SYNC_ENABLED: ${MASTER_SYNC_ENABLED:-false}
   AGENT_ALERT_DRY_RUN: ${AGENT_ALERT_DRY_RUN:-true}
   AGENT_ALERT_WEBHOOK_URL: ${AGENT_ALERT_WEBHOOK_URL:-}
   AGENT_ALERT_WEBHOOK_SECRET: ${AGENT_ALERT_WEBHOOK_SECRET:-}

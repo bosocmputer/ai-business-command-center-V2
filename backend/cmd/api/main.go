@@ -73,7 +73,7 @@ func main() {
 		ConfigureSnapshotFirst(cfg.SnapshotFirstEnabled, cfg.SnapshotFirstTenantIDs).
 		ConfigureStaleRevalidation(cfg.StaleRevalidationEnabled)
 	agentStore := database.NewAgentStore(pool)
-	agentService := agent.NewService(agentStore, database.NewReportStore(pool), sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{}).ConfigureAlerts(agentStore)
+	agentService := agent.NewService(agentStore, database.NewReportStore(pool), sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{}).ConfigureAlerts(agentStore).ConfigureMaster(database.NewMasterStore(pool))
 	periodObserver := func(preset report.Preset, mode report.ParameterKind, result string) {
 		logger.Info("schedule period resolved", "event", "schedule_period_resolution", "preset", preset, "mode", mode, "result", result, "schedulePeriodResolutionTotal", 1)
 	}

@@ -46,6 +46,15 @@ real data only after the shop's agreement allows it):
 docker compose exec assistant /opt/hermes/bin/hermes -z "เดือนนี้ขายได้เท่าไหร่"
 ```
 
+## Search: finding a customer, supplier or item
+
+`search_master` finds a record by a name, a code or a phone number the owner says ("เบอร์ของลูกค้า …", "รหัสสินค้า ปูน …").
+It searches a read-only copy of the shop's master data that the worker makes from SML once a day after 06:30 (three fixed
+SELECTs: customers, suppliers, items; codes, names, phone numbers, the unit and supplier code of an item, and no business
+figures). Switch: `MASTER_SYNC_ENABLED=true` (off by default). Customers and suppliers need a token that sees names and a
+report about them; an item search needs a report about items; otherwise the uniform "no data" answer. At most ten matches.
+An empty answer from SML never replaces an existing copy. The call log records the kind searched, never the words.
+
 ## Drafts: a reminder the owner copies and sends
 
 `draft_collection` writes a payment reminder for one of the ten customers who owe the most past their due date

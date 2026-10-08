@@ -23,6 +23,7 @@ type AgentAPI interface {
 	Alerts(ctx context.Context, principal agent.Principal) (agent.AlertsResponse, error)
 	SetAlert(ctx context.Context, principal agent.Principal, rule string, request agent.AlertSetRequest, requestID string) (agent.AlertView, error)
 	DraftCollection(ctx context.Context, principal agent.Principal, request agent.DraftRequest) (agent.DraftResponse, error)
+	SearchMaster(ctx context.Context, principal agent.Principal, kind, query string) (agent.SearchResponse, error)
 	DraftPurchaseOrder(ctx context.Context, principal agent.Principal) (agent.PurchaseDraftResponse, error)
 	IssueToken(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID, namesVisible bool) (agent.IssuedToken, error)
 	RevokeToken(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID) error
@@ -118,6 +119,11 @@ func registerAgentRoutes(router chi.Router, api AgentAPI, enabled bool) {
 			result, err := api.DraftCollection(request.Context(), agentPrincipal(request), input)
 			respondAgent(response, result, err)
 		})
+		group.Get("/search", func(response http.ResponseWriter, request *http.Request) {
+			query := request.URL.Query()
+			result, err := api.SearchMaster(request.Context(), agentPrincipal(request), query.Get("kind"), query.Get("q"))
+			respondAgent(response, result, err)
+		})
 		group.Post("/drafts/purchase-order", func(response http.ResponseWriter, request *http.Request) {
 			result, err := api.DraftPurchaseOrder(request.Context(), agentPrincipal(request))
 			respondAgent(response, result, err)
@@ -130,6 +136,11 @@ func registerAgentRoutes(router chi.Router, api AgentAPI, enabled bool) {
 
 func isInvalidAlert(err error) bool {
 	var invalid *agent.InvalidAlertError
+	return errors.As(err, &invalid)
+}
+
+func isInvalidSearch(err error) bool {
+	var invalid *agent.InvalidSearchError
 	return errors.As(err, &invalid)
 }
 
@@ -147,12 +158,16 @@ func respondAgent(response http.ResponseWriter, result any, err error) {
 	switch {
 	case err == nil:
 		writeAgentJSON(response, http.StatusOK, result)
-	case errors.Is(err, agent.ErrNoData), errors.Is(err, agent.ErrAlertsUnavailable):
+	case errors.Is(err, agent.ErrNoData), errors.Is(err, agent.ErrAlertsUnavailable), errors.Is(err, agent.ErrMasterUnavailable):
 		writeAgentJSON(response, http.StatusNotFound, agentError{Status: "NO_DATA", Message: agent.MessageNoData})
 	case isInvalidAlert(err):
 		var invalid *agent.InvalidAlertError
 		_ = errors.As(err, &invalid)
 		writeAgentJSON(response, http.StatusUnprocessableEntity, agentError{Status: "INVALID_ALERT", Message: invalid.Message})
+	case isInvalidSearch(err):
+		var invalid *agent.InvalidSearchError
+		_ = errors.As(err, &invalid)
+		writeAgentJSON(response, http.StatusUnprocessableEntity, agentError{Status: "INVALID_SEARCH", Message: invalid.Message})
 	case isInvalidDraft(err):
 		var invalid *agent.InvalidDraftError
 		_ = errors.As(err, &invalid)

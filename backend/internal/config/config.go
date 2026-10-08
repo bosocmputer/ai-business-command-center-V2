@@ -50,7 +50,9 @@ type Config struct {
 	AgentAPIEnabled              bool
 	// Alerts the assistant sets up are checked once a day by the worker. They are off until an operator turns them on,
 	// and then only record what they would have said (dry run) until sending is switched on too.
-	AgentAlertsEnabled      bool
+	AgentAlertsEnabled bool
+	// The worker copies the shop's customers, suppliers and items from SML once a day for the assistant's search.
+	MasterSyncEnabled       bool
 	AgentAlertDryRun        bool
 	AgentAlertWebhookURL    string
 	AgentAlertWebhookSecret string
@@ -207,6 +209,10 @@ func Load(lookup LookupFunc) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	masterSyncEnabled, err := boolValue(lookup, "MASTER_SYNC_ENABLED", false)
+	if err != nil {
+		return Config{}, err
+	}
 	agentAlertsEnabled, err := boolValue(lookup, "AGENT_ALERTS_ENABLED", false)
 	if err != nil {
 		return Config{}, err
@@ -318,6 +324,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		HeavyChunkEnabled:            heavyChunkEnabled,
 		AgentAPIEnabled:              agentAPIEnabled,
 		AgentAlertsEnabled:           agentAlertsEnabled,
+		MasterSyncEnabled:            masterSyncEnabled,
 		AgentAlertDryRun:             agentAlertDryRun,
 		AgentAlertWebhookURL:         agentAlertWebhookURL,
 		AgentAlertWebhookSecret:      agentAlertWebhookSecret,

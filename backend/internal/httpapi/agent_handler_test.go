@@ -391,3 +391,40 @@ func TestAgentPurchaseDraftNeedsTheReorderReportAndLooksMissingWithout(t *testin
 		t.Fatalf("an empty body is fine and the report is being prepared: %d %s", waiting.Code, waiting.Body.String())
 	}
 }
+
+func TestAgentSearchRefusalsAreUniformAndBadQueriesAreExplainedInThai(t *testing.T) {
+	store := newAgentStore()
+	store.permitted = []report.Key{report.SalesGoodsServices}
+	handler := agentTestHandler(store, true) // service built without the master copy
+	notConfigured := agentGet(handler, "/api/v1/agent/search?kind=item&q=ปูน", "abcc_token")
+	missing := agentGet(handler, "/api/v1/agent/reports/no_such_report", "abcc_token")
+	if notConfigured.Code != http.StatusNotFound || !bytes.Equal(notConfigured.Body.Bytes(), missing.Body.Bytes()) {
+		t.Fatalf("a search that is not available must answer like a missing report: %d %s", notConfigured.Code, notConfigured.Body.String())
+	}
+	if got := agentGet(handler, "/api/v1/agent/search?kind=item&q=ปูน", "abcc_other"); got.Code != http.StatusUnauthorized {
+		t.Fatalf("a wrong token must not search: %d", got.Code)
+	}
+}
+
+type agentTestMaster struct{}
+
+func (agentTestMaster) SearchMaster(context.Context, uuid.UUID, agent.MasterKind, []string, int) (agent.MasterResult, error) {
+	synced := time.Date(2026, 10, 1, 1, 0, 0, 0, time.UTC)
+	return agent.MasterResult{Matches: []agent.MasterMatch{{Code: "A01", Name: "ปูนซีเมนต์", Unit: "ถุง"}}, Total: 1, SyncedAt: &synced}, nil
+}
+
+func TestAgentSearchReturnsMatchesAndExplainsABadQuery(t *testing.T) {
+	store := newAgentStore()
+	store.permitted = []report.Key{report.StockBalance}
+	now := time.Date(2026, 10, 1, 5, 0, 0, 0, time.UTC)
+	service := agent.NewService(store, agentTestSnapshots{}, agentTestHasher{}, bytes.NewReader(bytes.Repeat([]byte{3}, 64)), agent.Alias(agentTestHasher{}), func() time.Time { return now }, agent.Config{}).ConfigureMaster(agentTestMaster{})
+	handler := NewHandler(Dependencies{Readiness: readinessFunc(func(context.Context) error { return nil }), AdminAuth: &fakeAdminAuth{}, Agent: service, AgentEnabled: true})
+	ok := agentGet(handler, "/api/v1/agent/search?kind=item&q=%E0%B8%9B%E0%B8%B9%E0%B8%99", "abcc_token")
+	if ok.Code != http.StatusOK || !strings.Contains(ok.Body.String(), `"code":"A01"`) || !strings.Contains(ok.Body.String(), `"status":"READY"`) {
+		t.Fatalf("search: %d %s", ok.Code, ok.Body.String())
+	}
+	bad := agentGet(handler, "/api/v1/agent/search?kind=item&q=x", "abcc_token")
+	if bad.Code != http.StatusUnprocessableEntity || !strings.Contains(bad.Body.String(), "INVALID_SEARCH") || !strings.Contains(bad.Body.String(), "อย่างน้อย 2 ตัวอักษร") {
+		t.Fatalf("bad query: %d %s", bad.Code, bad.Body.String())
+	}
+}
