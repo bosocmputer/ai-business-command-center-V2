@@ -511,6 +511,9 @@ func (service *Service) fill(response *ReportResponse, principal Principal, dash
 		response.KPIs = append(response.KPIs, kpi)
 	}
 	for _, visualization := range dashboard.Visualizations {
+		if report.IsAgentVisualization(visualization.Key) {
+			continue // made for the assistant's own tools, not for it to read back
+		}
 		view := Visualization{Key: visualization.Key, Title: visualization.Title, Intent: string(visualization.Intent), Unit: string(visualization.Unit), Categories: slices.Clone(visualization.Categories)}
 		if _, named := report.PersonNameVisualizations[visualization.Key]; named && !principal.NamesVisible {
 			for index, name := range view.Categories {

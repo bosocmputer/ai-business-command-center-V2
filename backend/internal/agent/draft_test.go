@@ -22,6 +22,10 @@ func agingDashboard() report.Dashboard {
 		Visualizations: []report.DashboardVisualization{
 			visualization("overdue_debtors", report.UnitTHB, "641200.50", "52000.00", "1000.00"),
 			visualization("overdue_debtor_days", report.UnitCount, "95", "12", "3"),
+			{Key: "agent_overdue_documents", Intent: report.IntentRanking, Unit: report.UnitTHB, Categories: []string{"INV-7", "INV-9", "INV-3"}, Series: []report.VisualizationSeries{
+				{Key: "value", Values: []string{"600000.00", "30000.50", "30000.00"}, PointLabels: []string{"บริษัท ก่อสร้างดี จำกัด", "บริษัท ก่อสร้างดี จำกัด", "ห้างหุ้นส่วน ปูนทอง"}},
+				{Key: "days_past_due", Values: []string{"95", "20", "12"}, PointLabels: []string{"2026-07-05", "2026-09-11", "2026-09-19"}},
+			}},
 		}}
 }
 
@@ -130,5 +134,39 @@ func TestADraftFromAReportWithoutTheOverdueChartsSaysNotFoundRatherThanInventing
 	got, err := service.DraftCollection(context.Background(), namedPrincipal, DraftRequest{Customer: "ปูนทอง", Tone: "friendly"})
 	if err != nil || got.Status != "NOT_FOUND" || got.Draft != "" {
 		t.Fatalf("got = %+v %v", got, err)
+	}
+}
+
+func TestTheDraftListsTheDocumentsAndStatesWhatIsLeftAsAnAmount(t *testing.T) {
+	service, _ := draftService(agingDashboard(), report.ARAging)
+	got, err := service.DraftCollection(context.Background(), namedPrincipal, DraftRequest{Customer: "ก่อสร้างดี", Tone: "friendly"})
+	if err != nil || got.Status != "READY" {
+		t.Fatalf("draft = %+v %v", got, err)
+	}
+	for _, want := range []string{"เอกสารเลขที่ INV-7 ครบกำหนด 5 ก.ค. 2569 ยอดค้าง 600,000.00 บาท", "เอกสารเลขที่ INV-9 ครบกำหนด 11 ก.ย. 2569 ยอดค้าง 30,000.50 บาท", "และรายการอื่นอีกรวม 11,200.00 บาท"} {
+		if !strings.Contains(got.Draft, want) {
+			t.Errorf("draft lacks %q:\n%s", want, got.Draft)
+		}
+	}
+	if strings.Contains(got.Draft, "INV-3") {
+		t.Errorf("another customer's document must never appear:\n%s", got.Draft)
+	}
+	// ปูนทอง's whole overdue amount is 52,000.00 but only 30,000.00 is listed, so the rest is stated as an amount.
+	other, _ := service.DraftCollection(context.Background(), namedPrincipal, DraftRequest{Customer: "ปูนทอง", Tone: "formal"})
+	if !strings.Contains(other.Draft, "INV-3") || !strings.Contains(other.Draft, "และรายการอื่นอีกรวม 22,000.00 บาท") {
+		t.Errorf("formal draft:\n%s", other.Draft)
+	}
+}
+
+func TestTheAssistantsReportToolDoesNotReturnTheDocumentList(t *testing.T) {
+	service, _ := draftService(agingDashboard(), report.ARAging)
+	got, err := service.Report(context.Background(), namedPrincipal, "ar_aging", "", "")
+	if err != nil || got.Status != "READY" {
+		t.Fatalf("report = %+v %v", got, err)
+	}
+	for _, visualization := range got.Visualizations {
+		if strings.HasPrefix(visualization.Key, "agent_") {
+			t.Errorf("%s is for the draft tool only", visualization.Key)
+		}
 	}
 }

@@ -11,8 +11,9 @@ func agingDetailFixture() []map[string]string {
 	// Age counted from the document date, where a document still has a balance.
 	docAge := map[string]string{"D1": "AGE_0_30", "D2": "AGE_31_60", "D3": "AGE_OVER_365", "D4": "AGE_OVER_365", "D5": "AGE_91_180"}
 	pastDue := map[string]string{"D2": "12", "D3": "400", "D5": "75"}
+	dueDate := map[string]string{"D2": "2026-09-19 00:00:00", "D3": "2025-08-27", "D5": "2026-07-18"}
 	row := func(cust, name, doc, bucket, balance string) map[string]string {
-		return map[string]string{"cust_code": cust, "cust_name": name, "doc_no": doc, "bucket": bucket, "balance": balance, "amount": balance, "paid_amount": "0", "doc_age_bucket": docAge[doc], "days_past_due": pastDue[doc]}
+		return map[string]string{"cust_code": cust, "cust_name": name, "doc_no": doc, "bucket": bucket, "balance": balance, "amount": balance, "paid_amount": "0", "doc_age_bucket": docAge[doc], "days_past_due": pastDue[doc], "due_date": dueDate[doc]}
 	}
 	return []map[string]string{
 		row("C1", "ลูกค้า 1", "D1", agingBucketNotDue, "1000.00"),
@@ -44,6 +45,9 @@ func agingSummaryFixture() map[string][]map[string]string {
 		merge(map[string]string{"_summary_kind": "ranking", "cust_code": "C2", "cust_name": "ลูกค้า 2", "balance": "3800.00", "overdue_balance": "100.00"}),
 		merge(map[string]string{"_summary_kind": "ranking", "cust_code": "C1", "cust_name": "ลูกค้า 1", "balance": "1750.00", "overdue_balance": "750.00"}),
 		merge(map[string]string{"_summary_kind": "overdue", "cust_code": "C1", "cust_name": "ลูกค้า 1", "balance": "750.00", "overdue_balance": "750.00", "max_days_past_due": "400"}),
+		merge(map[string]string{"_summary_kind": "overdue_doc", "cust_code": "C1", "cust_name": "ลูกค้า 1", "balance": "250.00", "overdue_balance": "250.00", "max_days_past_due": "400", "doc_no": "D3", "due_date": "2025-08-27"}),
+		merge(map[string]string{"_summary_kind": "overdue_doc", "cust_code": "C1", "cust_name": "ลูกค้า 1", "balance": "500.00", "overdue_balance": "500.00", "max_days_past_due": "12", "doc_no": "D2", "due_date": "2026-09-19"}),
+		merge(map[string]string{"_summary_kind": "overdue_doc", "cust_code": "C2", "cust_name": "ลูกค้า 2", "balance": "100.00", "overdue_balance": "100.00", "max_days_past_due": "75", "doc_no": "D5", "due_date": "2026-07-18"}),
 		merge(map[string]string{"_summary_kind": "overdue", "cust_code": "C2", "cust_name": "ลูกค้า 2", "balance": "100.00", "overdue_balance": "100.00", "max_days_past_due": "75"}),
 	}}
 }
@@ -142,6 +146,13 @@ func TestAgingDashboardIsTheSameFromDetailAndFromSummary(t *testing.T) {
 		if len(overdue.Categories) != 2 || overdue.Categories[0] != "ลูกค้า 1" || overdue.Series[0].Values[0] != "750.00" || overdue.Series[0].Values[1] != "100.00" ||
 			len(days.Categories) != 2 || days.Categories[0] != "ลูกค้า 1" || days.Series[0].Values[0] != "400" || days.Series[0].Values[1] != "75" || days.Unit != UnitCount {
 			t.Errorf("%s: overdue debtors = %+v, days = %+v", name, overdue, days)
+		}
+		// The documents behind those amounts, oldest first within a customer, for the assistant only.
+		documents := byKey["agent_overdue_documents"]
+		if got := strings.Join(documents.Categories, ","); got != "D3,D2,D5" || strings.Join(documents.Series[0].Values, ",") != "250.00,500.00,100.00" ||
+			strings.Join(documents.Series[0].PointLabels, ",") != "ลูกค้า 1,ลูกค้า 1,ลูกค้า 2" || strings.Join(documents.Series[1].PointLabels, ",") != "2025-08-27,2026-09-19,2026-07-18" ||
+			strings.Join(documents.Series[1].Values, ",") != "400,12,75" {
+			t.Errorf("%s: overdue documents = %+v", name, documents)
 		}
 		if len(debtors.Categories) != 2 || debtors.Categories[0] != "ลูกค้า 2" {
 			t.Errorf("%s: top debtors = %+v; want C2 (3,800) before C1 (1,750) and no credit-only customer", name, debtors.Categories)

@@ -8,6 +8,7 @@ import {
   formatDashboardValue,
   formatPeriodRange,
   numberForChart,
+  peopleVisualizations,
   snapshotForReport,
   visualizationCategoryLabels,
   executiveFeaturedVisualizationKeys
@@ -89,5 +90,12 @@ describe('dashboard helpers', () => {
   it('selects overview charts by the backend visualization keys', () => {
     expect(executiveFeaturedVisualizationKeys.gross_profit_by_product).toBe('top_profit_products');
     expect(executiveFeaturedVisualizationKeys.stock_balance).toBe('top_stock_value');
+  });
+});
+
+describe('peopleVisualizations', () => {
+  it('leaves out the lists that exist for the assistant', () => {
+    const chart = (key: string): DashboardVisualization => ({ key, title: key, intent: 'RANKING', unit: 'THB', categories: ['a'], series: [{ key: 'value', label: 'v', values: ['1.00'] }] });
+    expect(peopleVisualizations([chart('top_debtors'), chart('agent_overdue_documents')]).map((item) => item.key)).toEqual(['top_debtors']);
   });
 });

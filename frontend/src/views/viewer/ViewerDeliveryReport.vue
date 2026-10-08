@@ -5,7 +5,7 @@ import AppPageHeader from '@/components/AppPageHeader.vue';
 import ExecutiveChart from '@/components/dashboard/ExecutiveChart.vue';
 import { ApiError, viewerApi, type DeliveryContext, type DeliveryContextReport, type ReportKey } from '@/api';
 import { useViewerSession } from '@/stores/viewer';
-import { comparisonPeriodText, formatDashboardValue, formatPeriodRange } from '@/utils/dashboard';
+import { comparisonPeriodText, formatDashboardValue, formatPeriodRange, peopleVisualizations } from '@/utils/dashboard';
 import { formatDateTime, formatSourceCollection } from '@/utils/format';
 import { deliveryContextRoute } from '@/utils/viewerRouting';
 
@@ -79,7 +79,7 @@ watch([tenantId, deliveryId, reportKey], load);
       </article>
     </div>
     <div class="grid grid-cols-1 2xl:grid-cols-2 gap-5">
-      <article v-for="visualization in dashboard.visualizations" :key="visualization.key" class="card delivery-chart"><h2>{{ visualization.title }}</h2><ExecutiveChart :visualization="visualization" /></article>
+      <article v-for="visualization in peopleVisualizations(dashboard.visualizations)" :key="visualization.key" class="card delivery-chart"><h2>{{ visualization.title }}</h2><ExecutiveChart :visualization="visualization" /></article>
     </div>
   </template>
   <Message v-else-if="item" severity="warn" :closable="false">Snapshot สรุปของรายงานนี้หมดอายุแล้ว ระบบเก็บประวัติว่ารายงานนี้เคยถูกส่ง แต่จะไม่ดึง SQL ใหม่โดยอัตโนมัติ</Message>

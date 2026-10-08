@@ -142,18 +142,29 @@ type overdueDebtor struct {
 	Name        string
 	Amount      *big.Rat
 	DaysPastDue int
+	Documents   []overdueDocument
+}
+
+// overdueDocument is one document of a customer that is past its due date.
+type overdueDocument struct {
+	Number      string
+	DueDate     time.Time
+	Amount      *big.Rat
+	DaysPastDue int
 }
 
 // overdueDebtors reads the two charts the receivable report builds side by side: the amount each customer owes past
 // the due date, and how many days the oldest of those documents is past due. Same customers, same order.
 func overdueDebtors(dashboard report.Dashboard) []overdueDebtor {
-	var amounts, days *report.DashboardVisualization
+	var amounts, days, documents *report.DashboardVisualization
 	for index := range dashboard.Visualizations {
 		switch dashboard.Visualizations[index].Key {
 		case "overdue_debtors":
 			amounts = &dashboard.Visualizations[index]
 		case "overdue_debtor_days":
 			days = &dashboard.Visualizations[index]
+		case "agent_overdue_documents":
+			documents = &dashboard.Visualizations[index]
 		}
 	}
 	if amounts == nil || len(amounts.Series) == 0 {
@@ -172,7 +183,32 @@ func overdueDebtors(dashboard report.Dashboard) []overdueDebtor {
 		if days != nil && len(days.Series) > 0 && index < len(days.Series[0].Values) && index < len(days.Categories) && days.Categories[index] == name {
 			item.DaysPastDue, _ = strconv.Atoi(days.Series[0].Values[index])
 		}
+		item.Documents = documentsOf(documents, name)
 		list = append(list, item)
+	}
+	return list
+}
+
+// documentsOf reads the documents listed for one customer: document numbers are the categories, the first series holds
+// the amounts with the customer's name as each point's label, the second the days past due with the due date as its label.
+// A document whose figures do not read cleanly is left out rather than guessed.
+func documentsOf(documents *report.DashboardVisualization, customer string) []overdueDocument {
+	if documents == nil || len(documents.Series) < 2 {
+		return nil
+	}
+	amounts, days := documents.Series[0], documents.Series[1]
+	var list []overdueDocument
+	for index, number := range documents.Categories {
+		if index >= len(amounts.Values) || index >= len(amounts.PointLabels) || index >= len(days.Values) || index >= len(days.PointLabels) || amounts.PointLabels[index] != customer {
+			continue
+		}
+		amount, ok := new(big.Rat).SetString(amounts.Values[index])
+		due, dueErr := time.Parse(time.DateOnly, days.PointLabels[index])
+		if !ok || amount.Sign() <= 0 || dueErr != nil || strings.TrimSpace(number) == "" {
+			continue
+		}
+		overdueDays, _ := strconv.Atoi(days.Values[index])
+		list = append(list, overdueDocument{Number: strings.TrimSpace(number), DueDate: due, Amount: amount, DaysPastDue: overdueDays})
 	}
 	return list
 }
@@ -189,10 +225,30 @@ func collectionDraft(tone, shop string, debtor overdueDebtor, asOf time.Time) st
 	if debtor.DaysPastDue > 0 {
 		age = fmt.Sprintf(" โดยรายการที่เลยกำหนดนานที่สุดเลยมาแล้ว %d วัน", debtor.DaysPastDue)
 	}
+	list := documentList(debtor)
 	if tone == DraftToneFormal {
-		return fmt.Sprintf("เรื่อง แจ้งยอดค้างชำระ\n\nเรียน %s\n\n%s ขอเรียนแจ้งว่า ณ วันที่ %s ท่านมียอดค้างชำระที่เลยกำหนดแล้วรวม %s บาท%s\n\nจึงเรียนมาเพื่อโปรดตรวจสอบและดำเนินการชำระ หากได้ชำระเรียบร้อยแล้วต้องขออภัยมา ณ ที่นี้ และขอความกรุณาแจ้งหลักฐานการชำระเงินกลับมาด้วย\n\nขอแสดงความนับถือ\n%s",
-			debtor.Name, shop, date, amount, age, shop)
+		return fmt.Sprintf("เรื่อง แจ้งยอดค้างชำระ\n\nเรียน %s\n\n%s ขอเรียนแจ้งว่า ณ วันที่ %s ท่านมียอดค้างชำระที่เลยกำหนดแล้วรวม %s บาท%s\n%s\nจึงเรียนมาเพื่อโปรดตรวจสอบและดำเนินการชำระ หากได้ชำระเรียบร้อยแล้วต้องขออภัยมา ณ ที่นี้ และขอความกรุณาแจ้งหลักฐานการชำระเงินกลับมาด้วย\n\nขอแสดงความนับถือ\n%s",
+			debtor.Name, shop, date, amount, age, list, shop)
 	}
-	return fmt.Sprintf("เรียน %s\n\n%s ขอแจ้งยอดค้างชำระที่เลยกำหนดแล้ว ณ วันที่ %s รวม %s บาท%s\n\nรบกวนตรวจสอบและแจ้งกำหนดชำระให้ด้วยนะครับ/ค่ะ หากโอนชำระแล้ว ขออภัยด้วย รบกวนส่งหลักฐานการโอนกลับมาให้ด้วยครับ/ค่ะ\n\nขอบคุณครับ/ค่ะ\n%s",
-		debtor.Name, shop, date, amount, age, shop)
+	return fmt.Sprintf("เรียน %s\n\n%s ขอแจ้งยอดค้างชำระที่เลยกำหนดแล้ว ณ วันที่ %s รวม %s บาท%s\n%s\nรบกวนตรวจสอบและแจ้งกำหนดชำระให้ด้วยนะครับ/ค่ะ หากโอนชำระแล้ว ขออภัยด้วย รบกวนส่งหลักฐานการโอนกลับมาให้ด้วยครับ/ค่ะ\n\nขอบคุณครับ/ค่ะ\n%s",
+		debtor.Name, shop, date, amount, age, list, shop)
+}
+
+// documentList names the documents behind the amount: number, due date, balance. When the list is shorter than the whole
+// overdue amount, the rest is stated as an amount (the difference), never as a guessed count.
+func documentList(debtor overdueDebtor) string {
+	if len(debtor.Documents) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	builder.WriteString("\nรายการที่เลยกำหนด:\n")
+	listed := new(big.Rat)
+	for _, doc := range debtor.Documents {
+		fmt.Fprintf(&builder, "• เอกสารเลขที่ %s ครบกำหนด %s ยอดค้าง %s บาท\n", doc.Number, thaifmt.Date(doc.DueDate), thaifmt.Baht(doc.Amount))
+		listed.Add(listed, doc.Amount)
+	}
+	if rest := new(big.Rat).Sub(debtor.Amount, listed); rest.Sign() > 0 {
+		fmt.Fprintf(&builder, "• และรายการอื่นอีกรวม %s บาท\n", thaifmt.Baht(rest))
+	}
+	return builder.String()
 }

@@ -50,7 +50,8 @@ docker compose exec assistant /opt/hermes/bin/hermes -z "เดือนนี�
 
 `draft_collection` writes a payment reminder for one of the ten customers who owe the most past their due date
 ("ร่างข้อความทวงหนี้ให้ …"). AI-BCC writes the text from the receivable report's own figures (overdue amount, longest
-days overdue, the date the data is as of); the model hands it over unchanged. It is polite, sets no deadline, adds no
+days overdue, up to five of the oldest overdue documents with number, due date and balance, and the amount left on
+older ones; the date the data is as of); the model hands it over unchanged. It is polite, sets no deadline, adds no
 fee and threatens nothing. Nothing is sent and nothing is written to SML: the owner copies it. It needs a token that sees
 customer names (a reminder without a name is not a reminder). The call log records that a draft was made, never its text
 or the customer. Quotations and purchase orders are not drafted yet.

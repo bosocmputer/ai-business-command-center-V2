@@ -11,7 +11,7 @@ import type { MenuItem } from 'primevue/menuitem';
 import { ApiError, reportDefinitionByKey, viewerApi, type CreateReportRunInput, type DashboardSnapshot, type ReportDashboard, type ReportKey, type ReportRowQueryInput, type ReportRun } from '@/api';
 import { newIdempotencyKey } from '@/api/client';
 import { useViewerSession } from '@/stores/viewer';
-import { comparisonPeriodText, formatDashboardValue, formatPeriodRange, periodLabel } from '@/utils/dashboard';
+import { comparisonPeriodText, formatDashboardValue, formatPeriodRange, peopleVisualizations, periodLabel } from '@/utils/dashboard';
 import { errorMessage, formatDateTime, formatSourceCollection } from '@/utils/format';
 import { periodModeForReport, selectionForMode, selectionFromReportPeriod, selectionToRunInput, validatePeriodSelection, type ReportPeriodSelection } from '@/utils/reportPeriod';
 import { formatReportCell, presentationFor, reportColumnClass, visibleReportColumns, type ReportColumnDefinition } from '@/utils/reportPresentation';
@@ -635,8 +635,8 @@ onBeforeUnmount(() => { document.removeEventListener('visibilitychange', handleV
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
           <article v-for="metric in dashboard.kpis" :key="metric.key" class="card dashboard-card report-kpi"><span class="text-sm text-muted-color">{{ metric.label }}</span><strong>{{ formatDashboardValue(metric.value, metric.unit) }}</strong><span v-if="metric.comparison.availability === 'AVAILABLE'" class="metric-comparison"><span><i :class="metric.comparison.direction === 'UP' ? 'pi pi-arrow-up-right' : metric.comparison.direction === 'DOWN' ? 'pi pi-arrow-down-right' : 'pi pi-minus'" /> {{ formatDashboardValue(metric.comparison.delta, metric.unit) }}</span><span>{{ comparisonPeriodText(dashboard.comparisonPeriod) }}</span></span><span v-else class="metric-comparison"><span>ไม่มีข้อมูลเปรียบเทียบที่เทียบช่วงเวลาเดียวกันได้</span></span></article>
         </div>
-        <div class="grid grid-cols-1 2xl:grid-cols-2 gap-5"><article v-for="visualization in dashboard.visualizations" :key="visualization.key" class="card dashboard-card report-panel"><h2 class="chart-title">{{ visualization.title }}</h2><ExecutiveChart :visualization="visualization" /></article></div>
-        <div v-if="!dashboard.visualizations.length" class="card report-panel text-center text-muted-color"><i class="pi pi-chart-bar text-3xl" /><p class="mb-0">ช่วงนี้ไม่มีข้อมูลเพียงพอสำหรับสร้างกราฟ</p></div>
+        <div class="grid grid-cols-1 2xl:grid-cols-2 gap-5"><article v-for="visualization in peopleVisualizations(dashboard.visualizations)" :key="visualization.key" class="card dashboard-card report-panel"><h2 class="chart-title">{{ visualization.title }}</h2><ExecutiveChart :visualization="visualization" /></article></div>
+        <div v-if="!peopleVisualizations(dashboard.visualizations).length" class="card report-panel text-center text-muted-color"><i class="pi pi-chart-bar text-3xl" /><p class="mb-0">ช่วงนี้ไม่มีข้อมูลเพียงพอสำหรับสร้างกราฟ</p></div>
       </TabPanel>
       <TabPanel value="detail">
         <Message v-if="detailRowsUnavailable" severity="info" :closable="false"><div class="flex flex-wrap items-center justify-between gap-3"><span>ข้อมูลแถวรายละเอียดเป็นข้อมูลชั่วคราวและหมดอายุแล้ว แต่ภาพรวมยังเปิดดูได้ กรุณาดึง SQL ใหม่เมื่อต้องการตรวจรายการ</span><Button :label="reportKey === 'stock_reorder' ? 'ดูสถานะปัจจุบัน' : 'ดึงข้อมูลช่วงเดิมใหม่'" icon="pi pi-refresh" size="small" @click="replaySnapshot" /></div></Message>

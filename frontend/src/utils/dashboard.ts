@@ -27,6 +27,11 @@ export const executiveFeaturedVisualizationKeys = {
   cash_bank_receipts: 'cash_receipt_trend'
 } satisfies Partial<Record<ReportKey, string>>;
 
+/** Charts people see. A visualization whose key starts with "agent_" exists for the assistant (it lists documents behind a chart). */
+export function peopleVisualizations(visualizations: DashboardVisualization[]): DashboardVisualization[] {
+  return visualizations.filter((visualization) => !visualization.key.startsWith('agent_'));
+}
+
 export function numberForChart(value: string): number | null {
   const number = Number(value.replaceAll(',', '').trim());
   return Number.isFinite(number) ? number : null;
