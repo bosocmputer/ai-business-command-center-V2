@@ -52,14 +52,20 @@ if [ "$ok" = 1 ]; then echo "ok"; else echo; fail "the gateway did not become he
 
 printf "2. no built-in tool enabled on any channel except memory ... "
 bad=""
+skipped=""
 for platform in cli api_server telegram webhook; do
   listing=$(docker exec "$NAME" /opt/hermes/bin/hermes tools list --platform "$platform" 2>&1 || true)
   # Lines look like "  ✓ enabled  memory  ..." / "  ✗ disabled  web  ...". Memory is on by decision (guarded by memory_guard.py).
-  if ! echo "$listing" | grep -q "disabled"; then bad="$bad $platform(unreadable)"; continue; fi
+  if ! echo "$listing" | grep -q "disabled"; then
+    # The webhook channel only exists when an alert route is configured; the candidate has none (no destinations), so it may have
+    # nothing to list. The other three channels must always be readable.
+    if [ "$platform" = webhook ]; then skipped="$skipped webhook"; continue; fi
+    bad="$bad $platform(unreadable)"; continue
+  fi
   extra=$(echo "$listing" | grep -E '^ *[^ ]+ enabled ' | grep -v -E ' enabled +memory( |$)' || true)
   if [ -n "$extra" ]; then bad="$bad $platform"; fi
 done
-if [ -z "$bad" ]; then echo "ok"; else echo; fail "a built-in tool other than memory is enabled (or the list could not be read) on:$bad"; fi
+if [ -z "$bad" ]; then echo "ok${skipped:+ (not listed by the candidate:$skipped; the live assistant is checked below)}"; else echo; fail "a built-in tool other than memory is enabled (or the list could not be read) on:$bad"; fi
 
 printf "3. the shim exposes every tool of this repository ... "
 want=$(grep -c '^@mcp.tool()' assistant/aibcc_mcp.py)
