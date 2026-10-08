@@ -143,6 +143,7 @@ func main() {
 	go retentionLoop(ctx, logger, retentionWorker)
 	if cfg.MasterSyncEnabled {
 		syncer := master.NewSyncer(database.NewMasterStore(pool), master.SMLSource{Connections: connections, Client: sml.NewClient(policy, 3*time.Minute, 32*1024*1024, 100_000)}, logger, time.Now)
+		syncer.StartMinute, syncer.Window = cfg.MasterSyncStartMinute, time.Duration(cfg.MasterSyncWindowMinutes)*time.Minute
 		go masterLoop(ctx, logger, syncer)
 		logger.Info("master data copy started")
 	}

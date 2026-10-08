@@ -53,6 +53,8 @@ type Config struct {
 	AgentAlertsEnabled bool
 	// The worker copies the shop's customers, suppliers and items from SML once a day for the assistant's search.
 	MasterSyncEnabled       bool
+	MasterSyncStartMinute   int
+	MasterSyncWindowMinutes int
 	AgentAlertDryRun        bool
 	AgentAlertWebhookURL    string
 	AgentAlertWebhookSecret string
@@ -229,6 +231,14 @@ func Load(lookup LookupFunc) (Config, error) {
 			agentAlertWebhookRoutes = append(agentAlertWebhookRoutes, route)
 		}
 	}
+	masterSyncStartMinute, err := intValue(lookup, "MASTER_SYNC_START_MINUTE", 6*60+30, 0, 23*60+59)
+	if err != nil {
+		return Config{}, err
+	}
+	masterSyncWindowMinutes, err := intValue(lookup, "MASTER_SYNC_WINDOW_MINUTES", 240, 5, 24*60)
+	if err != nil {
+		return Config{}, err
+	}
 	agentAlertStartMinute, err := intValue(lookup, "AGENT_ALERT_START_MINUTE", 8*60+15, 0, 23*60+59)
 	if err != nil {
 		return Config{}, err
@@ -325,6 +335,8 @@ func Load(lookup LookupFunc) (Config, error) {
 		AgentAPIEnabled:              agentAPIEnabled,
 		AgentAlertsEnabled:           agentAlertsEnabled,
 		MasterSyncEnabled:            masterSyncEnabled,
+		MasterSyncStartMinute:        masterSyncStartMinute,
+		MasterSyncWindowMinutes:      masterSyncWindowMinutes,
 		AgentAlertDryRun:             agentAlertDryRun,
 		AgentAlertWebhookURL:         agentAlertWebhookURL,
 		AgentAlertWebhookSecret:      agentAlertWebhookSecret,
