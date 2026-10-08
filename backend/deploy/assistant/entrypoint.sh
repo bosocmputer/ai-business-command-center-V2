@@ -16,6 +16,12 @@ if [ -n "${TELEGRAM_ALLOWED_USERS:-}" ] && [ -z "${TELEGRAM_HOME_CHANNEL:-}" ]; 
   export TELEGRAM_HOME_CHANNEL="${TELEGRAM_ALLOWED_USERS%%,*}"
 fi
 cp /assistant/config.yaml /opt/data/config.yaml
+# The /new reply: a Thai line instead of an English one, and no random English "tip" (see patch_locale.py).
+if /opt/hermes/.venv/bin/python /assistant/patch_locale.py /tmp/hermes-locales; then
+  export HERMES_BUNDLED_LOCALES=/tmp/hermes-locales
+else
+  echo '{"locale":"default messages kept: patch_locale.py found nothing to change"}'
+fi
 cp /assistant/SOUL.md /opt/data/SOUL.md
 GW=""
 trap '[ -n "$GW" ] && kill -TERM "$GW" 2>/dev/null; [ -n "$GW" ] && wait "$GW"; exit 0' TERM INT

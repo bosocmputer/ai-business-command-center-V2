@@ -43,6 +43,10 @@ platforms:
         priority_mode: replace
         priority: [new, help, whoami]
 
+# /new asks "approve once / always / cancel" before it resets a conversation. An owner should not see that.
+approvals:
+  destructive_slash_confirm: false
+
 # Built-in toolsets are chosen per channel: every channel must be listed or it gets the defaults
 # (web, browser, terminal, file, code execution). Verify with: hermes tools list --platform <channel>
 platform_toolsets:
