@@ -145,7 +145,7 @@ func (store *AgentStore) RecordAlertFire(ctx context.Context, target agent.Alert
 	event := agent.AlertEvent{RuleID: target.RuleID, TenantID: target.Principal.TenantID, Recipient: target.Principal.RecipientID, Rule: target.Rule, FiredOn: on, Message: message, Status: status}
 	err = tx.QueryRow(ctx, `
 		insert into agent_alert_events (rule_id, tenant_id, recipient_id, rule_key, fired_on, value, threshold, message, status, created_at, expires_at)
-		values ($1, $2, $3, $4, $5::date, $6::numeric, $7::numeric, $8, $9, $10, $10 + interval '365 days')
+		values ($1, $2, $3, $4, $5::date, $6::numeric, $7::numeric, $8, $9, $10::timestamptz, $10::timestamptz + interval '365 days')
 		on conflict (rule_id, fired_on) do nothing returning id`,
 		target.RuleID, event.TenantID, event.Recipient, target.Rule, on, value, threshold, message, status, now).Scan(&event.ID)
 	if errors.Is(err, pgx.ErrNoRows) {
