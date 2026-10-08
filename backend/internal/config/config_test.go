@@ -402,3 +402,16 @@ func TestMasterDataCopyIsOffUntilSwitchedOn(t *testing.T) {
 		t.Fatal("a start minute past the end of the day must be refused")
 	}
 }
+
+func TestMonthlyCallBudgetIsOffByDefaultAndBounded(t *testing.T) {
+	cfg, err := Load(alertTestValues(nil))
+	if err != nil || cfg.AgentMonthlyCallBudget != 0 {
+		t.Fatalf("default: %d %v", cfg.AgentMonthlyCallBudget, err)
+	}
+	if cfg, err = Load(alertTestValues(map[string]string{"AGENT_MONTHLY_CALL_BUDGET": "3000"})); err != nil || cfg.AgentMonthlyCallBudget != 3000 {
+		t.Fatalf("set: %d %v", cfg.AgentMonthlyCallBudget, err)
+	}
+	if _, err = Load(alertTestValues(map[string]string{"AGENT_MONTHLY_CALL_BUDGET": "-1"})); err == nil {
+		t.Fatal("a negative budget must be refused")
+	}
+}

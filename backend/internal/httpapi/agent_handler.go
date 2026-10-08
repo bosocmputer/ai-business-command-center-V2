@@ -61,10 +61,15 @@ func registerAgentRoutes(router chi.Router, api AgentAPI, enabled bool) {
 				}
 				principal, err := api.Authenticate(request.Context(), token)
 				var limited *agent.RateLimitedError
+				var budgetUsed *agent.BudgetUsedError
 				switch {
 				case errors.As(err, &limited):
 					response.Header().Set("Retry-After", strconv.Itoa(int(limited.RetryAfter.Seconds())))
 					writeAgentJSON(response, http.StatusTooManyRequests, agentError{Status: "RATE_LIMITED", Message: agent.MessageRateLimited})
+					return
+				case errors.As(err, &budgetUsed):
+					response.Header().Set("Retry-After", strconv.Itoa(int(budgetUsed.RetryAfter.Seconds())))
+					writeAgentJSON(response, http.StatusTooManyRequests, agentError{Status: "BUDGET_USED", Message: agent.MessageBudgetUsedMonth})
 					return
 				case errors.Is(err, agent.ErrUnauthorized):
 					writeAgentJSON(response, http.StatusUnauthorized, agentError{Status: "UNAUTHORIZED", Message: agent.MessageUnauthorized})

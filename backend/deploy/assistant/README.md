@@ -46,6 +46,21 @@ real data only after the shop's agreement allows it):
 docker compose exec assistant /opt/hermes/bin/hermes -z "เดือนนี้ขายได้เท่าไหร่"
 ```
 
+## Updating Hermes
+
+Never change the pinned image (`compose.assistant.yml`) on a hunch. Run the candidate beside the live assistant first:
+
+```
+cd backend/deploy
+./assistant/upgrade-check.sh nousresearch/hermes-agent:<tag>@sha256:<digest>  [5,9,13]
+```
+
+It starts the candidate with no Telegram, no alert destinations and an empty memory, and checks that the gateway is healthy,
+that every built-in tool is still disabled on cli, api_server, telegram and webhook, that the shim shows exactly the tools in
+`aibcc_mcp.py`, and that real questions pass against the real Agent API. It spends about three of the token's 60 hourly calls per
+question. Only after "UPGRADE CHECK PASSED": back up the data volume (`assistant/backup.sh`), change the digest, recreate the
+assistant, read the logs for ten minutes, and keep the old digest at hand to roll back (change it back and recreate).
+
 ## Search: finding a customer, supplier or item
 
 `search_master` finds a record by a name, a code or a phone number the owner says ("เบอร์ของลูกค้า …", "รหัสสินค้า ปูน …").

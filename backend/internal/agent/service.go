@@ -27,6 +27,9 @@ type Config struct {
 	CallsPerHour     int
 	RefreshesPerHour int
 	TokenTTL         time.Duration
+	// MonthlyCallBudget is the most counted calls a shop's assistant may make in a month of the shop's calendar. 0 means no
+	// budget. Calls are the measure AI-BCC can see; each question costs a few of them, and the model's own cost follows it.
+	MonthlyCallBudget int
 }
 
 func (config Config) withDefaults() Config {
@@ -83,6 +86,19 @@ func (service *Service) Authenticate(ctx context.Context, rawToken string) (Prin
 		_ = service.store.RecordCall(ctx, Call{TokenID: principal.TokenID, TenantID: principal.TenantID, RecipientID: principal.RecipientID, Tool: ToolContext, Outcome: OutcomeRateLimited}, now)
 		return principal, &RateLimitedError{RetryAfter: time.Minute}
 	}
+	if budget := service.config.MonthlyCallBudget; budget > 0 {
+		location := locationOf(principal)
+		local := now.In(location)
+		monthStart := time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, location)
+		spent, spentErr := service.store.TenantCallsSince(ctx, principal.TenantID, monthStart.UTC())
+		if spentErr != nil {
+			return Principal{}, spentErr
+		}
+		if spent >= budget {
+			_ = service.store.RecordCall(ctx, Call{TokenID: principal.TokenID, TenantID: principal.TenantID, RecipientID: principal.RecipientID, Tool: ToolContext, Outcome: OutcomeRateLimited}, now)
+			return principal, &BudgetUsedError{RetryAfter: max(time.Minute, monthStart.AddDate(0, 1, 0).Sub(local))}
+		}
+	}
 	_ = service.store.TouchToken(ctx, principal.TokenID, now)
 	return principal, nil
 }
@@ -101,6 +117,9 @@ type ReportInfo struct {
 type Limits struct {
 	CallsPerHour   int `json:"callsPerHour"`
 	CallsRemaining int `json:"callsRemaining"`
+	// MonthlyBudget and CallsThisMonth appear only when the shop has a monthly budget.
+	MonthlyBudget  int `json:"monthlyBudget,omitempty"`
+	CallsThisMonth int `json:"callsThisMonth,omitempty"`
 }
 
 type ContextResponse struct {
@@ -212,6 +231,15 @@ func (service *Service) Context(ctx context.Context, principal Principal) (Conte
 	response := ContextResponse{
 		Shop: principal.ShopName, Timezone: location.String(), Today: now.In(location).Format(time.DateOnly), Reports: reports,
 		Limits: Limits{CallsPerHour: service.config.CallsPerHour, CallsRemaining: max(0, service.config.CallsPerHour-used)},
+	}
+	if budget := service.config.MonthlyCallBudget; budget > 0 {
+		location := locationOf(principal)
+		local := now.In(location)
+		spent, _ := service.store.TenantCallsSince(ctx, principal.TenantID, time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, location).UTC())
+		response.Limits.MonthlyBudget, response.Limits.CallsThisMonth = budget, spent
+		if spent*10 >= budget*8 {
+			response.Notes = append(response.Notes, "ใช้งบการใช้ผู้ช่วยของเดือนนี้ไปแล้วกว่า 80% ถ้าครบ ผู้ช่วยจะหยุดตอบจนต้นเดือนหน้า")
+		}
 	}
 	if !principal.NamesVisible {
 		response.Notes = append(response.Notes, MessageMasked)

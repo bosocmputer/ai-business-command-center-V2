@@ -22,14 +22,15 @@ func (testHasher) HashToken(token string) []byte {
 }
 
 type fakeStore struct {
-	principals map[string]Principal
-	permitted  []report.Key
-	calls      []Call
-	callsUsed  int
-	preparing  int
-	delivered  *Delivered
-	issuedHash []byte
-	issueErr   error
+	principals  map[string]Principal
+	permitted   []report.Key
+	calls       []Call
+	callsUsed   int
+	tenantCalls int
+	preparing   int
+	delivered   *Delivered
+	issuedHash  []byte
+	issueErr    error
 }
 
 func (store *fakeStore) Authenticate(_ context.Context, hash []byte, _ time.Time) (Principal, error) {
@@ -41,6 +42,9 @@ func (store *fakeStore) Authenticate(_ context.Context, hash []byte, _ time.Time
 func (store *fakeStore) TouchToken(context.Context, uuid.UUID, time.Time) error { return nil }
 func (store *fakeStore) CallsSince(context.Context, uuid.UUID, time.Time) (int, error) {
 	return store.callsUsed, nil
+}
+func (store *fakeStore) TenantCallsSince(context.Context, uuid.UUID, time.Time) (int, error) {
+	return store.tenantCalls, nil
 }
 func (store *fakeStore) PreparingSince(context.Context, uuid.UUID, time.Time) (int, error) {
 	return store.preparing, nil
@@ -434,5 +438,47 @@ func TestCustomerReportsDefaultToTheLast180DaysNotTheMonthSoFar(t *testing.T) {
 	sales, _ := report.DefinitionFor(report.SalesGoodsServices)
 	if period, _ := resolvePeriod(sales, location, now, "", ""); period.DateFrom != "2026-10-01" {
 		t.Errorf("sales keeps the month so far: %+v", period)
+	}
+}
+
+func budgetService(store *fakeStore, budget int) *Service {
+	store.principals = map[string]Principal{string(testHasher{}.HashToken("abcc_valid")): principal}
+	return NewService(store, &fakeSnapshots{}, testHasher{}, bytes.NewReader(bytes.Repeat([]byte{7}, 64)), Alias(testHasher{}), func() time.Time { return now }, Config{MonthlyCallBudget: budget})
+}
+
+func TestAShopThatUsedItsMonthlyBudgetIsStoppedUntilNextMonth(t *testing.T) {
+	store := &fakeStore{tenantCalls: 3000}
+	service := budgetService(store, 3000)
+	_, err := service.Authenticate(context.Background(), "abcc_valid")
+	var used *BudgetUsedError
+	if !errors.As(err, &used) {
+		t.Fatalf("err = %v, want BudgetUsedError", err)
+	}
+	// now is 1 Oct 2026 12:00 in Bangkok: the new month starts 31 days minus 12 hours later, not an hour from now.
+	if used.RetryAfter < 29*24*time.Hour || used.RetryAfter > 31*24*time.Hour {
+		t.Errorf("retry after = %v", used.RetryAfter)
+	}
+	if last := store.calls[len(store.calls)-1]; last.Outcome != OutcomeRateLimited {
+		t.Errorf("a refusal must not count against the budget it protects: %+v", last)
+	}
+	store.tenantCalls = 2999
+	if _, err := budgetService(store, 3000).Authenticate(context.Background(), "abcc_valid"); err != nil {
+		t.Fatalf("one call under the budget works: %v", err)
+	}
+	store.tenantCalls = 1_000_000
+	if _, err := budgetService(store, 0).Authenticate(context.Background(), "abcc_valid"); err != nil {
+		t.Fatalf("no budget set means no cap: %v", err)
+	}
+}
+
+func TestContextShowsTheMonthlyBudgetOnlyWhenThereIsOne(t *testing.T) {
+	store := &fakeStore{tenantCalls: 2500, permitted: []report.Key{report.SalesGoodsServices}}
+	got, err := budgetService(store, 3000).Context(context.Background(), principal)
+	if err != nil || got.Limits.MonthlyBudget != 3000 || got.Limits.CallsThisMonth != 2500 || len(got.Notes) == 0 || !strings.Contains(strings.Join(got.Notes, " "), "80%") {
+		t.Fatalf("context = %+v %v", got.Limits, err)
+	}
+	plain, _ := budgetService(&fakeStore{tenantCalls: 2500}, 0).Context(context.Background(), principal)
+	if plain.Limits.MonthlyBudget != 0 || plain.Limits.CallsThisMonth != 0 {
+		t.Errorf("no budget, nothing shown: %+v", plain.Limits)
 	}
 }

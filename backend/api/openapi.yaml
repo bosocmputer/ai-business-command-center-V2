@@ -1818,7 +1818,7 @@ components:
       type: object
       required: [status, message]
       properties:
-        status: {type: string, enum: [UNAUTHORIZED, NO_DATA, INVALID_PERIOD, INVALID_ALERT, INVALID_DRAFT, INVALID_SEARCH, INVALID_LOOKUP, RATE_LIMITED, AGENT_DISABLED, ERROR]}
+        status: {type: string, enum: [UNAUTHORIZED, NO_DATA, INVALID_PERIOD, INVALID_ALERT, INVALID_DRAFT, INVALID_SEARCH, INVALID_LOOKUP, RATE_LIMITED, BUDGET_USED, AGENT_DISABLED, ERROR]}
         message: {type: string, description: Plain Thai the assistant can pass on.}
     AgentContext:
       type: object

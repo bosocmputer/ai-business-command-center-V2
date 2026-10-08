@@ -55,6 +55,8 @@ type Config struct {
 	MasterSyncEnabled bool
 	// The assistant can ask the shop's system one narrow live question about a known customer or item. Off until switched on.
 	AgentLiveLookupsEnabled bool
+	// AgentMonthlyCallBudget caps the assistant calls a shop may make in a calendar month (0 = no cap). It is the cost brake.
+	AgentMonthlyCallBudget  int
 	MasterSyncStartMinute   int
 	MasterSyncWindowMinutes int
 	AgentAlertDryRun        bool
@@ -213,6 +215,10 @@ func Load(lookup LookupFunc) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	agentMonthlyCallBudget, err := intValue(lookup, "AGENT_MONTHLY_CALL_BUDGET", 0, 0, 1_000_000)
+	if err != nil {
+		return Config{}, err
+	}
 	liveLookupsEnabled, err := boolValue(lookup, "AGENT_LIVE_LOOKUPS_ENABLED", false)
 	if err != nil {
 		return Config{}, err
@@ -342,6 +348,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		AgentAlertsEnabled:           agentAlertsEnabled,
 		MasterSyncEnabled:            masterSyncEnabled,
 		AgentLiveLookupsEnabled:      liveLookupsEnabled,
+		AgentMonthlyCallBudget:       agentMonthlyCallBudget,
 		MasterSyncStartMinute:        masterSyncStartMinute,
 		MasterSyncWindowMinutes:      masterSyncWindowMinutes,
 		AgentAlertDryRun:             agentAlertDryRun,

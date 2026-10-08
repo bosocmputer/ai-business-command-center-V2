@@ -51,7 +51,9 @@ const (
 	MessageBudgetUsed   = "เพิ่งสั่งดึงข้อมูลไปหลายรายการแล้ว ขอรอสักครู่ (ประมาณ 5 นาที) แล้วถามใหม่"
 	MessageStale        = "ข้อมูลนี้ไม่ใช่ข้อมูลล่าสุด ระบบกำลังอัปเดตให้"
 	MessageRateLimited  = "ถามถี่เกินไป รอสักครู่แล้วถามใหม่"
-	MessageMasked       = "ชื่อลูกค้าและผู้จำหน่ายถูกแทนด้วยรหัส เช่น ลูกค้า-7F3A เพื่อความเป็นส่วนตัว"
+	// MessageBudgetUsedMonth is said when a shop has used the month's budget of assistant calls.
+	MessageBudgetUsedMonth = "งบการใช้ผู้ช่วยของเดือนนี้ครบแล้ว ผู้ช่วยจะตอบคำถามได้อีกครั้งต้นเดือนหน้า (การเตือนและสรุปเช้ายังส่งตามปกติ) ถ้าต้องการใช้เพิ่มให้ติดต่อผู้ดูแลระบบ"
+	MessageMasked          = "ชื่อลูกค้าและผู้จำหน่ายถูกแทนด้วยรหัส เช่น ลูกค้า-7F3A เพื่อความเป็นส่วนตัว"
 )
 
 var (
@@ -62,6 +64,12 @@ var (
 	ErrAIChatDisabled    = errors.New("the recipient has not been given the assistant")
 	ErrRecipientNotFound = errors.New("recipient not found")
 )
+
+// BudgetUsedError says the shop has used the month's budget of assistant calls. It is the cost brake: the assistant stops
+// answering until the new month, while alerts and the morning digest (which use no model) go on.
+type BudgetUsedError struct{ RetryAfter time.Duration }
+
+func (err *BudgetUsedError) Error() string { return "agent monthly budget used" }
 
 // RateLimitedError says how long to wait.
 type RateLimitedError struct{ RetryAfter time.Duration }
@@ -116,6 +124,8 @@ type Store interface {
 	Authenticate(ctx context.Context, tokenHash []byte, now time.Time) (Principal, error)
 	TouchToken(ctx context.Context, tokenID uuid.UUID, now time.Time) error
 	CallsSince(ctx context.Context, tokenID uuid.UUID, since time.Time) (int, error)
+	// TenantCallsSince counts the calls every token of a shop made since a moment, counted the same way as CallsSince.
+	TenantCallsSince(ctx context.Context, tenantID uuid.UUID, since time.Time) (int, error)
 	PreparingSince(ctx context.Context, tenantID uuid.UUID, since time.Time) (int, error)
 	RecordCall(ctx context.Context, call Call, now time.Time) error
 	PermittedReports(ctx context.Context, principal Principal, now time.Time) ([]report.Key, error)

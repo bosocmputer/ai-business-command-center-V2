@@ -26,13 +26,14 @@ func (agentTestHasher) HashToken(token string) []byte {
 }
 
 type agentTestStore struct {
-	principal agent.Principal
-	valid     string
-	permitted []report.Key
-	used      int
-	issueErr  error
-	issued    int
-	revoked   int
+	principal  agent.Principal
+	valid      string
+	permitted  []report.Key
+	used       int
+	tenantUsed int
+	issueErr   error
+	issued     int
+	revoked    int
 }
 
 func (store *agentTestStore) Authenticate(_ context.Context, hash []byte, _ time.Time) (agent.Principal, error) {
@@ -44,6 +45,9 @@ func (store *agentTestStore) Authenticate(_ context.Context, hash []byte, _ time
 func (store *agentTestStore) TouchToken(context.Context, uuid.UUID, time.Time) error { return nil }
 func (store *agentTestStore) CallsSince(context.Context, uuid.UUID, time.Time) (int, error) {
 	return store.used, nil
+}
+func (store *agentTestStore) TenantCallsSince(context.Context, uuid.UUID, time.Time) (int, error) {
+	return store.tenantUsed, nil
 }
 func (store *agentTestStore) PreparingSince(context.Context, uuid.UUID, time.Time) (int, error) {
 	return 0, nil
@@ -462,5 +466,17 @@ func TestAgentLookupReturnsFiguresAndRefusesLikeAMissingReport(t *testing.T) {
 	bare := agentTestHandler(store, true)
 	if got := agentGet(bare, "/api/v1/agent/lookup/item_stock?code=A01", "abcc_token"); got.Code != http.StatusNotFound || !bytes.Equal(got.Body.Bytes(), missing.Body.Bytes()) {
 		t.Fatalf("lookups that are not switched on must answer like a missing report: %d %s", got.Code, got.Body.String())
+	}
+}
+
+func TestAgentAnswersBudgetUsedWithRetryAfterAndThaiMessage(t *testing.T) {
+	store := newAgentStore()
+	store.tenantUsed = 5000
+	now := time.Date(2026, 10, 1, 5, 0, 0, 0, time.UTC)
+	service := agent.NewService(store, agentTestSnapshots{}, agentTestHasher{}, bytes.NewReader(bytes.Repeat([]byte{3}, 64)), agent.Alias(agentTestHasher{}), func() time.Time { return now }, agent.Config{MonthlyCallBudget: 5000})
+	handler := NewHandler(Dependencies{Readiness: readinessFunc(func(context.Context) error { return nil }), AdminAuth: &fakeAdminAuth{}, Agent: service, AgentEnabled: true})
+	got := agentGet(handler, "/api/v1/agent/context", "abcc_token")
+	if got.Code != http.StatusTooManyRequests || !strings.Contains(got.Body.String(), "BUDGET_USED") || !strings.Contains(got.Body.String(), "ต้นเดือนหน้า") || got.Header().Get("Retry-After") == "" {
+		t.Fatalf("budget: %d %s %v", got.Code, got.Body.String(), got.Header())
 	}
 }
