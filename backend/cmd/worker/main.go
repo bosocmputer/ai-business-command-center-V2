@@ -148,7 +148,9 @@ func main() {
 		if !cfg.AgentAlertDryRun {
 			sender = &alert.WebhookSender{BaseURL: cfg.AgentAlertWebhookURL, Secret: cfg.AgentAlertWebhookSecret, Routes: cfg.AgentAlertWebhookRoutes}
 		}
-		go alertLoop(ctx, logger, alert.NewEvaluator(agentStore, source, sender, cfg.AgentAlertDryRun, time.Now, logger))
+		evaluator := alert.NewEvaluator(agentStore, source, sender, cfg.AgentAlertDryRun, time.Now, logger)
+		evaluator.StartMinute, evaluator.Window = cfg.AgentAlertStartMinute, time.Duration(cfg.AgentAlertWindowMinutes)*time.Minute
+		go alertLoop(ctx, logger, evaluator)
 		logger.Info("agent alerts started", "dryRun", cfg.AgentAlertDryRun, "routes", len(cfg.AgentAlertWebhookRoutes))
 	}
 	if cfg.LineMessagingAccessToken != "" {

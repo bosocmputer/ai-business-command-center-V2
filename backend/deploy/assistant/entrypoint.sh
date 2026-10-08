@@ -16,6 +16,8 @@ if [ -n "${TELEGRAM_ALLOWED_USERS:-}" ] && [ -z "${TELEGRAM_HOME_CHANNEL:-}" ]; 
   export TELEGRAM_HOME_CHANNEL="${TELEGRAM_ALLOWED_USERS%%,*}"
 fi
 cp /assistant/config.yaml /opt/data/config.yaml
+# Alerts: the routes AI-BCC's worker posts to (see render_routes.py). Without a secret nothing is opened.
+/opt/hermes/.venv/bin/python /assistant/render_routes.py
 # The /new reply: a Thai line instead of an English one, and no random English "tip" (see patch_locale.py).
 if /opt/hermes/.venv/bin/python /assistant/patch_locale.py /tmp/hermes-locales; then
   export HERMES_BUNDLED_LOCALES=/tmp/hermes-locales

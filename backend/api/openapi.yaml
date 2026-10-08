@@ -510,6 +510,36 @@ paths:
         '401': {$ref: '#/components/responses/AgentRefusal'}
         '404': {$ref: '#/components/responses/AgentRefusal'}
         '429': {$ref: '#/components/responses/AgentRefusal'}
+  /api/v1/agent/alerts:
+    get:
+      tags: [Agent]
+      operationId: getAgentAlerts
+      description: The alerts this token's recipient can set, with the threshold and on/off state of each. Alerts are checked once a day by the worker and sent as a message in the assistant's chat; none is sent unless the operator has switched sending on.
+      security: [{AgentToken: []}]
+      responses:
+        '200': {description: The catalog with this recipient's settings., content: {application/json: {schema: {$ref: '#/components/schemas/AgentAlerts'}}}}
+        '401': {$ref: '#/components/responses/AgentRefusal'}
+        '404': {$ref: '#/components/responses/AgentRefusal'}
+        '429': {$ref: '#/components/responses/AgentRefusal'}
+  /api/v1/agent/alerts/{ruleKey}:
+    put:
+      tags: [Agent]
+      operationId: putAgentAlert
+      description: Sets, changes or switches off one alert for this token's recipient. This is the only write in the Agent API and it changes nothing but the recipient's own alert settings; it is audited. A rule on a report the recipient may not read answers exactly like an unknown rule.
+      security: [{AgentToken: []}]
+      parameters:
+        - {name: ruleKey, in: path, required: true, schema: {type: string, enum: [ar_overdue, ar_over_year, stock_reorder, sales_drop]}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AgentAlertSet'}
+      responses:
+        '200': {description: The alert as saved., content: {application/json: {schema: {$ref: '#/components/schemas/AgentAlert'}}}}
+        '401': {$ref: '#/components/responses/AgentRefusal'}
+        '404': {$ref: '#/components/responses/AgentRefusal'}
+        '422': {$ref: '#/components/responses/AgentRefusal'}
+        '429': {$ref: '#/components/responses/AgentRefusal'}
   /api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/invitation:
     post:
       tags: [Admin configuration]
@@ -1595,11 +1625,37 @@ components:
       properties:
         token: {type: string, description: Shown once. Stored only as a hash.}
         info: {$ref: '#/components/schemas/AgentTokenInfo'}
+    AgentAlert:
+      type: object
+      required: [rule, label, description, unit, available, enabled]
+      properties:
+        rule: {type: string, enum: [ar_overdue, ar_over_year, stock_reorder, sales_drop]}
+        label: {type: string, description: What the owner calls it.}
+        description: {type: string, description: What is watched, in plain Thai.}
+        unit: {type: string, enum: [THB, COUNT, PERCENT]}
+        available: {type: boolean, description: False when the recipient may not read the report the rule watches.}
+        threshold: {type: string, description: "Set by the owner. Baht, a number of items or a percent, as plain digits."}
+        enabled: {type: boolean}
+        lastFiredAt: {type: string, format: date-time}
+        message: {type: string, description: Plain Thai the assistant can pass on after a change.}
+    AgentAlerts:
+      type: object
+      required: [status, alerts]
+      properties:
+        status: {type: string, enum: [READY]}
+        alerts: {type: array, items: {$ref: '#/components/schemas/AgentAlert'}}
+        notes: {type: array, items: {type: string}}
+    AgentAlertSet:
+      type: object
+      additionalProperties: false
+      properties:
+        threshold: {type: string, description: "Omit to keep the current threshold (switching a rule off or on)."}
+        enabled: {type: boolean, description: Defaults to true.}
     AgentError:
       type: object
       required: [status, message]
       properties:
-        status: {type: string, enum: [UNAUTHORIZED, NO_DATA, INVALID_PERIOD, RATE_LIMITED, AGENT_DISABLED, ERROR]}
+        status: {type: string, enum: [UNAUTHORIZED, NO_DATA, INVALID_PERIOD, INVALID_ALERT, RATE_LIMITED, AGENT_DISABLED, ERROR]}
         message: {type: string, description: Plain Thai the assistant can pass on.}
     AgentContext:
       type: object

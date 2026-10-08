@@ -50,6 +50,13 @@ tags: [backend, security, operations, retention]
   records the internal window by an exact UUID, and suppresses PostgreSQL
   command tags so successful inserts cannot be misclassified as failures.
 
+## Assistant alerts
+
+- The owner sets alerts by talking to the assistant (`alerts`, `alert_set` tools = `GET/PUT /api/v1/agent/alerts`). Rules live in `agent_alert_rules`, firings in `agent_alert_events` (figures and fixed Thai text, no names, kept 365 days). The worker's `alertLoop` (`internal/alert`) runs every five minutes; a rule is checked once a day, from 08:15 to 12:15 shop time.
+- Off by default. `AGENT_ALERTS_ENABLED=true` alone is a dry run (events are recorded as `DRY_RUN`, nothing is sent); `AGENT_ALERT_DRY_RUN=false` also needs `AGENT_ALERT_WEBHOOK_URL`, a secret of 32+ characters and routes, or the worker refuses to start. Control it with `deploy/assistant/alerts.sh status|dry|live|off|test`.
+- The worker signs each alert (`X-Webhook-Signature-V2` over `<unix seconds>.<body>`) and posts it to the assistant's webhook on the internal `agent` network, which the worker joins for this; the assistant relays the text to Telegram unchanged. Delivery errors are kept as short codes (`UNREACHABLE`, `NO_ROUTE`, `HTTP_500`), never as response bodies. A failed delivery is retried for up to six hours and five tries.
+- An alert is written as fixed Thai text by AI-BCC from its own figures; the model does not touch it. It carries no customer names.
+
 ## Container logs
 
 - Every service in the compose files writes Docker `json-file` logs capped at 20 MB x 5 files (100 MB). Docker keeps logs forever by default, and a worker in a sibling deployment once filled a disk with 27.8 GB of repeated error lines.

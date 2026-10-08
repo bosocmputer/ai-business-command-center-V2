@@ -391,6 +391,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The alerts this token's recipient can set, with the threshold and on/off state of each. Alerts are checked once a day by the worker and sent as a message in the assistant's chat; none is sent unless the operator has switched sending on. */
+        get: operations["getAgentAlerts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/alerts/{ruleKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Sets, changes or switches off one alert for this token's recipient. This is the only write in the Agent API and it changes nothing but the recipient's own alert settings; it is audited. A rule on a report the recipient may not read answers exactly like an unknown rule. */
+        put: operations["putAgentAlert"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/invitation": {
         parameters: {
             query?: never;
@@ -1319,9 +1353,40 @@ export interface components {
             token: string;
             info: components["schemas"]["AgentTokenInfo"];
         };
+        AgentAlert: {
+            /** @enum {string} */
+            rule: "ar_overdue" | "ar_over_year" | "stock_reorder" | "sales_drop";
+            /** @description What the owner calls it. */
+            label: string;
+            /** @description What is watched */
+            description: string;
+            /** @enum {string} */
+            unit: "THB" | "COUNT" | "PERCENT";
+            /** @description False when the recipient may not read the report the rule watches. */
+            available: boolean;
+            /** @description Set by the owner. Baht, a number of items or a percent, as plain digits. */
+            threshold?: string;
+            enabled: boolean;
+            /** Format: date-time */
+            lastFiredAt?: string;
+            /** @description Plain Thai the assistant can pass on after a change. */
+            message?: string;
+        };
+        AgentAlerts: {
+            /** @enum {string} */
+            status: "READY";
+            alerts: components["schemas"]["AgentAlert"][];
+            notes?: string[];
+        };
+        AgentAlertSet: {
+            /** @description Omit to keep the current threshold (switching a rule off or on). */
+            threshold?: string;
+            /** @description Defaults to true. */
+            enabled?: boolean;
+        };
         AgentError: {
             /** @enum {string} */
-            status: "UNAUTHORIZED" | "NO_DATA" | "INVALID_PERIOD" | "RATE_LIMITED" | "AGENT_DISABLED" | "ERROR";
+            status: "UNAUTHORIZED" | "NO_DATA" | "INVALID_PERIOD" | "INVALID_ALERT" | "RATE_LIMITED" | "AGENT_DISABLED" | "ERROR";
             /** @description Plain Thai the assistant can pass on. */
             message: string;
         };
@@ -3790,6 +3855,59 @@ export interface operations {
             };
             401: components["responses"]["AgentRefusal"];
             404: components["responses"]["AgentRefusal"];
+            429: components["responses"]["AgentRefusal"];
+        };
+    };
+    getAgentAlerts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The catalog with this recipient's settings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentAlerts"];
+                };
+            };
+            401: components["responses"]["AgentRefusal"];
+            404: components["responses"]["AgentRefusal"];
+            429: components["responses"]["AgentRefusal"];
+        };
+    };
+    putAgentAlert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ruleKey: "ar_overdue" | "ar_over_year" | "stock_reorder" | "sales_drop";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentAlertSet"];
+            };
+        };
+        responses: {
+            /** @description The alert as saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentAlert"];
+                };
+            };
+            401: components["responses"]["AgentRefusal"];
+            404: components["responses"]["AgentRefusal"];
+            422: components["responses"]["AgentRefusal"];
             429: components["responses"]["AgentRefusal"];
         };
     };

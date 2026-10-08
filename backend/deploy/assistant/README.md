@@ -46,6 +46,28 @@ real data only after the shop's agreement allows it):
 docker compose exec assistant /opt/hermes/bin/hermes -z "เดือนนี้ขายได้เท่าไหร่"
 ```
 
+## Alerts: the assistant speaks first
+
+The owner sets alerts in their own words ("tell me when overdue receivables pass 500,000") and the assistant stores them
+through `alert_set`. AI-BCC's worker checks the rules once a day after 08:15 and, when one is true, sends a message
+through the assistant's webhook (a route per person in `ALERT_CHAT_IDS`, default everyone allowed to chat, at most five).
+The text is written by AI-BCC from its own figures; no model touches it, and the owner can answer it in the same chat.
+
+Four rules to begin with: overdue receivables, receivables over a year, items at the reorder point (all quiet for three
+days unless 10% worse) and yesterday's sales down against the same weekday a week earlier. Thresholds are the owner's;
+nothing is guessed for them.
+
+Everything is off until you switch it on, and on it only records:
+
+```
+cd backend/deploy
+./assistant/alerts.sh status        # switches, rules, last firings
+./assistant/alerts.sh dry           # check every morning, record what would be sent, send nothing
+./assistant/alerts.sh live          # also send
+./assistant/alerts.sh off
+./assistant/alerts.sh test <id>     # one labelled test message to one Telegram id from the allowed list
+```
+
 ## Slow reports: waiting and the morning prewarm
 
 A report that has to be fetched live from the shop's system takes 15 to 60 seconds (measured 15-58 s on 2026-10-05). The

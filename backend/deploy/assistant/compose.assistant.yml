@@ -24,6 +24,10 @@ services:
   api:
     networks: [internal, agent]
 
+  # The worker posts alerts to the assistant's webhook, so it joins the (internal, nothing-else-on-it) agent network.
+  worker:
+    networks: [internal, agent]
+
   assistant-state-init:
     <<: *assistant-lock
     image: *assistant-image

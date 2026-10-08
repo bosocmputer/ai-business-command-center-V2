@@ -25,10 +25,15 @@ POLL_SECONDS = float(os.environ.get("AIBCC_POLL_SECONDS", "6"))
 mcp = FastMCP("aibcc")
 
 
-def call(path, query=None):
+def call(path, query=None, method="GET", body=None):
     query = {k: v for k, v in (query or {}).items() if v}
     url = BASE + path + (("?" + urllib.parse.urlencode(query)) if query else "")
-    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {TOKEN}"})
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
             return response.read().decode("utf-8")
@@ -82,6 +87,22 @@ def compare(report_key: str, metric: str, a_from: str, a_to: str, b_from: str, b
 def latest_delivery(report_key: str) -> str:
     """The report exactly as the owner last received it on the morning card (what the owner has already seen)."""
     return call("/deliveries/latest", {"reportKey": report_key})
+
+
+@mcp.tool()
+def alerts() -> str:
+    """The alerts the owner can ask for (a rule key, what it watches, its unit) and which are on with what threshold.
+    Call this before changing an alert, and when the owner asks what alerts are set."""
+    return call("/alerts")
+
+
+@mcp.tool()
+def alert_set(rule_key: str, threshold: str = "", enabled: bool = True) -> str:
+    """Set, change or switch off ONE alert, only when the owner clearly asks for it in this conversation.
+    rule_key is one of the keys from alerts(). threshold is the number the owner said, as digits (baht, a count of items or a
+    percent depending on the rule); leave it empty to switch a rule off (enabled=false) or back on with its old threshold.
+    This changes only the owner's own alert settings. Read the result back to the owner."""
+    return call("/alerts/" + urllib.parse.quote(rule_key, safe=""), method="PUT", body={"threshold": threshold, "enabled": enabled})
 
 
 if __name__ == "__main__":

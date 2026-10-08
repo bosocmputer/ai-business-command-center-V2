@@ -50,11 +50,14 @@ type Config struct {
 	AgentAPIEnabled              bool
 	// Alerts the assistant sets up are checked once a day by the worker. They are off until an operator turns them on,
 	// and then only record what they would have said (dry run) until sending is switched on too.
-	AgentAlertsEnabled       bool
-	AgentAlertDryRun         bool
-	AgentAlertWebhookURL     string
-	AgentAlertWebhookSecret  string
-	AgentAlertWebhookRoutes  []string
+	AgentAlertsEnabled      bool
+	AgentAlertDryRun        bool
+	AgentAlertWebhookURL    string
+	AgentAlertWebhookSecret string
+	AgentAlertWebhookRoutes []string
+	// The daily check starts at this minute of the shop's day and gives up after the window (default 08:15 and four hours).
+	AgentAlertStartMinute    int
+	AgentAlertWindowMinutes  int
 	HeavyChunkTenantReports  []string
 	ScheduleChunkEnabled     bool
 	WatchdogEnabled          bool
@@ -220,6 +223,14 @@ func Load(lookup LookupFunc) (Config, error) {
 			agentAlertWebhookRoutes = append(agentAlertWebhookRoutes, route)
 		}
 	}
+	agentAlertStartMinute, err := intValue(lookup, "AGENT_ALERT_START_MINUTE", 8*60+15, 0, 23*60+59)
+	if err != nil {
+		return Config{}, err
+	}
+	agentAlertWindowMinutes, err := intValue(lookup, "AGENT_ALERT_WINDOW_MINUTES", 240, 5, 24*60)
+	if err != nil {
+		return Config{}, err
+	}
 	if agentAlertsEnabled && !agentAlertDryRun {
 		if _, parseErr := url.Parse(agentAlertWebhookURL); parseErr != nil || !strings.HasPrefix(agentAlertWebhookURL, "http") {
 			return Config{}, fmt.Errorf("AGENT_ALERT_WEBHOOK_URL must be an http(s) URL when alerts are sent")
@@ -311,6 +322,8 @@ func Load(lookup LookupFunc) (Config, error) {
 		AgentAlertWebhookURL:         agentAlertWebhookURL,
 		AgentAlertWebhookSecret:      agentAlertWebhookSecret,
 		AgentAlertWebhookRoutes:      agentAlertWebhookRoutes,
+		AgentAlertStartMinute:        agentAlertStartMinute,
+		AgentAlertWindowMinutes:      agentAlertWindowMinutes,
 		HeavyChunkTenantReports:      heavyChunkTenantReports,
 		ScheduleChunkEnabled:         scheduleChunkEnabled,
 		WatchdogEnabled:              watchdogEnabled,

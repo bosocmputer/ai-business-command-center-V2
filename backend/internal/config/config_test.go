@@ -328,6 +328,15 @@ func TestAlertsAreOffByDefaultAndRecordOnlyUntilSendingIsSwitchedOn(t *testing.T
 	if cfg.AgentAlertsEnabled || !cfg.AgentAlertDryRun {
 		t.Fatalf("alerts must be off and, if turned on, a dry run: %+v", cfg)
 	}
+	if cfg.AgentAlertStartMinute != 8*60+15 || cfg.AgentAlertWindowMinutes != 240 {
+		t.Fatalf("the check starts at 08:15 and runs four hours by default: %d %d", cfg.AgentAlertStartMinute, cfg.AgentAlertWindowMinutes)
+	}
+	if _, err := Load(alertTestValues(map[string]string{"AGENT_ALERT_START_MINUTE": "1500"})); err == nil {
+		t.Fatal("a start minute past the end of the day must be refused")
+	}
+	if _, err := Load(alertTestValues(map[string]string{"AGENT_ALERT_WINDOW_MINUTES": "1"})); err == nil {
+		t.Fatal("a window shorter than one pass must be refused")
+	}
 	cfg, err = Load(alertTestValues(map[string]string{"AGENT_ALERTS_ENABLED": "true"}))
 	if err != nil || !cfg.AgentAlertsEnabled || !cfg.AgentAlertDryRun {
 		t.Fatalf("turning alerts on alone must stay a dry run, with no webhook needed: %+v %v", cfg, err)
