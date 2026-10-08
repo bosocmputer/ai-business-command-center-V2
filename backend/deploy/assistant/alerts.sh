@@ -46,7 +46,7 @@ ensure_secret() { # one shared secret: hermes.env (assistant) and .env.productio
 }
 
 apply() { # recreate the worker and the assistant so both read the new values
-  dc up -d --no-build worker assistant 2>&1 | grep -E "Recreated|Started|Error" || true
+  dc up -d --no-build --force-recreate worker assistant 2>&1 | grep -E "Recreated|Started|Error" || true
 }
 
 case "${1:-status}" in
