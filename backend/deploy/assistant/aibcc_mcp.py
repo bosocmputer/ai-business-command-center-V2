@@ -99,8 +99,8 @@ def alerts() -> str:
 @mcp.tool()
 def alert_set(rule_key: str, threshold: str = "", enabled: bool = True) -> str:
     """Set, change or switch off ONE alert, only when the owner clearly asks for it in this conversation.
-    rule_key is exactly one of: ar_overdue, ar_over_year, stock_reorder, sales_drop, morning_digest (the keys from alerts()). morning_digest is a daily summary switch: it takes no threshold (leave threshold empty, enabled=true to turn it on, enabled=false to turn it off). threshold is the number the owner said, as digits (baht, a count of items or a
-    percent depending on the rule), digits only without a unit such as "%" or "baht"; leave it empty to switch a rule off (enabled=false) or back on with its old threshold.
+    rule_key is exactly one of: ar_overdue, ar_over_year, stock_reorder, sales_drop, receipts_drop, margin_drop, morning_digest (the keys from alerts()). morning_digest is a daily summary switch: it takes no threshold (leave threshold empty, enabled=true to turn it on, enabled=false to turn it off). threshold is the number the owner said, as digits (baht, a count of items or a
+    percent or a number of percentage points depending on the rule), digits only without a unit such as "%" or "baht"; leave it empty to switch a rule off (enabled=false) or back on with its old threshold.
     This changes only the owner's own alert settings. Read the result back to the owner."""
     result = call("/alerts/" + urllib.parse.quote(rule_key, safe=""), method="PUT", body={"threshold": threshold, "enabled": enabled})
     try:

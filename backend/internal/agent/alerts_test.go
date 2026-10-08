@@ -241,3 +241,24 @@ func TestTheMorningDigestIsASwitchWithNoThreshold(t *testing.T) {
 		t.Fatalf("without any of the three reports it answers like a missing rule: %v %+v", err, noneAlerts.saved)
 	}
 }
+
+func TestPointsAndTheNewRulesAcceptWhatAPersonSays(t *testing.T) {
+	margin, _ := AlertRuleFor("margin_drop")
+	_, text, err := ParseAlertThreshold(margin, "5 จุด")
+	if err != nil || text != "5" {
+		t.Fatalf("5 points: %q %v", text, err)
+	}
+	for _, bad := range []string{"0", "51", "2.5", "5 บาท"} {
+		if _, _, err := ParseAlertThreshold(margin, bad); err == nil {
+			t.Errorf("%q must be refused for a margin rule", bad)
+		}
+	}
+	receipts, ok := AlertRuleFor("receipts_drop")
+	if !ok || receipts.Report != report.CashBankReceipts {
+		t.Fatalf("receipts_drop = %+v", receipts)
+	}
+	service, _, _ := alertService(report.SalesGoodsServices)
+	if _, err := service.SetAlert(context.Background(), principal, "receipts_drop", AlertSetRequest{Threshold: "30"}, "r"); !errors.Is(err, ErrNoData) {
+		t.Fatalf("without the cash report the rule looks missing: %v", err)
+	}
+}

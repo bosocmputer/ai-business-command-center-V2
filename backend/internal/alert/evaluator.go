@@ -186,8 +186,8 @@ func (evaluator *Evaluator) evaluate(ctx context.Context, target agent.AlertTarg
 		return evaluator.stateRule(ctx, target, def, "reorder_item_count", location, func(value *big.Rat) string {
 			return fmt.Sprintf("⚠️ แจ้งเตือน: มีสินค้าถึงจุดสั่งซื้อ %s รายการ (คุณตั้งเตือนไว้ตั้งแต่ %s รายการ)", whole(value), whole(target.Threshold))
 		}, "สินค้าอะไรใกล้หมดสต็อกบ้าง")
-	case agent.AlertSalesDrop:
-		return evaluator.salesDrop(ctx, target, def, local, location)
+	case agent.AlertSalesDrop, agent.AlertReceiptsDrop, agent.AlertMarginDrop:
+		return evaluator.weekdayDrop(ctx, target, def, local, location, dropSpecs[def.Key])
 	case agent.AlertMorningDigest:
 		return evaluator.digest(ctx, target, local, location)
 	}
@@ -224,35 +224,79 @@ func (evaluator *Evaluator) stateRuleWithNote(ctx context.Context, target agent.
 	return result, nil
 }
 
-// salesDrop compares yesterday with the same weekday a week earlier. Two closed days are stable once fetched.
-func (evaluator *Evaluator) salesDrop(ctx context.Context, target agent.AlertTarget, def agent.AlertRuleDef, local time.Time, location *time.Location) (evaluation, error) {
+// weekdayDrop compares yesterday with the same weekday a week earlier. Two closed days are stable once fetched. A day
+// the shop was probably closed (the guard figure, such as the number of documents, is zero) never raises an alert, and
+// neither does a week-before base of zero. The value compared is the fall as a percent of the week-before figure, or in
+// percentage points for a rate such as the gross margin.
+type dropSpec struct {
+	metric, guard string
+	points        bool
+	headline      func(weekday, date string, yesterday, before, value *big.Rat, threshold *big.Rat) string
+	followUp      string
+}
+
+func (evaluator *Evaluator) weekdayDrop(ctx context.Context, target agent.AlertTarget, def agent.AlertRuleDef, local time.Time, location *time.Location, spec dropSpec) (evaluation, error) {
 	yesterday := local.AddDate(0, 0, -1)
 	before := yesterday.AddDate(0, 0, -7)
 	a, b := yesterday.Format(time.DateOnly), before.Format(time.DateOnly)
-	response, err := evaluator.source.Compare(ctx, target.Principal, string(def.Report), "total_amount", a, a, b, b)
+	response, err := evaluator.source.Compare(ctx, target.Principal, string(def.Report), spec.metric, a, a, b, b)
 	if err != nil {
 		return evaluation{}, err
 	}
 	if response.Status != "READY" || response.A == nil || response.B == nil {
 		return evaluation{}, nil
 	}
-	yesterdayTotal, okA := new(big.Rat).SetString(response.A.Value)
+	yesterdayValue, okA := new(big.Rat).SetString(response.A.Value)
 	weekBefore, okB := new(big.Rat).SetString(response.B.Value)
 	if !okA || !okB {
 		return evaluation{}, fmt.Errorf("compare returned a figure that is not a number")
 	}
+	none := evaluation{ready: true, value: new(big.Rat)}
 	if weekBefore.Sign() <= 0 { // nothing to compare with (a closed day, a holiday): no alert
-		return evaluation{ready: true, value: new(big.Rat)}, nil
+		return none, nil
 	}
-	drop := new(big.Rat).Quo(new(big.Rat).Mul(new(big.Rat).Sub(weekBefore, yesterdayTotal), big.NewRat(100, 1)), weekBefore)
+	if spec.guard != "" {
+		guard, guardErr := evaluator.source.Compare(ctx, target.Principal, string(def.Report), spec.guard, a, a, b, b)
+		if guardErr != nil {
+			return evaluation{}, guardErr
+		}
+		if guard.Status != "READY" || guard.A == nil {
+			return evaluation{}, nil
+		}
+		if opened, ok := new(big.Rat).SetString(guard.A.Value); !ok || opened.Sign() <= 0 { // yesterday the shop did nothing: it was probably closed
+			return none, nil
+		}
+	}
+	var drop *big.Rat
+	if spec.points {
+		drop = new(big.Rat).Sub(weekBefore, yesterdayValue)
+	} else {
+		drop = new(big.Rat).Quo(new(big.Rat).Mul(new(big.Rat).Sub(weekBefore, yesterdayValue), big.NewRat(100, 1)), weekBefore)
+	}
 	result := evaluation{ready: true, value: drop, fired: drop.Cmp(target.Threshold) >= 0}
 	if result.fired {
-		weekday := thaiWeekday(yesterday)
-		result.message = fmt.Sprintf("⚠️ แจ้งเตือน: ยอดขายเมื่อวาน (วัน%s ที่ %s) %s บาท ต่ำกว่าวัน%sสัปดาห์ก่อน (%s บาท) อยู่ %s%% (คุณตั้งเตือนไว้ที่ %s%%)",
-			weekday, thaiDate(yesterday), baht(yesterdayTotal), weekday, baht(weekBefore), percent(drop), whole(target.Threshold)) +
-			asOf(response.CollectedAt, location) + closing(def, "ยอดขายเมื่อวานเป็นอย่างไรบ้าง")
+		result.message = spec.headline(thaiWeekday(yesterday), thaiDate(yesterday), yesterdayValue, weekBefore, drop, target.Threshold) +
+			asOf(response.CollectedAt, location) + closing(def, spec.followUp)
 	}
 	return result, nil
+}
+
+var dropSpecs = map[agent.AlertRuleKey]dropSpec{
+	agent.AlertSalesDrop: {metric: "total_amount", guard: "document_count", followUp: "ยอดขายเมื่อวานเป็นอย่างไรบ้าง",
+		headline: func(weekday, date string, yesterday, before, drop, threshold *big.Rat) string {
+			return fmt.Sprintf("⚠️ แจ้งเตือน: ยอดขายเมื่อวาน (วัน%s ที่ %s) %s บาท ต่ำกว่าวัน%sสัปดาห์ก่อน (%s บาท) อยู่ %s%% (คุณตั้งเตือนไว้ที่ %s%%)",
+				weekday, date, baht(yesterday), weekday, baht(before), percent(drop), whole(threshold))
+		}},
+	agent.AlertReceiptsDrop: {metric: "total_amount", guard: "document_count", followUp: "เงินเข้าเมื่อวานเป็นอย่างไรบ้าง",
+		headline: func(weekday, date string, yesterday, before, drop, threshold *big.Rat) string {
+			return fmt.Sprintf("⚠️ แจ้งเตือน: เงินเข้าเมื่อวาน (วัน%s ที่ %s) %s บาท ต่ำกว่าวัน%sสัปดาห์ก่อน (%s บาท) อยู่ %s%% (คุณตั้งเตือนไว้ที่ %s%%)",
+				weekday, date, baht(yesterday), weekday, baht(before), percent(drop), whole(threshold))
+		}},
+	agent.AlertMarginDrop: {metric: "gross_margin_percent", guard: "net_amount", points: true, followUp: "กำไรขั้นต้นเมื่อวานเป็นอย่างไรบ้าง",
+		headline: func(weekday, date string, yesterday, before, drop, threshold *big.Rat) string {
+			return fmt.Sprintf("⚠️ แจ้งเตือน: อัตรากำไรขั้นต้นเมื่อวาน (วัน%s ที่ %s) อยู่ที่ %s%% ต่ำกว่าวัน%sสัปดาห์ก่อน (%s%%) อยู่ %s จุด (คุณตั้งเตือนไว้ที่ %s จุด)",
+				weekday, date, percent(yesterday), weekday, percent(before), percent(drop), whole(threshold))
+		}},
 }
 
 // digest writes the morning summary. Every line comes from a report the recipient may read; a report they may not read is
@@ -282,7 +326,9 @@ func (evaluator *Evaluator) digest(ctx context.Context, target agent.AlertTarget
 			return evaluation{}, fmt.Errorf("compare returned a figure that is not a number")
 		}
 		line := fmt.Sprintf("• ยอดขายเมื่อวาน (วัน%s ที่ %s): %s บาท", weekday, thaiDate(yesterday), baht(yesterdayTotal))
-		if weekBefore.Sign() > 0 {
+		if yesterdayTotal.Sign() == 0 {
+			line = fmt.Sprintf("• ยอดขายเมื่อวาน (วัน%s ที่ %s): ไม่มียอดขายเลย (ร้านอาจปิดทำการ)", weekday, thaiDate(yesterday))
+		} else if weekBefore.Sign() > 0 {
 			change := new(big.Rat).Quo(new(big.Rat).Mul(new(big.Rat).Sub(yesterdayTotal, weekBefore), big.NewRat(100, 1)), weekBefore)
 			direction := "สูงกว่า"
 			if change.Sign() < 0 {

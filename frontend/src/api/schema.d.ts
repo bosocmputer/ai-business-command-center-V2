@@ -1423,7 +1423,7 @@ export interface components {
         };
         AgentAlert: {
             /** @enum {string} */
-            rule: "ar_overdue" | "ar_over_year" | "stock_reorder" | "sales_drop" | "morning_digest";
+            rule: "ar_overdue" | "ar_over_year" | "stock_reorder" | "sales_drop" | "receipts_drop" | "margin_drop" | "morning_digest";
             /** @description What the owner calls it. */
             label: string;
             /** @description What is watched, in plain Thai. */
@@ -1432,7 +1432,7 @@ export interface components {
              * @description SWITCH is a rule that is only on or off and has no threshold.
              * @enum {string}
              */
-            unit: "THB" | "COUNT" | "PERCENT" | "SWITCH";
+            unit: "THB" | "COUNT" | "PERCENT" | "POINTS" | "SWITCH";
             /** @description False when the recipient may not read the report the rule watches. */
             available: boolean;
             /** @description Set by the owner. Baht, a number of items or a percent, as plain digits. */
@@ -4066,7 +4066,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                ruleKey: "ar_overdue" | "ar_over_year" | "stock_reorder" | "sales_drop" | "morning_digest";
+                ruleKey: "ar_overdue" | "ar_over_year" | "stock_reorder" | "sales_drop" | "receipts_drop" | "margin_drop" | "morning_digest";
             };
             cookie?: never;
         };

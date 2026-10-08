@@ -22,6 +22,8 @@ const (
 	AlertAROverYear   AlertRuleKey = "ar_over_year"
 	AlertStockReorder AlertRuleKey = "stock_reorder"
 	AlertSalesDrop    AlertRuleKey = "sales_drop"
+	AlertReceiptsDrop AlertRuleKey = "receipts_drop"
+	AlertMarginDrop   AlertRuleKey = "margin_drop"
 	// AlertMorningDigest is not a threshold: it is a switch for a short daily summary of the other three figures.
 	AlertMorningDigest AlertRuleKey = "morning_digest"
 )
@@ -33,6 +35,8 @@ const (
 	AlertUnitCount   AlertUnit = "COUNT"
 	AlertUnitPercent AlertUnit = "PERCENT"
 	AlertUnitSwitch  AlertUnit = "SWITCH"
+	// AlertUnitPoints is a number of percentage points (a margin going from 25% to 20% fell by 5 points).
+	AlertUnitPoints AlertUnit = "POINTS"
 )
 
 type AlertRuleDef struct {
@@ -73,6 +77,8 @@ var alertCatalog = []AlertRuleDef{
 	{Key: AlertAROverYear, Label: "ยอดลูกหนี้ค้างเกิน 1 ปี", Description: "เตือนเมื่อยอดลูกหนี้ที่ออกใบมาเกิน 1 ปีรวมกันเกินจำนวนเงินที่ตั้ง (บาท) ตรวจทุกเช้า", Report: report.ARAging, Unit: AlertUnitBaht, Min: 1, Max: 10_000_000_000, Cooldown: alertCooldown},
 	{Key: AlertStockReorder, Label: "สินค้าถึงจุดสั่งซื้อ", Description: "เตือนเมื่อมีสินค้าถึงจุดสั่งซื้อตั้งแต่จำนวนรายการที่ตั้ง ตรวจทุกเช้า", Report: report.StockReorder, Unit: AlertUnitCount, Min: 1, Max: 100_000, Cooldown: alertCooldown},
 	{Key: AlertSalesDrop, Label: "ยอดขายเมื่อวานตก", Description: "เตือนเมื่อยอดขายเมื่อวานต่ำกว่าวันเดียวกันของสัปดาห์ก่อนตั้งแต่เปอร์เซ็นต์ที่ตั้ง ตรวจทุกเช้า", Report: report.SalesGoodsServices, Unit: AlertUnitPercent, Min: 1, Max: 99},
+	{Key: AlertReceiptsDrop, Label: "เงินเข้าเมื่อวานตก", Description: "เตือนเมื่อยอดรับเงินเมื่อวานต่ำกว่าวันเดียวกันของสัปดาห์ก่อนตั้งแต่เปอร์เซ็นต์ที่ตั้ง (ไม่เตือนถ้าเมื่อวานไม่มีเอกสารรับเงินเลย เพราะร้านอาจปิด) ตรวจทุกเช้า", Report: report.CashBankReceipts, Unit: AlertUnitPercent, Min: 1, Max: 99},
+	{Key: AlertMarginDrop, Label: "อัตรากำไรขั้นต้นเมื่อวานลด", Description: "เตือนเมื่ออัตรากำไรขั้นต้นเมื่อวานต่ำกว่าวันเดียวกันของสัปดาห์ก่อนตั้งแต่จำนวนจุดเปอร์เซ็นต์ที่ตั้ง (เช่น จาก 25% เหลือ 20% คือลด 5 จุด) ไม่เตือนถ้าเมื่อวานไม่มียอดขาย ตรวจทุกเช้า", Report: report.GrossProfitByProduct, Unit: AlertUnitPoints, Min: 1, Max: 50},
 	{Key: AlertMorningDigest, Label: "สรุปเช้า", Description: "ส่งสรุปสั้นๆ ทุกเช้า: ยอดขายเมื่อวานเทียบวันเดียวกันของสัปดาห์ก่อน ยอดลูกหนี้เลยกำหนด และจำนวนสินค้าถึงจุดสั่งซื้อ (เฉพาะรายงานที่มีสิทธิ์ดู) ไม่ต้องระบุเกณฑ์", Unit: AlertUnitSwitch, Min: 1, Max: 1, Switch: true,
 		AnyOf: []report.Key{report.SalesGoodsServices, report.ARAging, report.StockReorder}},
 }
@@ -98,7 +104,7 @@ func (err *InvalidAlertError) Error() string { return "alert threshold is not va
 // commas and spaces ignored, inside the rule's range. It returns the number and its plain text form.
 func ParseAlertThreshold(def AlertRuleDef, raw string) (*big.Rat, string, error) {
 	invalid := &InvalidAlertError{Message: fmt.Sprintf("เกณฑ์ของ “%s” ต้องเป็น%s ระหว่าง %s ถึง %s", def.Label, unitPhrase(def.Unit), groupDigits(def.Min), groupDigits(def.Max))}
-	cleaned := stripUnitWords(strings.TrimSpace(raw))
+	cleaned := stripUnitWords(strings.TrimSpace(raw), def.Unit)
 	cleaned = strings.NewReplacer(",", "", " ", "", "_", "").Replace(cleaned)
 	if cleaned == "" || strings.ContainsAny(cleaned, "eE+-") {
 		return nil, "", invalid
@@ -123,10 +129,21 @@ func ParseAlertThreshold(def AlertRuleDef, raw string) (*big.Rat, string, error)
 	return value, text, nil
 }
 
-// stripUnitWords drops the unit a person naturally says after or before a number ("40%", "500,000 บาท", "3 รายการ"), so the
-// assistant does not have to be trusted to send bare digits. Anything else that is not a number is still refused.
-func stripUnitWords(text string) string {
-	words := []string{"เปอร์เซ็นต์", "เปอร์เซนต์", "รายการ", "บาท", "%", "฿"}
+// stripUnitWords drops the unit a person naturally says after or before a number ("40%", "500,000 บาท", "3 รายการ", "5 จุด"),
+// so the assistant does not have to be trusted to send bare digits. Only the unit that belongs to the rule is dropped:
+// "5 บาท" for a margin rule is a misunderstanding and is refused like any other text that is not a number.
+func stripUnitWords(text string, unit AlertUnit) string {
+	var words []string
+	switch unit {
+	case AlertUnitBaht:
+		words = []string{"บาท", "฿"}
+	case AlertUnitCount:
+		words = []string{"รายการ"}
+	case AlertUnitPercent:
+		words = []string{"เปอร์เซ็นต์", "เปอร์เซนต์", "%"}
+	case AlertUnitPoints:
+		words = []string{"จุดเปอร์เซ็นต์", "จุด", "%"}
+	}
 	for _, word := range words { // at most one unit before the number...
 		if trimmed := strings.TrimPrefix(text, word); trimmed != text {
 			text = strings.TrimSpace(trimmed)
@@ -148,6 +165,8 @@ func unitPhrase(unit AlertUnit) string {
 		return "จำนวนเงินเป็นบาท"
 	case AlertUnitCount:
 		return "จำนวนรายการ (เลขจำนวนเต็ม)"
+	case AlertUnitPoints:
+		return "จำนวนจุดเปอร์เซ็นต์ (เลขจำนวนเต็ม)"
 	default:
 		return "เปอร์เซ็นต์ (เลขจำนวนเต็ม)"
 	}

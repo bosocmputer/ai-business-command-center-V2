@@ -77,6 +77,7 @@ func (store *fakeStore) MarkAlertDelivery(_ context.Context, id uuid.UUID, deliv
 type fakeSource struct {
 	reports    map[string]agent.ReportResponse
 	compare    agent.CompareResponse
+	byMetric   map[string]agent.CompareResponse // a figure with its own answer, ahead of compare
 	err        error
 	compareErr error
 	reportErrs map[string]error
@@ -90,8 +91,11 @@ func (source *fakeSource) Report(_ context.Context, _ agent.Principal, key, _, _
 	}
 	return source.reports[key], source.err
 }
-func (source *fakeSource) Compare(_ context.Context, _ agent.Principal, _, _, aFrom, _, bFrom, _ string) (agent.CompareResponse, error) {
+func (source *fakeSource) Compare(_ context.Context, _ agent.Principal, _, metric, aFrom, _, bFrom, _ string) (agent.CompareResponse, error) {
 	source.requests = append(source.requests, "compare "+aFrom+" vs "+bFrom)
+	if answer, ok := source.byMetric[metric]; ok {
+		return answer, source.compareErr
+	}
 	if source.compareErr != nil {
 		return agent.CompareResponse{}, source.compareErr
 	}
@@ -451,6 +455,74 @@ func TestOverdueMessagesSayThatDocumentsWithoutADueDateAreNotCounted(t *testing.
 	sender = &fakeSender{}
 	newEvaluator(newFakeStore(target(agent.AlertMorningDigest, "1")), digestSource, sender, false, nineAM).RunOnce(context.Background())
 	if message := sender.sent[0].Message; !strings.Contains(message, "ลูกหนี้เลยกำหนด: 641,200.50 บาท") || !strings.Contains(message, "ไม่รวมเอกสารที่ไม่มีวันครบกำหนด 6,310,670.10 บาท") {
+		t.Errorf("digest:\n%s", message)
+	}
+}
+
+func side(value string) *agent.CompareSide { return &agent.CompareSide{Value: value} }
+
+func TestADayTheShopWasClosedNeverRaisesADropAlert(t *testing.T) {
+	item := target(agent.AlertSalesDrop, "30")
+	// Yesterday has no documents at all (a holiday), last week's same weekday had 100,000: a 100% "drop" that is not one.
+	source := &fakeSource{
+		compare:  agent.CompareResponse{Status: "READY", A: side("0.00"), B: side("100000.00"), CollectedAt: collected},
+		byMetric: map[string]agent.CompareResponse{"document_count": {Status: "READY", A: side("0"), B: side("20"), CollectedAt: collected}},
+	}
+	sender := &fakeSender{}
+	if summary := newEvaluator(newFakeStore(item), source, sender, false, nineAM).RunOnce(context.Background()); summary.Fired != 0 || summary.Checked != 1 || len(sender.sent) != 0 {
+		t.Fatalf("a closed day: %+v", summary)
+	}
+	// The same fall on a day with documents does fire.
+	source.byMetric["document_count"] = agent.CompareResponse{Status: "READY", A: side("3"), B: side("20"), CollectedAt: collected}
+	source.compare = agent.CompareResponse{Status: "READY", A: side("20000.00"), B: side("100000.00"), CollectedAt: collected}
+	if summary := newEvaluator(newFakeStore(item), source, sender, false, nineAM).RunOnce(context.Background()); summary.Fired != 1 {
+		t.Fatalf("an open day: %+v", summary)
+	}
+}
+
+func TestReceiptsDropAndMarginDropSpeakInTheirOwnWords(t *testing.T) {
+	receipts := target(agent.AlertReceiptsDrop, "30")
+	source := &fakeSource{
+		compare:  agent.CompareResponse{Status: "READY", A: side("50000.00"), B: side("100000.00"), CollectedAt: collected},
+		byMetric: map[string]agent.CompareResponse{"document_count": {Status: "READY", A: side("5"), B: side("9")}},
+	}
+	sender := &fakeSender{}
+	if summary := newEvaluator(newFakeStore(receipts), source, sender, false, nineAM).RunOnce(context.Background()); summary.Fired != 1 {
+		t.Fatalf("receipts: %+v", summary)
+	}
+	for _, want := range []string{"เงินเข้าเมื่อวาน (วันพุธ ที่ 7 ต.ค. 2569) 50,000.00 บาท", "ต่ำกว่าวันพุธสัปดาห์ก่อน (100,000.00 บาท) อยู่ 50%", "ตั้งเตือนไว้ที่ 30%", "ปิดเตือนเงินเข้าเมื่อวานตก"} {
+		if !strings.Contains(sender.sent[0].Message, want) {
+			t.Errorf("message lacks %q:\n%s", want, sender.sent[0].Message)
+		}
+	}
+
+	margin := target(agent.AlertMarginDrop, "5")
+	source = &fakeSource{
+		compare:  agent.CompareResponse{Status: "READY", A: side("18.5"), B: side("25.0"), CollectedAt: collected},
+		byMetric: map[string]agent.CompareResponse{"net_amount": {Status: "READY", A: side("120000.00"), B: side("100000.00")}},
+	}
+	sender = &fakeSender{}
+	if summary := newEvaluator(newFakeStore(margin), source, sender, false, nineAM).RunOnce(context.Background()); summary.Fired != 1 {
+		t.Fatalf("margin: %+v", summary)
+	}
+	for _, want := range []string{"อัตรากำไรขั้นต้นเมื่อวาน", "อยู่ที่ 18.5%", "สัปดาห์ก่อน (25%)", "อยู่ 6.5 จุด", "ตั้งเตือนไว้ที่ 5 จุด"} {
+		if !strings.Contains(sender.sent[0].Message, want) {
+			t.Errorf("margin message lacks %q:\n%s", want, sender.sent[0].Message)
+		}
+	}
+	// A smaller fall stays quiet.
+	source.compare = agent.CompareResponse{Status: "READY", A: side("22.0"), B: side("25.0"), CollectedAt: collected}
+	if summary := newEvaluator(newFakeStore(margin), source, &fakeSender{}, false, nineAM).RunOnce(context.Background()); summary.Fired != 0 || summary.Checked != 1 {
+		t.Fatalf("3 points under a 5 point threshold: %+v", summary)
+	}
+}
+
+func TestTheDigestSaysWhenYesterdayHadNoSalesInsteadOfAHundredPercentFall(t *testing.T) {
+	source := digestSource()
+	source.compare = agent.CompareResponse{Status: "READY", A: side("0.00"), B: side("100000.00"), CollectedAt: collected}
+	sender := &fakeSender{}
+	newEvaluator(newFakeStore(target(agent.AlertMorningDigest, "1")), source, sender, false, nineAM).RunOnce(context.Background())
+	if message := sender.sent[0].Message; !strings.Contains(message, "ไม่มียอดขายเลย (ร้านอาจปิดทำการ)") || strings.Contains(message, "ต่ำกว่า") {
 		t.Errorf("digest:\n%s", message)
 	}
 }
