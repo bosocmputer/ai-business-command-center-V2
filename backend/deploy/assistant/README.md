@@ -10,7 +10,7 @@ numbers it fetches from AI-BCC's Agent API (ADR 0001) and nothing else. Findings
 |---|---|
 | Data source | AI-BCC `api` over the internal network `agent`, with the shop's own Agent API token |
 | Internet | none directly; only hosts in `ASSISTANT_EGRESS_ALLOW` (default `openrouter.ai`) through `assistant-egress`, which logs host and decision (`docker logs`) |
-| Built-in tools | none: terminal, files, web, browser, code execution, skills, memory, cron are off on every channel (`platform_toolsets`) |
+| Built-in tools | none except `memory` (on by decision, with `memory_guard.py`): terminal, files, web, browser, code execution, skills, cron are off on every channel (`platform_toolsets`) |
 | Model | `google/gemini-3.1-flash-lite`, pinned to Google Vertex with `data_collection: deny` (`config.yaml`) |
 | Side calls | title generation, background review, compression and memory are off, because each would send the conversation to a model outside the pinned provider rules |
 | Ports | none published to the host |
@@ -56,7 +56,7 @@ cd backend/deploy
 ```
 
 It starts the candidate with no Telegram, no alert destinations and an empty memory, and checks that the gateway is healthy,
-that every built-in tool is still disabled on cli, api_server, telegram and webhook, that the shim shows exactly the tools in
+that no built-in tool except memory (on by decision) is enabled on cli, api_server, telegram and webhook, that the shim shows exactly the tools in
 `aibcc_mcp.py`, and that real questions pass against the real Agent API. It spends about three of the token's 60 hourly calls per
 question. Only after "UPGRADE CHECK PASSED": back up the data volume (`assistant/backup.sh`), change the digest, recreate the
 assistant, read the logs for ten minutes, and keep the old digest at hand to roll back (change it back and recreate).

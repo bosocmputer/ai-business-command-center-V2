@@ -4,7 +4,7 @@
 # Runs a CANDIDATE Hermes image beside the live assistant, with no Telegram and no alerts route and a fresh empty memory, then
 # checks what an update must never break, and removes it. The live assistant is not touched; nobody outside is messaged.
 #   1. the gateway starts and reports healthy;
-#   2. every built-in tool is disabled on every channel (cli, api_server, telegram, webhook);
+#   2. no built-in tool is enabled on any channel (cli, api_server, telegram, webhook) except memory, which is on by decision;
 #   3. the MCP shim exposes exactly the tools this repository defines;
 #   4. real questions (assistant/example_check.py) pass against the real Agent API.
 # It uses the live token, so it spends the hourly call quota (about 3 per question): keep the question list short.
@@ -50,18 +50,21 @@ for _ in $(seq 1 40); do
 done
 if [ "$ok" = 1 ]; then echo "ok"; else echo; fail "the gateway did not become healthy in 2 minutes"; docker logs --tail 15 "$NAME" 2>&1 | cut -c1-200; fi
 
-printf "2. built-in tools all disabled on every channel ... "
+printf "2. no built-in tool enabled on any channel except memory ... "
 bad=""
 for platform in cli api_server telegram webhook; do
   listing=$(docker exec "$NAME" /opt/hermes/bin/hermes tools list --platform "$platform" 2>&1 || true)
-  if echo "$listing" | grep -qi "enabled" && echo "$listing" | grep -i "enabled" | grep -vqi "disabled"; then bad="$bad $platform"; fi
+  # Lines look like "  ✓ enabled  memory  ..." / "  ✗ disabled  web  ...". Memory is on by decision (guarded by memory_guard.py).
+  if ! echo "$listing" | grep -q "disabled"; then bad="$bad $platform(unreadable)"; continue; fi
+  extra=$(echo "$listing" | grep -E '^ *[^ ]+ enabled ' | grep -v -E ' enabled +memory( |$)' || true)
+  if [ -n "$extra" ]; then bad="$bad $platform"; fi
 done
-if [ -z "$bad" ]; then echo "ok"; else echo; fail "a built-in tool is enabled on:$bad"; fi
+if [ -z "$bad" ]; then echo "ok"; else echo; fail "a built-in tool other than memory is enabled (or the list could not be read) on:$bad"; fi
 
 printf "3. the shim exposes every tool of this repository ... "
 want=$(grep -c '^@mcp.tool()' assistant/aibcc_mcp.py)
-got=$(docker exec "$NAME" /opt/hermes/bin/hermes mcp test aibcc 2>&1 | grep -Eo '[0-9]+ tools?' | head -1 | grep -Eo '[0-9]+' || echo 0)
-if [ "$got" = "$want" ]; then echo "ok ($want tools)"; else echo; fail "expected $want tools, the candidate shows ${got:-0}"; fi
+got=$(docker exec "$NAME" /opt/hermes/bin/hermes mcp test aibcc 2>&1 | grep -Eo 'Tools discovered: [0-9]+' | grep -Eo '[0-9]+' | head -1 || true)
+if [ "${got:-0}" = "$want" ]; then echo "ok ($want tools)"; else echo; fail "expected $want tools, the candidate shows ${got:-0}"; fi
 
 echo "4. real questions (EXAMPLE_ONLY=$ONLY) ..."
 out=$(docker exec -e EXAMPLE_ONLY="$ONLY" -i "$NAME" "$PY" - < assistant/example_check.py 2>&1 || true)
