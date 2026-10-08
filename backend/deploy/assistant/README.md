@@ -55,7 +55,7 @@ cd backend/deploy
 ./assistant/upgrade-check.sh nousresearch/hermes-agent:<tag>@sha256:<digest>  [5,9,13]
 ```
 
-It starts the candidate with no Telegram, no alert destinations and an empty memory, and checks that the gateway is healthy,
+It starts the candidate with a made-up Telegram token and chat id (nothing can be sent) and an empty memory, and checks that the gateway is healthy,
 that no built-in tool except memory (on by decision) is enabled on cli, api_server, telegram and webhook, that the shim shows exactly the tools in
 `aibcc_mcp.py`, and that real questions pass against the real Agent API. It spends about three of the token's 60 hourly calls per
 question. Only after "UPGRADE CHECK PASSED": back up the data volume (`assistant/backup.sh`), change the digest, recreate the

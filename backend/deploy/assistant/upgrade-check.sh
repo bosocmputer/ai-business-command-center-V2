@@ -1,7 +1,7 @@
 #!/bin/sh
 # usage (from backend/deploy):  ./assistant/upgrade-check.sh <candidate-image-ref> [question-numbers]
 #   e.g. ./assistant/upgrade-check.sh nousresearch/hermes-agent:v2026.10.2@sha256:... 5,9,13
-# Runs a CANDIDATE Hermes image beside the live assistant, with no Telegram and no alerts route and a fresh empty memory, then
+# Runs a CANDIDATE Hermes image beside the live assistant, with a made-up Telegram token (so nothing can be sent) and a fresh empty memory, then
 # checks what an update must never break, and removes it. The live assistant is not touched; nobody outside is messaged.
 #   1. the gateway starts and reports healthy;
 #   2. no built-in tool is enabled on any channel (cli, api_server, telegram, webhook) except memory, which is on by decision;
@@ -26,10 +26,16 @@ cleanup() {
   rm -f "$ENVFILE"
 }
 trap cleanup EXIT INT TERM
-# The live secrets minus everything that would reach people: no Telegram bot, no allowed users, no real alert destination.
+# The live secrets minus everything that would reach people: no real Telegram bot, allowed user or alert destination.
 grep -v -E '^(TELEGRAM_|ALERT_CHAT_IDS)' secrets/assistant/hermes.env > "$ENVFILE"
-# The webhook channel must exist in the candidate so its tools can be checked; with no bot token and a made-up chat id nothing can be sent.
-echo 'ALERT_CHAT_IDS=1' >> "$ENVFILE"
+# The webhook channel only exists when a bot and a chat id are configured (render_routes.py), and its tools can be listed only
+# then. So the candidate gets a made-up bot token and chat id: Telegram rejects the token, nothing can be sent, and the channel
+# is there to be checked.
+{
+  echo 'TELEGRAM_BOT_TOKEN=123456789:AAstagingOnlyNotARealToken0000000000000'
+  echo 'TELEGRAM_ALLOWED_USERS=1'
+  echo 'ALERT_CHAT_IDS=1'
+} >> "$ENVFILE"
 echo "pulling $IMAGE"
 docker pull -q "$IMAGE" >/dev/null
 docker volume create "$VOLUME" >/dev/null
