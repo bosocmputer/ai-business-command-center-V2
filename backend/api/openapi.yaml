@@ -1631,7 +1631,7 @@ components:
       properties:
         rule: {type: string, enum: [ar_overdue, ar_over_year, stock_reorder, sales_drop]}
         label: {type: string, description: What the owner calls it.}
-        description: {type: string, description: What is watched, in plain Thai.}
+        description: {type: string, description: "What is watched, in plain Thai."}
         unit: {type: string, enum: [THB, COUNT, PERCENT]}
         available: {type: boolean, description: False when the recipient may not read the report the rule watches.}
         threshold: {type: string, description: "Set by the owner. Baht, a number of items or a percent, as plain digits."}

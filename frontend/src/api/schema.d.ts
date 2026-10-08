@@ -1358,7 +1358,7 @@ export interface components {
             rule: "ar_overdue" | "ar_over_year" | "stock_reorder" | "sales_drop";
             /** @description What the owner calls it. */
             label: string;
-            /** @description What is watched */
+            /** @description What is watched, in plain Thai. */
             description: string;
             /** @enum {string} */
             unit: "THB" | "COUNT" | "PERCENT";
