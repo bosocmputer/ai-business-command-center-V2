@@ -33,3 +33,21 @@ func Baht(value *big.Rat) string {
 	}
 	return sign + Group(whole) + "." + fraction
 }
+
+// Qty writes a quantity with thousands separators and no trailing zeros: 1,250 or 12.5 (up to four decimals).
+func Qty(value *big.Rat) string {
+	text := value.FloatString(4)
+	if strings.Contains(text, ".") {
+		text = strings.TrimSuffix(strings.TrimRight(text, "0"), ".")
+	}
+	sign := ""
+	if strings.HasPrefix(text, "-") {
+		sign, text = "-", text[1:]
+	}
+	whole, fraction, hasFraction := strings.Cut(text, ".")
+	out := sign + Group(whole)
+	if hasFraction {
+		out += "." + fraction
+	}
+	return out
+}

@@ -147,3 +147,30 @@ func TestStockReportsAcceptScientificNotationReturnedByDATA1(t *testing.T) {
 		t.Fatalf("BuildDashboard(stock_reorder) error = %v", err)
 	}
 }
+
+func TestTheReorderReportCarriesAnAssistantOnlyListOfItemsBelowTheirPoint(t *testing.T) {
+	period := Period{Preset: AsOfRun, DateFrom: "2026-10-01", DateTo: "2026-10-01"}
+	rows := map[string][]map[string]string{"rows": {
+		{"ic_code": "A", "ic_name": "ปูน", "ic_unit_code": "BAG~ถุง", "balance_qty": "40", "purchase_point": "100", "purchase_balance_qty": "30"},
+		{"ic_code": "B", "ic_name": "เหล็ก", "ic_unit_code": "PCS~เส้น", "balance_qty": "-5", "purchase_point": "10", "purchase_balance_qty": ""},
+		{"ic_code": "C", "ic_name": "ทราย", "ic_unit_code": "M3~คิว", "balance_qty": "50", "purchase_point": "50"},
+	}}
+	dashboard, err := BuildDashboard(StockReorder, period, period, rows, map[string][]map[string]string{"rows": {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list DashboardVisualization
+	for _, visualization := range dashboard.Visualizations {
+		if visualization.Key == "agent_reorder_items" {
+			list = visualization
+		}
+	}
+	// B is short by 150% of its point, A by 60%, and C is exactly at its point so it is not below it.
+	if got := strings.Join(list.Categories, ","); got != "B,A" {
+		t.Fatalf("items = %q (%+v)", got, list)
+	}
+	if got := strings.Join(list.Series[0].Values, ","); got != "15.0000,60.0000" || strings.Join(list.Series[0].PointLabels, ",") != "เหล็ก,ปูน" ||
+		strings.Join(list.Series[1].PointLabels, ",") != "เส้น,ถุง" || strings.Join(list.Series[3].Values, ",") != "0.0000,30.0000" {
+		t.Errorf("series = %+v", list.Series)
+	}
+}

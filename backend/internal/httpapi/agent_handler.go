@@ -23,6 +23,7 @@ type AgentAPI interface {
 	Alerts(ctx context.Context, principal agent.Principal) (agent.AlertsResponse, error)
 	SetAlert(ctx context.Context, principal agent.Principal, rule string, request agent.AlertSetRequest, requestID string) (agent.AlertView, error)
 	DraftCollection(ctx context.Context, principal agent.Principal, request agent.DraftRequest) (agent.DraftResponse, error)
+	DraftPurchaseOrder(ctx context.Context, principal agent.Principal) (agent.PurchaseDraftResponse, error)
 	IssueToken(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID, namesVisible bool) (agent.IssuedToken, error)
 	RevokeToken(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID) error
 	TokenInfo(ctx context.Context, tenantID, recipientID uuid.UUID) (agent.TokenInfo, error)
@@ -115,6 +116,10 @@ func registerAgentRoutes(router chi.Router, api AgentAPI, enabled bool) {
 				return
 			}
 			result, err := api.DraftCollection(request.Context(), agentPrincipal(request), input)
+			respondAgent(response, result, err)
+		})
+		group.Post("/drafts/purchase-order", func(response http.ResponseWriter, request *http.Request) {
+			result, err := api.DraftPurchaseOrder(request.Context(), agentPrincipal(request))
 			respondAgent(response, result, err)
 		})
 		group.NotFound(func(response http.ResponseWriter, _ *http.Request) {

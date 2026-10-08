@@ -442,6 +442,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/drafts/purchase-order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Writes a purchase list for the owner to copy and send, from the items below their reorder point in the reorder report (the most short first, up to twenty). The quantity is the shortage against the reorder point, not a recommended order quantity, and the report has no supplier. Nothing is sent and nothing is written to SML; the call log records that a draft was made. Without the reorder report it answers exactly like a missing report. */
+        post: operations["postAgentPurchaseDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/invitation": {
         parameters: {
             query?: never;
@@ -1431,6 +1448,34 @@ export interface components {
             freshness?: "FRESH" | "STALE";
             /** @description Names the owner can choose from (AMBIGUOUS, NOT_FOUND). */
             candidates?: string[];
+            notes?: string[];
+            retryAfterSeconds?: number;
+        };
+        AgentPurchaseDraft: {
+            /** @enum {string} */
+            status: "READY" | "PREPARING" | "UNAVAILABLE" | "NOTHING_TO_ORDER";
+            message?: string;
+            /** @description All items below their reorder point. */
+            itemsBelowPoint?: number;
+            /** @description Items in this draft (the most short first). */
+            itemsListed?: number;
+            items?: {
+                code: string;
+                name: string;
+                unit?: string;
+                /** @description Reorder point minus on hand. */
+                shortageQty: string;
+                balanceQty: string;
+                reorderPoint: string;
+                /** @description Still to arrive on earlier purchase orders. */
+                onOrderQty: string;
+            }[];
+            /** @description The text to copy, word for word. Present only when status is READY. */
+            draft?: string;
+            /** Format: date-time */
+            collectedAt?: string;
+            /** @enum {string} */
+            freshness?: "FRESH" | "STALE";
             notes?: string[];
             retryAfterSeconds?: number;
         };
@@ -3986,6 +4031,29 @@ export interface operations {
             401: components["responses"]["AgentRefusal"];
             404: components["responses"]["AgentRefusal"];
             422: components["responses"]["AgentRefusal"];
+            429: components["responses"]["AgentRefusal"];
+        };
+    };
+    postAgentPurchaseDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A draft, or why there is none (PREPARING, UNAVAILABLE, NOTHING_TO_ORDER). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPurchaseDraft"];
+                };
+            };
+            401: components["responses"]["AgentRefusal"];
+            404: components["responses"]["AgentRefusal"];
             429: components["responses"]["AgentRefusal"];
         };
     };

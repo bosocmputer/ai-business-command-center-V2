@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -314,7 +315,11 @@ func buildDashboardVisualizations(key Key, period, comparisonPeriod Period, curr
 		return compactVisualizations(balance, movement), err
 	case StockReorder:
 		reorder, err := buildReorderExceptions(currentSteps["rows"])
-		return compactVisualizations(reorder), err
+		if err != nil {
+			return nil, err
+		}
+		items, err := buildReorderItems(currentSteps["rows"])
+		return compactVisualizations(reorder, items), err
 	case PurchaseFrequency:
 		return buildFrequencyVisualizations(currentSteps)
 	case CustomerRFM:
@@ -580,6 +585,74 @@ func buildReorderExceptions(rows []map[string]string) (DashboardVisualization, e
 		}
 		return shortage.Mul(shortage, big.NewRat(100, 1)).Quo(shortage, point), nil
 	}, false)
+}
+
+// reorderItemsLimit is how many items below their reorder point the assistant can list in a purchase draft.
+const reorderItemsLimit = 20
+
+// buildReorderItems lists the items below their reorder point, the most short first, for the assistant's purchase draft
+// (key starts with "agent_": people see the ranking above instead). Item codes are the categories. Series 1 is the
+// quantity short of the reorder point with the item names as point labels, series 2 the quantity on hand with the unit
+// names as point labels, series 3 the reorder point and series 4 the quantity still to arrive on earlier purchase orders.
+func buildReorderItems(rows []map[string]string) (DashboardVisualization, error) {
+	type item struct {
+		code, name, unit               string
+		balance, point, onOrder, short *big.Rat
+		ratio                          *big.Rat
+	}
+	items := make([]item, 0, len(rows))
+	for _, row := range realSummaryRows(rows) {
+		balance, err := decimal(row["balance_qty"])
+		if err != nil {
+			return DashboardVisualization{}, err
+		}
+		point, err := decimal(row["purchase_point"])
+		if err != nil {
+			return DashboardVisualization{}, err
+		}
+		if point.Sign() <= 0 || balance.Cmp(point) >= 0 {
+			continue
+		}
+		onOrder := new(big.Rat)
+		if text := row["purchase_balance_qty"]; text != "" {
+			if parsed, parseErr := decimal(text); parseErr == nil && parsed.Sign() > 0 {
+				onOrder = parsed
+			}
+		}
+		short := new(big.Rat).Sub(point, balance)
+		unit := row["ic_unit_code"]
+		if _, name, found := strings.Cut(unit, "~"); found {
+			unit = name
+		}
+		items = append(items, item{code: row["ic_code"], name: firstNonEmpty(row["ic_name"], row["ic_code"]), unit: strings.TrimSpace(unit),
+			balance: balance, point: point, onOrder: onOrder, short: short, ratio: new(big.Rat).Quo(short, point)})
+	}
+	if len(items) == 0 {
+		return DashboardVisualization{}, nil
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if comparison := items[i].ratio.Cmp(items[j].ratio); comparison != 0 {
+			return comparison > 0
+		}
+		return items[i].code < items[j].code
+	})
+	if len(items) > reorderItemsLimit {
+		items = items[:reorderItemsLimit]
+	}
+	categories := make([]string, len(items))
+	short, balance, point, onOrder := make([]string, len(items)), make([]string, len(items)), make([]string, len(items)), make([]string, len(items))
+	names, units := make([]string, len(items)), make([]string, len(items))
+	for index, entry := range items {
+		categories[index], names[index], units[index] = entry.code, entry.name, entry.unit
+		short[index], balance[index], point[index], onOrder[index] = entry.short.FloatString(4), entry.balance.FloatString(4), entry.point.FloatString(4), entry.onOrder.FloatString(4)
+	}
+	return DashboardVisualization{Key: agentVisualizationPrefix + "reorder_items", Title: "สินค้าที่ต่ำกว่าจุดสั่งซื้อ", Intent: IntentRanking, Unit: UnitQuantity, Categories: categories,
+		Series: []VisualizationSeries{
+			{Key: "shortage_qty", Label: "จำนวนที่ขาดจากจุดสั่งซื้อ", Values: short, PointLabels: names},
+			{Key: "balance_qty", Label: "คงเหลือ", Values: balance, PointLabels: units},
+			{Key: "purchase_point", Label: "จุดสั่งซื้อ", Values: point},
+			{Key: "on_order_qty", Label: "ค้างรับจากใบสั่งซื้อ", Values: onOrder},
+		}}, nil
 }
 
 func buildMovementVisualizations(rows []map[string]string) ([]DashboardVisualization, error) {

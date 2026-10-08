@@ -372,3 +372,22 @@ func TestAgentDraftErrorsAreThaiAndAForbiddenDraftLooksMissing(t *testing.T) {
 		t.Fatalf("a wrong token must not draft anything: %d", got.Code)
 	}
 }
+
+func TestAgentPurchaseDraftNeedsTheReorderReportAndLooksMissingWithout(t *testing.T) {
+	store := newAgentStore()
+	store.permitted = []report.Key{report.SalesGoodsServices}
+	handler := agentTestHandler(store, true)
+	forbidden := agentPost(handler, "/api/v1/agent/drafts/purchase-order", "abcc_token", `{}`)
+	missing := agentGet(handler, "/api/v1/agent/reports/no_such_report", "abcc_token")
+	if forbidden.Code != http.StatusNotFound || !bytes.Equal(forbidden.Body.Bytes(), missing.Body.Bytes()) {
+		t.Fatalf("a forbidden draft must answer like a missing report: %d %s", forbidden.Code, forbidden.Body.String())
+	}
+	if got := agentPost(handler, "/api/v1/agent/drafts/purchase-order", "abcc_other", `{}`); got.Code != http.StatusUnauthorized {
+		t.Fatalf("a wrong token must not draft anything: %d", got.Code)
+	}
+	store.permitted = []report.Key{report.StockReorder}
+	waiting := agentPost(handler, "/api/v1/agent/drafts/purchase-order", "abcc_token", ``)
+	if waiting.Code != http.StatusOK || !strings.Contains(waiting.Body.String(), `"status":"PREPARING"`) {
+		t.Fatalf("an empty body is fine and the report is being prepared: %d %s", waiting.Code, waiting.Body.String())
+	}
+}

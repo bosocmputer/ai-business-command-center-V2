@@ -199,7 +199,7 @@ summary_metrics as (
 selected_rows as (
   select * from summary_source
   order by greatest(purchase_point - balance_qty, 0) / nullif(purchase_point, 0) desc, ic_code
-  limit 10
+  limit 20
 )
 select selected_rows.*, summary_metrics.*,
   (selected_rows.ic_code is null)::text as _summary_metric_row

@@ -17,3 +17,12 @@ func TestDatesUseTheBuddhistEraAndAmountsKeepSatang(t *testing.T) {
 		}
 	}
 }
+
+func TestQuantitiesDropTrailingZerosAndKeepRealDecimals(t *testing.T) {
+	for text, want := range map[string]string{"1250": "1,250", "12.5": "12.5", "0": "0", "100.0000": "100", "2.12345": "2.1235", "-3": "-3"} {
+		value, _ := new(big.Rat).SetString(text)
+		if got := Qty(value); got != want {
+			t.Errorf("qty(%s) = %q, want %q", text, got, want)
+		}
+	}
+}

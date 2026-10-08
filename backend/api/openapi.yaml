@@ -557,6 +557,17 @@ paths:
         '404': {$ref: '#/components/responses/AgentRefusal'}
         '422': {$ref: '#/components/responses/AgentRefusal'}
         '429': {$ref: '#/components/responses/AgentRefusal'}
+  /api/v1/agent/drafts/purchase-order:
+    post:
+      tags: [Agent]
+      operationId: postAgentPurchaseDraft
+      description: Writes a purchase list for the owner to copy and send, from the items below their reorder point in the reorder report (the most short first, up to twenty). The quantity is the shortage against the reorder point, not a recommended order quantity, and the report has no supplier. Nothing is sent and nothing is written to SML; the call log records that a draft was made. Without the reorder report it answers exactly like a missing report.
+      security: [{AgentToken: []}]
+      responses:
+        '200': {description: "A draft, or why there is none (PREPARING, UNAVAILABLE, NOTHING_TO_ORDER).", content: {application/json: {schema: {$ref: '#/components/schemas/AgentPurchaseDraft'}}}}
+        '401': {$ref: '#/components/responses/AgentRefusal'}
+        '404': {$ref: '#/components/responses/AgentRefusal'}
+        '429': {$ref: '#/components/responses/AgentRefusal'}
   /api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/invitation:
     post:
       tags: [Admin configuration]
@@ -1689,6 +1700,32 @@ components:
         collectedAt: {type: string, format: date-time}
         freshness: {type: string, enum: [FRESH, STALE]}
         candidates: {type: array, items: {type: string}, description: "Names the owner can choose from (AMBIGUOUS, NOT_FOUND)."}
+        notes: {type: array, items: {type: string}}
+        retryAfterSeconds: {type: integer}
+    AgentPurchaseDraft:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string, enum: [READY, PREPARING, UNAVAILABLE, NOTHING_TO_ORDER]}
+        message: {type: string}
+        itemsBelowPoint: {type: integer, description: "All items below their reorder point."}
+        itemsListed: {type: integer, description: "Items in this draft (the most short first)."}
+        items:
+          type: array
+          items:
+            type: object
+            required: [code, name, shortageQty, balanceQty, reorderPoint, onOrderQty]
+            properties:
+              code: {type: string}
+              name: {type: string}
+              unit: {type: string}
+              shortageQty: {type: string, description: "Reorder point minus on hand."}
+              balanceQty: {type: string}
+              reorderPoint: {type: string}
+              onOrderQty: {type: string, description: "Still to arrive on earlier purchase orders."}
+        draft: {type: string, description: "The text to copy, word for word. Present only when status is READY."}
+        collectedAt: {type: string, format: date-time}
+        freshness: {type: string, enum: [FRESH, STALE]}
         notes: {type: array, items: {type: string}}
         retryAfterSeconds: {type: integer}
     AgentError:

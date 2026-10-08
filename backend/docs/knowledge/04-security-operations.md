@@ -56,6 +56,7 @@ tags: [backend, security, operations, retention]
 - It writes nothing anywhere and sends nothing. `agent_calls` records `tool=draft` with the report key and an outcome only: no text, no customer name.
 - Needs the receivable report permission (otherwise the uniform NO_DATA answer) and a token that may see names (otherwise a plain refusal). A customer outside the top ten, or a name that matches several, returns the candidate names instead of a draft.
 - Only documents up to 365 days past their due date (`report.AgingChaseableDays`) are chased; the receivable report reports older overdue debts apart as old debts (`stale_overdue_amount`, `stale_overdue_debtors`, `stale_overdue_debtor_days`) and the draft tool answers `NOT_CHASEABLE` for them. A reminder says it counts only the recent part.
+- `POST /api/v1/agent/drafts/purchase-order` (tool `draft_purchase_order`) writes a purchase list from the assistant-only chart `agent_reorder_items` of the reorder report (up to 20 items, most short first). Needs the `stock_reorder` permission (otherwise the uniform NO_DATA answer). Nothing is sent or written; the call log records `tool=draft`, `report_key=stock_reorder`.
 - Reminder tone: friendly or formal. No deadline, fee or legal wording is ever generated.
 
 ## Assistant alerts

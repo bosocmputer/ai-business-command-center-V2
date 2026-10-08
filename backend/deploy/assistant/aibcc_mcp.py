@@ -125,5 +125,15 @@ def draft_collection(customer: str, tone: str = "friendly") -> str:
     return call_waiting("/drafts/collection", method="POST", payload={"customer": customer, "tone": tone})
 
 
+@mcp.tool()
+def draft_purchase_order() -> str:
+    """Write a purchase list for the items that are below their reorder point, only when the owner asks for a purchase
+    draft in this conversation. The server writes the text from its own figures: give the owner the "draft" text exactly as
+    returned, never edit it and never add quantities, prices or suppliers. The quantity is the shortage, not a recommended
+    order. The draft is not sent to anyone; the owner copies and sends it. If it has to be fetched live this call waits up to
+    about 100 seconds."""
+    return call_waiting("/drafts/purchase-order", method="POST", payload={})
+
+
 if __name__ == "__main__":
     mcp.run()

@@ -54,7 +54,12 @@ days overdue, up to five of the oldest overdue documents with number, due date a
 older ones; the date the data is as of); the model hands it over unchanged. It is polite, sets no deadline, adds no
 fee and threatens nothing. Nothing is sent and nothing is written to SML: the owner copies it. It needs a token that sees
 customer names (a reminder without a name is not a reminder). The call log records that a draft was made, never its text
-or the customer. Quotations and purchase orders are not drafted yet.
+or the customer. Quotations are not drafted yet.
+
+`draft_purchase_order` writes a purchase list from the reorder report: the items below their reorder point, most short
+first, up to twenty, each with its shortage against the reorder point (reorder point minus on hand, not a recommended
+order quantity) and what is still to arrive on earlier purchase orders. The report has no supplier, so the draft is
+addressed to "ผู้จำหน่าย" and the owner picks one. When nothing is below its point the assistant says so and invents no list.
 
 Only debts up to 365 days past their due date get a reminder. Older ones are old debts for the accountant: the receivable
 report keeps them apart (KPI `stale_overdue_amount` and two charts), the draft tool answers `NOT_CHASEABLE` for them and
