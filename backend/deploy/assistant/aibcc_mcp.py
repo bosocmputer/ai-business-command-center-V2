@@ -99,10 +99,20 @@ def alerts() -> str:
 @mcp.tool()
 def alert_set(rule_key: str, threshold: str = "", enabled: bool = True) -> str:
     """Set, change or switch off ONE alert, only when the owner clearly asks for it in this conversation.
-    rule_key is one of the keys from alerts(). threshold is the number the owner said, as digits (baht, a count of items or a
+    rule_key is exactly one of: ar_overdue, ar_over_year, stock_reorder, sales_drop (the keys from alerts()). threshold is the number the owner said, as digits (baht, a count of items or a
     percent depending on the rule), digits only without a unit such as "%" or "baht"; leave it empty to switch a rule off (enabled=false) or back on with its old threshold.
     This changes only the owner's own alert settings. Read the result back to the owner."""
-    return call("/alerts/" + urllib.parse.quote(rule_key, safe=""), method="PUT", body={"threshold": threshold, "enabled": enabled})
+    result = call("/alerts/" + urllib.parse.quote(rule_key, safe=""), method="PUT", body={"threshold": threshold, "enabled": enabled})
+    try:
+        if json.loads(result).get("status") == "NO_DATA":
+            # An unknown or unavailable rule answers like a missing report. The catalog itself is not secret, so say which
+            # keys exist: a wrong guess then costs one more call instead of a wrong "no data" for the owner.
+            listing = json.loads(call("/alerts"))
+            keys = [item["rule"] for item in listing.get("alerts", []) if item.get("available")]
+            return json.dumps({"status": "UNKNOWN_RULE", "message": "ไม่รู้จักชื่อกฎนี้ ใช้ rule_key ตัวใดตัวหนึ่งเท่านั้น แล้วเรียกใหม่", "validRuleKeys": keys}, ensure_ascii=False)
+    except (ValueError, AttributeError, KeyError):
+        pass
+    return result
 
 
 if __name__ == "__main__":
