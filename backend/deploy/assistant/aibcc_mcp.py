@@ -51,13 +51,13 @@ def is_preparing(body):
         return False
 
 
-def call_waiting(path, query=None):
+def call_waiting(path, query=None, method="GET", payload=None):
     """Like call(), but while AI-BCC says the report is being prepared, ask again every few seconds, up to WAIT_SECONDS."""
-    body = call(path, query)
+    body = call(path, query, method, payload)
     deadline = time.monotonic() + WAIT_SECONDS
     while is_preparing(body) and time.monotonic() < deadline:
         time.sleep(max(0.0, min(POLL_SECONDS, deadline - time.monotonic())))
-        body = call(path, query)
+        body = call(path, query, method, payload)
     return body
 
 
@@ -113,6 +113,16 @@ def alert_set(rule_key: str, threshold: str = "", enabled: bool = True) -> str:
     except (ValueError, AttributeError, KeyError):
         pass
     return result
+
+
+@mcp.tool()
+def draft_collection(customer: str, tone: str = "friendly") -> str:
+    """Write a payment reminder message for ONE customer who is overdue, only when the owner asks for one in this conversation.
+    customer is the name or part of the name the owner said. It works for the ten customers owing the most past their due date.
+    tone is "friendly" (default) or "formal" (only when the owner asks for a formal one). The server writes the message from its own
+    figures: give the owner the "draft" text exactly as returned, never edit it and never add numbers, dates or contact details.
+    The draft is not sent to anyone; the owner copies and sends it. If it has to be fetched live this call waits up to about 100 seconds."""
+    return call_waiting("/drafts/collection", method="POST", payload={"customer": customer, "tone": tone})
 
 
 if __name__ == "__main__":

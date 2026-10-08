@@ -3,6 +3,7 @@ package report
 import (
 	"fmt"
 	"math/big"
+	"sort"
 	"strconv"
 )
 
@@ -34,7 +35,8 @@ const (
 	agingBucketOverdue5  = "OVERDUE_120_PLUS"
 	agingBucketNoDueDate = "NO_DUE_DATE"
 	agingBucketCredit    = "CREDIT"
-	// agingSummaryDebtorRowsText is the number of top debtors a summary carries.
+	// agingSummaryDebtorRowsText is the number of top debtors a summary carries, and the same number again of the
+	// customers owing the most past their due date (the people a shop would chase first).
 	agingSummaryDebtorRowsText = "10"
 )
 
@@ -196,7 +198,8 @@ bucket_row as (
     coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_61_90'), 0) as doc_age_61_90,
     coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_91_180'), 0) as doc_age_91_180,
     coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_181_365'), 0) as doc_age_181_365,
-    coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_OVER_365'), 0) as doc_age_over_365
+    coalesce(sum(balance) filter (where doc_age_bucket = 'AGE_OVER_365'), 0) as doc_age_over_365,
+    null::integer as max_days_past_due
   from bucketed
 ),
 debtor_rows as (
@@ -207,9 +210,28 @@ debtor_rows as (
     null::numeric as bucket_overdue_61_90, null::numeric as bucket_overdue_91_120, null::numeric as bucket_overdue_over_120,
     null::numeric as bucket_no_due_date, null::numeric as bucket_credit,
     null::numeric as doc_age_0_30, null::numeric as doc_age_31_60, null::numeric as doc_age_61_90,
-    null::numeric as doc_age_91_180, null::numeric as doc_age_181_365, null::numeric as doc_age_over_365
+    null::numeric as doc_age_91_180, null::numeric as doc_age_181_365, null::numeric as doc_age_over_365,
+    null::integer as max_days_past_due
   from bucketed b
   left join ar_customer c on c.code = b.cust_code
+  group by b.cust_code
+  having sum(b.balance) > 0
+  order by sum(b.balance) desc, b.cust_code
+  limit ` + agingSummaryDebtorRowsText + `
+),
+overdue_rows as (
+  select 'overdue'::text as _summary_kind, b.cust_code, max(coalesce(c.name_1, '')) as cust_name,
+    sum(b.balance) as balance,
+    sum(b.balance) as overdue_balance,
+    null::numeric as bucket_not_due, null::numeric as bucket_overdue_1_30, null::numeric as bucket_overdue_31_60,
+    null::numeric as bucket_overdue_61_90, null::numeric as bucket_overdue_91_120, null::numeric as bucket_overdue_over_120,
+    null::numeric as bucket_no_due_date, null::numeric as bucket_credit,
+    null::numeric as doc_age_0_30, null::numeric as doc_age_31_60, null::numeric as doc_age_61_90,
+    null::numeric as doc_age_91_180, null::numeric as doc_age_181_365, null::numeric as doc_age_over_365,
+    max(b.days_past_due) as max_days_past_due
+  from bucketed b
+  left join ar_customer c on c.code = b.cust_code
+  where b.bucket in ('OVERDUE_1_30', 'OVERDUE_31_60', 'OVERDUE_61_90', 'OVERDUE_91_120', 'OVERDUE_120_PLUS') and b.balance > 0
   group by b.cust_code
   having sum(b.balance) > 0
   order by sum(b.balance) desc, b.cust_code
@@ -219,11 +241,13 @@ selected_rows as (
   select * from bucket_row
   union all
   select * from debtor_rows
+  union all
+  select * from overdue_rows
 )
 select selected_rows.*, summary_metrics.*,
   (selected_rows._summary_kind is null)::text as _summary_metric_row
 from summary_metrics left join selected_rows on true
-limit 20
+limit 30
 `
 
 // agingTotals are the figures every projection must be able to give.
@@ -437,5 +461,87 @@ func buildAgingVisualizations(rows []map[string]string) ([]DashboardVisualizatio
 	if err != nil {
 		return nil, err
 	}
-	return compactVisualizations(composition, docAges, debtors), nil
+	overdue, overdueDays, err := buildOverdueDebtors(rows)
+	if err != nil {
+		return nil, err
+	}
+	return compactVisualizations(composition, docAges, debtors, overdue, overdueDays), nil
 }
+
+// buildOverdueDebtors ranks the customers who owe the most past their due date and says how long the oldest of their
+// overdue documents has been overdue. Two charts with the same customers in the same order, one in baht and one in days,
+// because a chart has one unit. A summary run carries these as its own rows; a detail run adds them up from the documents.
+// The assistant reads the two together to write a payment reminder.
+func buildOverdueDebtors(rows []map[string]string) (DashboardVisualization, DashboardVisualization, error) {
+	type debtor struct {
+		code, name string
+		amount     *big.Rat
+		days       int
+	}
+	byCustomer := map[string]*debtor{}
+	summary := false
+	for _, row := range realSummaryRows(rows) {
+		if row["_summary_kind"] != "" {
+			summary = true
+		}
+	}
+	for _, row := range realSummaryRows(rows) {
+		var amountText string
+		switch {
+		case summary && row["_summary_kind"] == "overdue":
+			amountText = row["overdue_balance"]
+		case !summary && agingOverdueBucket(row["bucket"]):
+			amountText = row["balance"]
+		default:
+			continue
+		}
+		amount, err := decimal(amountText)
+		if err != nil {
+			return DashboardVisualization{}, DashboardVisualization{}, fieldDecimalError("overdue_balance", err)
+		}
+		if amount.Sign() <= 0 {
+			continue
+		}
+		days, _ := strconv.Atoi(integerText(row["max_days_past_due"]))
+		if !summary {
+			days, _ = strconv.Atoi(integerText(row["days_past_due"]))
+		}
+		item := byCustomer[row["cust_code"]]
+		if item == nil {
+			item = &debtor{code: row["cust_code"], name: row["cust_name"], amount: new(big.Rat)}
+			byCustomer[row["cust_code"]] = item
+		}
+		item.amount.Add(item.amount, amount)
+		item.days = max(item.days, days)
+	}
+	items := make([]*debtor, 0, len(byCustomer))
+	for _, item := range byCustomer {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if comparison := items[i].amount.Cmp(items[j].amount); comparison != 0 {
+			return comparison > 0
+		}
+		return items[i].code < items[j].code
+	})
+	if len(items) > dashboardTopLimit {
+		items = items[:dashboardTopLimit]
+	}
+	if len(items) == 0 {
+		return DashboardVisualization{}, DashboardVisualization{}, nil
+	}
+	categories, amounts, days := make([]string, len(items)), make([]string, len(items)), make([]string, len(items))
+	for index, item := range items {
+		categories[index] = item.name
+		if categories[index] == "" {
+			categories[index] = item.code
+		}
+		amounts[index], days[index] = money(item.amount), strconv.Itoa(item.days)
+	}
+	return DashboardVisualization{Key: "overdue_debtors", Title: "ลูกหนี้เลยกำหนดสูงสุด", Intent: IntentRanking, Unit: UnitTHB, Categories: categories,
+			Series: []VisualizationSeries{{Key: "value", Label: "ยอดเลยกำหนด", Values: amounts}}},
+		DashboardVisualization{Key: "overdue_debtor_days", Title: "เลยกำหนดมานานสุด (วัน) ของลูกหนี้เลยกำหนดสูงสุด", Intent: IntentRanking, Unit: UnitCount, Categories: slicesClone(categories),
+			Series: []VisualizationSeries{{Key: "value", Label: "จำนวนวันที่เลยกำหนด", Values: days}}}, nil
+}
+
+func slicesClone(values []string) []string { return append([]string(nil), values...) }

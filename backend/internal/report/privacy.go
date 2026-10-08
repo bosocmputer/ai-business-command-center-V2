@@ -5,6 +5,8 @@ package report
 // their place. Product names are not listed: they are not personal data.
 var PersonNameVisualizations = map[string]struct{}{
 	"top_debtors":             {},
+	"overdue_debtors":         {},
+	"overdue_debtor_days":     {},
 	"top_customers":           {},
 	"customers_behind_rhythm": {},
 	"customer_net_movement":   {},

@@ -336,3 +336,39 @@ func TestAgentAlertsAnswerLikeNothingWhenNotConfigured(t *testing.T) {
 		}
 	}
 }
+
+func agentPost(handler http.Handler, path, token, body string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
+}
+
+func TestAgentDraftErrorsAreThaiAndAForbiddenDraftLooksMissing(t *testing.T) {
+	store := newAgentStore()
+	store.permitted = []report.Key{report.ARAging}
+	handler := agentTestHandler(store, true)
+
+	short := agentPost(handler, "/api/v1/agent/drafts/collection", "abcc_token", `{"customer":"ก","tone":"friendly"}`)
+	if short.Code != http.StatusUnprocessableEntity || !strings.Contains(short.Body.String(), "INVALID_DRAFT") || !strings.Contains(short.Body.String(), "ชื่อลูกค้า") {
+		t.Fatalf("short name: %d %s", short.Code, short.Body.String())
+	}
+	malformed := agentPost(handler, "/api/v1/agent/drafts/collection", "abcc_token", `{"customer":"บริษัท","tone":"friendly","amount":"1"}`)
+	if malformed.Code != http.StatusUnprocessableEntity || !strings.Contains(malformed.Body.String(), "INVALID_DRAFT") {
+		t.Fatalf("a request may not carry its own amount: %d %s", malformed.Code, malformed.Body.String())
+	}
+
+	store.permitted = []report.Key{report.SalesGoodsServices} // may not read the receivable report
+	forbidden := agentPost(handler, "/api/v1/agent/drafts/collection", "abcc_token", `{"customer":"บริษัท ตัวอย่าง","tone":"friendly"}`)
+	missing := agentGet(handler, "/api/v1/agent/reports/no_such_report", "abcc_token")
+	if forbidden.Code != http.StatusNotFound || !bytes.Equal(forbidden.Body.Bytes(), missing.Body.Bytes()) {
+		t.Fatalf("a forbidden draft must answer like a missing report: %d %s / %d %s", forbidden.Code, forbidden.Body.String(), missing.Code, missing.Body.String())
+	}
+	if got := agentPost(handler, "/api/v1/agent/drafts/collection", "abcc_other", `{"customer":"บริษัท","tone":"friendly"}`); got.Code != http.StatusUnauthorized {
+		t.Fatalf("a wrong token must not draft anything: %d", got.Code)
+	}
+}

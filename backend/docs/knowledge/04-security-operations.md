@@ -50,6 +50,13 @@ tags: [backend, security, operations, retention]
   records the internal window by an exact UUID, and suppresses PostgreSQL
   command tags so successful inserts cannot be misclassified as failures.
 
+## Assistant drafts
+
+- `POST /api/v1/agent/drafts/collection` (tool `draft_collection`) returns a payment-reminder text for one customer among the ten owing the most past their due date. The text is built in `internal/agent/draft.go` from the receivable report's `overdue_debtors` and `overdue_debtor_days` charts (same customers, same order); the model never writes the numbers.
+- It writes nothing anywhere and sends nothing. `agent_calls` records `tool=draft` with the report key and an outcome only: no text, no customer name.
+- Needs the receivable report permission (otherwise the uniform NO_DATA answer) and a token that may see names (otherwise a plain refusal). A customer outside the top ten, or a name that matches several, returns the candidate names instead of a draft.
+- Reminder tone: friendly or formal. No deadline, fee or legal wording is ever generated.
+
 ## Assistant alerts
 
 - The owner sets alerts by talking to the assistant (`alerts`, `alert_set` tools = `GET/PUT /api/v1/agent/alerts`). Rules live in `agent_alert_rules`, firings in `agent_alert_events` (figures and fixed Thai text, no names, kept 365 days). The worker's `alertLoop` (`internal/alert`) runs every five minutes; a rule is checked once a day, from 08:15 to 12:15 shop time.

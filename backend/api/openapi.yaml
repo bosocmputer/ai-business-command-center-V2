@@ -540,6 +540,23 @@ paths:
         '404': {$ref: '#/components/responses/AgentRefusal'}
         '422': {$ref: '#/components/responses/AgentRefusal'}
         '429': {$ref: '#/components/responses/AgentRefusal'}
+  /api/v1/agent/drafts/collection:
+    post:
+      tags: [Agent]
+      operationId: postAgentCollectionDraft
+      description: Writes a payment reminder for one of the ten customers owing the most past their due date, from the receivable report's own figures, for the owner to copy and send. Nothing is sent and nothing is written to SML; the call log records that a draft was made, never its text or the customer. Needs a token that may see names and the receivable report; without the report it answers exactly like a missing report.
+      security: [{AgentToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AgentDraftRequest'}
+      responses:
+        '200': {description: "A draft, or why there is none (PREPARING, UNAVAILABLE, NOT_FOUND, AMBIGUOUS).", content: {application/json: {schema: {$ref: '#/components/schemas/AgentDraft'}}}}
+        '401': {$ref: '#/components/responses/AgentRefusal'}
+        '404': {$ref: '#/components/responses/AgentRefusal'}
+        '422': {$ref: '#/components/responses/AgentRefusal'}
+        '429': {$ref: '#/components/responses/AgentRefusal'}
   /api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/invitation:
     post:
       tags: [Admin configuration]
@@ -1651,11 +1668,34 @@ components:
       properties:
         threshold: {type: string, description: "Omit to keep the current threshold (switching a rule off or on)."}
         enabled: {type: boolean, description: Defaults to true.}
+    AgentDraftRequest:
+      type: object
+      required: [customer]
+      additionalProperties: false
+      properties:
+        customer: {type: string, minLength: 2, maxLength: 100, description: "Part of the customer's name, as the owner said it."}
+        tone: {type: string, enum: [friendly, formal], description: Defaults to friendly.}
+    AgentDraft:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string, enum: [READY, PREPARING, UNAVAILABLE, NOT_FOUND, AMBIGUOUS]}
+        message: {type: string}
+        customer: {type: string}
+        overdueAmount: {type: string, description: "Baht past the due date, as plain digits."}
+        maxDaysPastDue: {type: integer}
+        tone: {type: string, enum: [friendly, formal]}
+        draft: {type: string, description: "The text to copy, word for word. Present only when status is READY."}
+        collectedAt: {type: string, format: date-time}
+        freshness: {type: string, enum: [FRESH, STALE]}
+        candidates: {type: array, items: {type: string}, description: "Names the owner can choose from (AMBIGUOUS, NOT_FOUND)."}
+        notes: {type: array, items: {type: string}}
+        retryAfterSeconds: {type: integer}
     AgentError:
       type: object
       required: [status, message]
       properties:
-        status: {type: string, enum: [UNAUTHORIZED, NO_DATA, INVALID_PERIOD, INVALID_ALERT, RATE_LIMITED, AGENT_DISABLED, ERROR]}
+        status: {type: string, enum: [UNAUTHORIZED, NO_DATA, INVALID_PERIOD, INVALID_ALERT, INVALID_DRAFT, RATE_LIMITED, AGENT_DISABLED, ERROR]}
         message: {type: string, description: Plain Thai the assistant can pass on.}
     AgentContext:
       type: object

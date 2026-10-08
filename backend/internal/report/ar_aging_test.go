@@ -10,8 +10,9 @@ import (
 func agingDetailFixture() []map[string]string {
 	// Age counted from the document date, where a document still has a balance.
 	docAge := map[string]string{"D1": "AGE_0_30", "D2": "AGE_31_60", "D3": "AGE_OVER_365", "D4": "AGE_OVER_365", "D5": "AGE_91_180"}
+	pastDue := map[string]string{"D2": "12", "D3": "400", "D5": "75"}
 	row := func(cust, name, doc, bucket, balance string) map[string]string {
-		return map[string]string{"cust_code": cust, "cust_name": name, "doc_no": doc, "bucket": bucket, "balance": balance, "amount": balance, "paid_amount": "0", "doc_age_bucket": docAge[doc]}
+		return map[string]string{"cust_code": cust, "cust_name": name, "doc_no": doc, "bucket": bucket, "balance": balance, "amount": balance, "paid_amount": "0", "doc_age_bucket": docAge[doc], "days_past_due": pastDue[doc]}
 	}
 	return []map[string]string{
 		row("C1", "ลูกค้า 1", "D1", agingBucketNotDue, "1000.00"),
@@ -42,6 +43,8 @@ func agingSummaryFixture() map[string][]map[string]string {
 			"doc_age_0_30": "1000.00", "doc_age_31_60": "500.00", "doc_age_61_90": "0", "doc_age_91_180": "100.00", "doc_age_181_365": "0", "doc_age_over_365": "4250.00"}),
 		merge(map[string]string{"_summary_kind": "ranking", "cust_code": "C2", "cust_name": "ลูกค้า 2", "balance": "3800.00", "overdue_balance": "100.00"}),
 		merge(map[string]string{"_summary_kind": "ranking", "cust_code": "C1", "cust_name": "ลูกค้า 1", "balance": "1750.00", "overdue_balance": "750.00"}),
+		merge(map[string]string{"_summary_kind": "overdue", "cust_code": "C1", "cust_name": "ลูกค้า 1", "balance": "750.00", "overdue_balance": "750.00", "max_days_past_due": "400"}),
+		merge(map[string]string{"_summary_kind": "overdue", "cust_code": "C2", "cust_name": "ลูกค้า 2", "balance": "100.00", "overdue_balance": "100.00", "max_days_past_due": "75"}),
 	}}
 }
 
@@ -133,6 +136,12 @@ func TestAgingDashboardIsTheSameFromDetailAndFromSummary(t *testing.T) {
 		}
 		if len(buckets.Categories) == 0 || buckets.Categories[0] != "ยังไม่ครบกำหนด" {
 			t.Errorf("%s: bucket chart = %+v", name, buckets)
+		}
+		// Who to chase first: only what is past its due date (not the 4,000 with no due date), biggest first, with how long.
+		overdue, days := byKey["overdue_debtors"], byKey["overdue_debtor_days"]
+		if len(overdue.Categories) != 2 || overdue.Categories[0] != "ลูกค้า 1" || overdue.Series[0].Values[0] != "750.00" || overdue.Series[0].Values[1] != "100.00" ||
+			len(days.Categories) != 2 || days.Categories[0] != "ลูกค้า 1" || days.Series[0].Values[0] != "400" || days.Series[0].Values[1] != "75" || days.Unit != UnitCount {
+			t.Errorf("%s: overdue debtors = %+v, days = %+v", name, overdue, days)
 		}
 		if len(debtors.Categories) != 2 || debtors.Categories[0] != "ลูกค้า 2" {
 			t.Errorf("%s: top debtors = %+v; want C2 (3,800) before C1 (1,750) and no credit-only customer", name, debtors.Categories)

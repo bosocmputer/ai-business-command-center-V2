@@ -21,6 +21,7 @@ const (
 	ToolLatestDelivery Tool = "latest_delivery"
 	ToolAlerts         Tool = "alerts"
 	ToolAlertSet       Tool = "alert_set"
+	ToolDraft          Tool = "draft"
 )
 
 type Outcome string
@@ -32,6 +33,7 @@ const (
 	OutcomeNoData        Outcome = "NO_DATA"
 	OutcomeInvalidPeriod Outcome = "INVALID_PERIOD"
 	OutcomeInvalidAlert  Outcome = "INVALID_ALERT"
+	OutcomeInvalidDraft  Outcome = "INVALID_DRAFT"
 	OutcomeRateLimited   Outcome = "RATE_LIMITED"
 )
 

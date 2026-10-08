@@ -22,6 +22,7 @@ type AgentAPI interface {
 	LatestDelivery(ctx context.Context, principal agent.Principal, reportKey string) (agent.ReportResponse, error)
 	Alerts(ctx context.Context, principal agent.Principal) (agent.AlertsResponse, error)
 	SetAlert(ctx context.Context, principal agent.Principal, rule string, request agent.AlertSetRequest, requestID string) (agent.AlertView, error)
+	DraftCollection(ctx context.Context, principal agent.Principal, request agent.DraftRequest) (agent.DraftResponse, error)
 	IssueToken(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID, namesVisible bool) (agent.IssuedToken, error)
 	RevokeToken(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID) error
 	TokenInfo(ctx context.Context, tenantID, recipientID uuid.UUID) (agent.TokenInfo, error)
@@ -105,6 +106,17 @@ func registerAgentRoutes(router chi.Router, api AgentAPI, enabled bool) {
 			result, err := api.SetAlert(request.Context(), agentPrincipal(request), chi.URLParam(request, "ruleKey"), input, requestID(request))
 			respondAgent(response, result, err)
 		})
+		group.Post("/drafts/collection", func(response http.ResponseWriter, request *http.Request) {
+			var input agent.DraftRequest
+			decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 4096))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&input); err != nil {
+				writeAgentJSON(response, http.StatusUnprocessableEntity, agentError{Status: "INVALID_DRAFT", Message: "คำขอร่างข้อความไม่ถูกต้อง ต้องมี customer (ชื่อลูกค้า) และ tone (friendly หรือ formal)"})
+				return
+			}
+			result, err := api.DraftCollection(request.Context(), agentPrincipal(request), input)
+			respondAgent(response, result, err)
+		})
 		group.NotFound(func(response http.ResponseWriter, _ *http.Request) {
 			writeAgentJSON(response, http.StatusNotFound, agentError{Status: "NO_DATA", Message: agent.MessageNoData})
 		})
@@ -113,6 +125,11 @@ func registerAgentRoutes(router chi.Router, api AgentAPI, enabled bool) {
 
 func isInvalidAlert(err error) bool {
 	var invalid *agent.InvalidAlertError
+	return errors.As(err, &invalid)
+}
+
+func isInvalidDraft(err error) bool {
+	var invalid *agent.InvalidDraftError
 	return errors.As(err, &invalid)
 }
 
@@ -131,6 +148,10 @@ func respondAgent(response http.ResponseWriter, result any, err error) {
 		var invalid *agent.InvalidAlertError
 		_ = errors.As(err, &invalid)
 		writeAgentJSON(response, http.StatusUnprocessableEntity, agentError{Status: "INVALID_ALERT", Message: invalid.Message})
+	case isInvalidDraft(err):
+		var invalid *agent.InvalidDraftError
+		_ = errors.As(err, &invalid)
+		writeAgentJSON(response, http.StatusUnprocessableEntity, agentError{Status: "INVALID_DRAFT", Message: invalid.Message})
 	case errors.Is(err, agent.ErrInvalidPeriod):
 		writeAgentJSON(response, http.StatusUnprocessableEntity, agentError{Status: "INVALID_PERIOD", Message: agent.MessageInvalidDates})
 	default:

@@ -425,6 +425,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/drafts/collection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Writes a payment reminder for one of the ten customers owing the most past their due date, from the receivable report's own figures, for the owner to copy and send. Nothing is sent and nothing is written to SML; the call log records that a draft was made, never its text or the customer. Needs a token that may see names and the receivable report; without the report it answers exactly like a missing report. */
+        post: operations["postAgentCollectionDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/invitation": {
         parameters: {
             query?: never;
@@ -1387,9 +1404,39 @@ export interface components {
             /** @description Defaults to true. */
             enabled?: boolean;
         };
+        AgentDraftRequest: {
+            /** @description Part of the customer's name, as the owner said it. */
+            customer: string;
+            /**
+             * @description Defaults to friendly.
+             * @enum {string}
+             */
+            tone?: "friendly" | "formal";
+        };
+        AgentDraft: {
+            /** @enum {string} */
+            status: "READY" | "PREPARING" | "UNAVAILABLE" | "NOT_FOUND" | "AMBIGUOUS";
+            message?: string;
+            customer?: string;
+            /** @description Baht past the due date, as plain digits. */
+            overdueAmount?: string;
+            maxDaysPastDue?: number;
+            /** @enum {string} */
+            tone?: "friendly" | "formal";
+            /** @description The text to copy, word for word. Present only when status is READY. */
+            draft?: string;
+            /** Format: date-time */
+            collectedAt?: string;
+            /** @enum {string} */
+            freshness?: "FRESH" | "STALE";
+            /** @description Names the owner can choose from (AMBIGUOUS, NOT_FOUND). */
+            candidates?: string[];
+            notes?: string[];
+            retryAfterSeconds?: number;
+        };
         AgentError: {
             /** @enum {string} */
-            status: "UNAUTHORIZED" | "NO_DATA" | "INVALID_PERIOD" | "INVALID_ALERT" | "RATE_LIMITED" | "AGENT_DISABLED" | "ERROR";
+            status: "UNAUTHORIZED" | "NO_DATA" | "INVALID_PERIOD" | "INVALID_ALERT" | "INVALID_DRAFT" | "RATE_LIMITED" | "AGENT_DISABLED" | "ERROR";
             /** @description Plain Thai the assistant can pass on. */
             message: string;
         };
@@ -3906,6 +3953,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentAlert"];
+                };
+            };
+            401: components["responses"]["AgentRefusal"];
+            404: components["responses"]["AgentRefusal"];
+            422: components["responses"]["AgentRefusal"];
+            429: components["responses"]["AgentRefusal"];
+        };
+    };
+    postAgentCollectionDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description A draft, or why there is none (PREPARING, UNAVAILABLE, NOT_FOUND, AMBIGUOUS). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDraft"];
                 };
             };
             401: components["responses"]["AgentRefusal"];
