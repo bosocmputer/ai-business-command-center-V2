@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/agent"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
 	"github.com/google/uuid"
 )
 
@@ -181,6 +183,8 @@ func (evaluator *Evaluator) evaluate(ctx context.Context, target agent.AlertTarg
 		}, "สินค้าอะไรใกล้หมดสต็อกบ้าง")
 	case agent.AlertSalesDrop:
 		return evaluator.salesDrop(ctx, target, def, local, location)
+	case agent.AlertMorningDigest:
+		return evaluator.digest(ctx, target, local, location)
 	}
 	return evaluation{}, fmt.Errorf("alert rule %q has no check", def.Key)
 }
@@ -235,6 +239,109 @@ func (evaluator *Evaluator) salesDrop(ctx context.Context, target agent.AlertTar
 			asOf(response.CollectedAt, location) + closing(def, "ยอดขายเมื่อวานเป็นอย่างไรบ้าง")
 	}
 	return result, nil
+}
+
+// digest writes the morning summary. Every line comes from a report the recipient may read; a report they may not read is
+// left out, one that is still being fetched makes the whole digest wait for the next check, and when nothing may be read
+// the rule answers like a missing one. A digest is not a threshold, so it always speaks once a day.
+func (evaluator *Evaluator) digest(ctx context.Context, target agent.AlertTarget, local time.Time, location *time.Location) (evaluation, error) {
+	yesterday := local.AddDate(0, 0, -1)
+	before := yesterday.AddDate(0, 0, -7)
+	a, b := yesterday.Format(time.DateOnly), before.Format(time.DateOnly)
+	weekday := thaiWeekday(yesterday)
+	lines := make([]string, 0, 3)
+	stamps := make([]string, 0, 3)
+	followUp := "" // a suggested question, taken from a line that is in the message, so a hidden report is never hinted at
+	waiting := false
+
+	compare, err := evaluator.source.Compare(ctx, target.Principal, string(report.SalesGoodsServices), "total_amount", a, a, b, b)
+	switch {
+	case errors.Is(err, agent.ErrNoData):
+	case err != nil:
+		return evaluation{}, err
+	case compare.Status != "READY" || compare.A == nil || compare.B == nil:
+		waiting = true
+	default:
+		yesterdayTotal, okA := new(big.Rat).SetString(compare.A.Value)
+		weekBefore, okB := new(big.Rat).SetString(compare.B.Value)
+		if !okA || !okB {
+			return evaluation{}, fmt.Errorf("compare returned a figure that is not a number")
+		}
+		line := fmt.Sprintf("• ยอดขายเมื่อวาน (วัน%s ที่ %s): %s บาท", weekday, thaiDate(yesterday), baht(yesterdayTotal))
+		if weekBefore.Sign() > 0 {
+			change := new(big.Rat).Quo(new(big.Rat).Mul(new(big.Rat).Sub(yesterdayTotal, weekBefore), big.NewRat(100, 1)), weekBefore)
+			direction := "สูงกว่า"
+			if change.Sign() < 0 {
+				direction, change = "ต่ำกว่า", new(big.Rat).Neg(change)
+			}
+			line += fmt.Sprintf(" %sวัน%sสัปดาห์ก่อน (%s บาท) อยู่ %s%%", direction, weekday, baht(weekBefore), percent(change))
+		} else {
+			line += fmt.Sprintf(" (วัน%sสัปดาห์ก่อนไม่มียอดขาย จึงไม่เทียบ)", weekday)
+		}
+		lines = append(lines, line)
+		stamps = append(stamps, compare.CollectedAt)
+		followUp = "ยอดขายเมื่อวานเป็นอย่างไรบ้าง"
+	}
+
+	for _, spec := range []struct {
+		key, metric, followUp string
+		line                  func(*big.Rat) string
+	}{
+		{string(report.ARAging), "overdue_amount", "ลูกหนี้รายไหนเลยกำหนดเยอะสุด", func(value *big.Rat) string {
+			return fmt.Sprintf("• ลูกหนี้เลยกำหนด: %s บาท", baht(value))
+		}},
+		{string(report.StockReorder), "reorder_item_count", "สินค้าอะไรใกล้หมดสต็อกบ้าง", func(value *big.Rat) string {
+			return fmt.Sprintf("• สินค้าถึงจุดสั่งซื้อ: %s รายการ", whole(value))
+		}},
+	} {
+		response, reportErr := evaluator.source.Report(ctx, target.Principal, spec.key, "", "")
+		switch {
+		case errors.Is(reportErr, agent.ErrNoData):
+			continue
+		case reportErr != nil:
+			return evaluation{}, reportErr
+		case response.Status != "READY" || response.Freshness != "FRESH":
+			waiting = true
+			continue
+		}
+		value, ok := kpi(response, spec.metric)
+		if !ok {
+			return evaluation{}, fmt.Errorf("report %s has no %s", spec.key, spec.metric)
+		}
+		lines = append(lines, spec.line(value))
+		stamps = append(stamps, response.CollectedAt)
+		if followUp == "" {
+			followUp = spec.followUp
+		}
+	}
+	if waiting {
+		return evaluation{}, nil
+	}
+	if len(lines) == 0 {
+		return evaluation{}, agent.ErrNoData
+	}
+	message := fmt.Sprintf("☀️ สรุปเช้าวัน%s ที่ %s\n\n%s", thaiWeekday(local), thaiDate(local), strings.Join(lines, "\n"))
+	if stamp := oldest(stamps); stamp != "" {
+		message += asOf(stamp, location)
+	}
+	message += "\n\nถามต่อได้เลย เช่น “" + followUp + "”\nอยากปิดสรุปเช้า พิมพ์ “ปิดสรุปเช้า”"
+	return evaluation{ready: true, fired: true, value: big.NewRat(int64(len(lines)), 1), message: message}, nil
+}
+
+// oldest returns the earliest of the times the figures were read, so the message never claims to be fresher than its stalest line.
+func oldest(stamps []string) string {
+	var best time.Time
+	text := ""
+	for _, stamp := range stamps {
+		moment, err := time.Parse(time.RFC3339, stamp)
+		if err != nil {
+			continue
+		}
+		if text == "" || moment.Before(best) {
+			best, text = moment, stamp
+		}
+	}
+	return text
 }
 
 func closing(def agent.AlertRuleDef, followUp string) string {

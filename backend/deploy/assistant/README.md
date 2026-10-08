@@ -57,6 +57,10 @@ Four rules to begin with: overdue receivables, receivables over a year, items at
 days unless 10% worse) and yesterday's sales down against the same weekday a week earlier. Thresholds are the owner's;
 nothing is guessed for them.
 
+A fifth rule, `morning_digest` ("send me a summary every morning"), has no threshold: one short message a day with yesterday's
+sales against the same weekday last week, overdue receivables and the reorder count, limited to the reports that person
+may read. It waits until those reports are fresh, then sends once.
+
 Everything is off until you switch it on, and on it only records:
 
 ```

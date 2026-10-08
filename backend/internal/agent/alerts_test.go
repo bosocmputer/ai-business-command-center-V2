@@ -214,3 +214,30 @@ func TestAnAlertThatIsStillTrueStaysQuietUnlessItGotWorse(t *testing.T) {
 		}
 	}
 }
+
+func TestTheMorningDigestIsASwitchWithNoThreshold(t *testing.T) {
+	service, _, alerts := alertService(report.StockReorder) // may read one of the three reports only
+	view, err := service.SetAlert(context.Background(), principal, "morning_digest", AlertSetRequest{Threshold: "999 บาท"}, "req-1")
+	if err != nil || !view.Enabled || view.Threshold != "" || view.Message != MessageDigestOn {
+		t.Fatalf("set = %+v %v", view, err)
+	}
+	if len(alerts.saved) != 1 || alerts.saved[0].Threshold != "1" {
+		t.Fatalf("a switch stores the placeholder, never what was said: %+v", alerts.saved)
+	}
+	off := false
+	view, err = service.SetAlert(context.Background(), principal, "morning_digest", AlertSetRequest{Enabled: &off}, "req-2")
+	if err != nil || view.Enabled || view.Message != MessageDigestOff {
+		t.Fatalf("off = %+v %v", view, err)
+	}
+	list, _ := service.Alerts(context.Background(), principal)
+	for _, item := range list.Alerts {
+		if item.Rule == AlertMorningDigest && (!item.Available || item.Threshold != "" || item.Enabled) {
+			t.Errorf("digest listing = %+v", item)
+		}
+	}
+
+	none, _, noneAlerts := alertService(report.Key("customer_rfm")) // none of the three
+	if _, err := none.SetAlert(context.Background(), principal, "morning_digest", AlertSetRequest{}, "req"); !errors.Is(err, ErrNoData) || len(noneAlerts.saved) != 0 {
+		t.Fatalf("without any of the three reports it answers like a missing rule: %v %+v", err, noneAlerts.saved)
+	}
+}

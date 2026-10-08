@@ -22,6 +22,8 @@ const (
 	AlertAROverYear   AlertRuleKey = "ar_over_year"
 	AlertStockReorder AlertRuleKey = "stock_reorder"
 	AlertSalesDrop    AlertRuleKey = "sales_drop"
+	// AlertMorningDigest is not a threshold: it is a switch for a short daily summary of the other three figures.
+	AlertMorningDigest AlertRuleKey = "morning_digest"
 )
 
 type AlertUnit string
@@ -30,6 +32,7 @@ const (
 	AlertUnitBaht    AlertUnit = "THB"
 	AlertUnitCount   AlertUnit = "COUNT"
 	AlertUnitPercent AlertUnit = "PERCENT"
+	AlertUnitSwitch  AlertUnit = "SWITCH"
 )
 
 type AlertRuleDef struct {
@@ -42,6 +45,25 @@ type AlertRuleDef struct {
 	// Cooldown is how long a rule that is still true stays quiet after it fired, unless it got 10% worse. A rule about one
 	// day (yesterday's sales) has none: each day stands alone.
 	Cooldown time.Duration
+	// Switch rules have no threshold: they are on or off, and the stored threshold is the fixed placeholder "1".
+	// They may be set when the recipient can read any one of AnyOf (the others are left out of the message).
+	Switch bool
+	AnyOf  []report.Key
+}
+
+const switchPlaceholder = "1"
+
+// available says whether the recipient may use the rule: the rule's one report, or any of AnyOf for a switch.
+func (def AlertRuleDef) available(permitted []report.Key) bool {
+	if len(def.AnyOf) == 0 {
+		return contains(permitted, def.Report)
+	}
+	for _, key := range def.AnyOf {
+		if contains(permitted, key) {
+			return true
+		}
+	}
+	return false
 }
 
 const alertCooldown = 3 * 24 * time.Hour
@@ -51,6 +73,8 @@ var alertCatalog = []AlertRuleDef{
 	{Key: AlertAROverYear, Label: "ยอดลูกหนี้ค้างเกิน 1 ปี", Description: "เตือนเมื่อยอดลูกหนี้ที่ออกใบมาเกิน 1 ปีรวมกันเกินจำนวนเงินที่ตั้ง (บาท) ตรวจทุกเช้า", Report: report.ARAging, Unit: AlertUnitBaht, Min: 1, Max: 10_000_000_000, Cooldown: alertCooldown},
 	{Key: AlertStockReorder, Label: "สินค้าถึงจุดสั่งซื้อ", Description: "เตือนเมื่อมีสินค้าถึงจุดสั่งซื้อตั้งแต่จำนวนรายการที่ตั้ง ตรวจทุกเช้า", Report: report.StockReorder, Unit: AlertUnitCount, Min: 1, Max: 100_000, Cooldown: alertCooldown},
 	{Key: AlertSalesDrop, Label: "ยอดขายเมื่อวานตก", Description: "เตือนเมื่อยอดขายเมื่อวานต่ำกว่าวันเดียวกันของสัปดาห์ก่อนตั้งแต่เปอร์เซ็นต์ที่ตั้ง ตรวจทุกเช้า", Report: report.SalesGoodsServices, Unit: AlertUnitPercent, Min: 1, Max: 99},
+	{Key: AlertMorningDigest, Label: "สรุปเช้า", Description: "ส่งสรุปสั้นๆ ทุกเช้า: ยอดขายเมื่อวานเทียบวันเดียวกันของสัปดาห์ก่อน ยอดลูกหนี้เลยกำหนด และจำนวนสินค้าถึงจุดสั่งซื้อ (เฉพาะรายงานที่มีสิทธิ์ดู) ไม่ต้องระบุเกณฑ์", Unit: AlertUnitSwitch, Min: 1, Max: 1, Switch: true,
+		AnyOf: []report.Key{report.SalesGoodsServices, report.ARAging, report.StockReorder}},
 }
 
 func AlertCatalog() []AlertRuleDef { return append([]AlertRuleDef(nil), alertCatalog...) }
@@ -181,6 +205,8 @@ const (
 	MessageAlertOff      = "ปิดการเตือนนี้แล้ว"
 	MessageAlertsNote    = "การเตือนส่งเป็นข้อความในแชตนี้ ตรวจวันละครั้งตอนเช้า และไม่เตือนซ้ำเรื่องเดิมภายใน 3 วันถ้าตัวเลขไม่แย่ลงเกิน 10%"
 	MessageAlertNeedsSet = "ต้องระบุเกณฑ์ก่อนจึงจะเปิดการเตือนนี้ได้"
+	MessageDigestOn      = "เปิดสรุปเช้าแล้ว ระบบจะส่งสรุปในแชตนี้ทุกเช้า"
+	MessageDigestOff     = "ปิดสรุปเช้าแล้ว"
 )
 
 var ErrAlertsUnavailable = errors.New("alerts are not available")
@@ -208,10 +234,13 @@ func (service *Service) Alerts(ctx context.Context, principal Principal) (Alerts
 	service.record(ctx, principal, ToolAlerts, "", report.Period{}, OutcomeOK, started, nil)
 	response := AlertsResponse{Status: "READY", Notes: []string{MessageAlertsNote}}
 	for _, def := range alertCatalog {
-		view := AlertView{Rule: def.Key, Label: def.Label, Description: def.Description, Unit: def.Unit, Available: contains(permitted, def.Report)}
+		view := AlertView{Rule: def.Key, Label: def.Label, Description: def.Description, Unit: def.Unit, Available: def.available(permitted)}
 		for _, item := range stored {
 			if item.Rule == def.Key {
 				view.Threshold, view.Enabled = item.Threshold, item.Enabled
+				if def.Switch {
+					view.Threshold = ""
+				}
 				if item.LastFiredAt != nil {
 					view.LastFiredAt = item.LastFiredAt.In(locationOf(principal)).Format(time.RFC3339)
 				}
@@ -236,7 +265,7 @@ func (service *Service) SetAlert(ctx context.Context, principal Principal, rawRu
 		if err != nil {
 			return AlertView{}, fmt.Errorf("list permitted reports: %w", err)
 		}
-		known = contains(permitted, def.Report)
+		known = def.available(permitted)
 	}
 	if !known {
 		service.record(ctx, principal, ToolAlertSet, "", report.Period{}, OutcomeNoData, started, nil)
@@ -253,7 +282,9 @@ func (service *Service) SetAlert(ctx context.Context, principal Principal, rawRu
 			threshold = item.Threshold
 		}
 	}
-	if strings.TrimSpace(request.Threshold) != "" {
+	if def.Switch {
+		threshold = switchPlaceholder // a switch has no threshold; whatever was said is ignored
+	} else if strings.TrimSpace(request.Threshold) != "" {
 		_, text, parseErr := ParseAlertThreshold(def, request.Threshold)
 		if parseErr != nil {
 			service.record(ctx, principal, ToolAlertSet, string(def.Key), report.Period{}, OutcomeInvalidAlert, started, nil)
@@ -280,6 +311,13 @@ func (service *Service) SetAlert(ctx context.Context, principal Principal, rawRu
 	view.Message = MessageAlertSet
 	if !saved.Enabled {
 		view.Message = MessageAlertOff
+	}
+	if def.Switch {
+		view.Threshold = ""
+		view.Message = MessageDigestOn
+		if !saved.Enabled {
+			view.Message = MessageDigestOff
+		}
 	}
 	return view, nil
 }

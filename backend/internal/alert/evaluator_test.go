@@ -75,18 +75,26 @@ func (store *fakeStore) MarkAlertDelivery(_ context.Context, id uuid.UUID, deliv
 }
 
 type fakeSource struct {
-	reports  map[string]agent.ReportResponse
-	compare  agent.CompareResponse
-	err      error
-	requests []string
+	reports    map[string]agent.ReportResponse
+	compare    agent.CompareResponse
+	err        error
+	compareErr error
+	reportErrs map[string]error
+	requests   []string
 }
 
 func (source *fakeSource) Report(_ context.Context, _ agent.Principal, key, _, _ string) (agent.ReportResponse, error) {
 	source.requests = append(source.requests, key)
+	if err := source.reportErrs[key]; err != nil {
+		return agent.ReportResponse{}, err
+	}
 	return source.reports[key], source.err
 }
 func (source *fakeSource) Compare(_ context.Context, _ agent.Principal, _, _, aFrom, _, bFrom, _ string) (agent.CompareResponse, error) {
 	source.requests = append(source.requests, "compare "+aFrom+" vs "+bFrom)
+	if source.compareErr != nil {
+		return agent.CompareResponse{}, source.compareErr
+	}
 	return source.compare, source.err
 }
 
@@ -336,5 +344,86 @@ func TestMessagesUseThaiYearsAndThousandsSeparators(t *testing.T) {
 	}
 	if got := thaiDateTime("garbage", time.UTC); got != "" {
 		t.Errorf("an unreadable time must give nothing: %q", got)
+	}
+}
+
+func digestSource() *fakeSource {
+	return &fakeSource{
+		compare: agent.CompareResponse{Status: "READY", A: &agent.CompareSide{Value: "60000.00"}, B: &agent.CompareSide{Value: "100000.00"}, CollectedAt: "2026-10-08T07:40:00+07:00"},
+		reports: map[string]agent.ReportResponse{
+			"ar_aging":      ready("ar_aging", "2026-10-08T07:31:00+07:00", map[string]string{"overdue_amount": "641200.50"}),
+			"stock_reorder": ready("stock_reorder", "2026-10-08T07:35:00+07:00", map[string]string{"reorder_item_count": "4"}),
+		},
+	}
+}
+
+func TestTheMorningDigestSummarisesThreeFiguresOnceADay(t *testing.T) {
+	item := target(agent.AlertMorningDigest, "1")
+	store := newFakeStore(item)
+	sender := &fakeSender{}
+	evaluator := newEvaluator(store, digestSource(), sender, false, nineAM)
+	if summary := evaluator.RunOnce(context.Background()); summary.Fired != 1 || summary.Sent != 1 || len(sender.sent) != 1 {
+		t.Fatalf("summary = %+v", summary)
+	}
+	message := sender.sent[0].Message
+	for _, want := range []string{"สรุปเช้าวันพฤหัสบดี ที่ 8 ต.ค. 2569", "ยอดขายเมื่อวาน (วันพุธ ที่ 7 ต.ค. 2569): 60,000.00 บาท ต่ำกว่าวันพุธสัปดาห์ก่อน (100,000.00 บาท) อยู่ 40%",
+		"ลูกหนี้เลยกำหนด: 641,200.50 บาท", "สินค้าถึงจุดสั่งซื้อ: 4 รายการ", "ข้อมูล ณ 8 ต.ค. 2569 เวลา 07:31 น.", "ปิดสรุปเช้า"} {
+		if !strings.Contains(message, want) {
+			t.Errorf("message lacks %q:\n%s", want, message)
+		}
+	}
+	if summary := evaluator.RunOnce(context.Background()); summary.Fired != 0 || summary.Checked != 0 || len(sender.sent) != 1 {
+		t.Fatalf("a second run on the same day must stay silent: %+v", summary)
+	}
+	// Every day stands alone: a digest has no cooldown even though the figures are the same as yesterday's.
+	next := nineAM.Add(24 * time.Hour)
+	store.checked = map[uuid.UUID]string{}
+	if summary := newEvaluator(store, digestSource(), sender, false, next).RunOnce(context.Background()); summary.Fired != 1 {
+		t.Fatalf("the next morning speaks again: %+v", summary)
+	}
+}
+
+func TestTheDigestLeavesOutWhatTheOwnerMayNotReadAndWaitsForWhatIsNotReady(t *testing.T) {
+	item := target(agent.AlertMorningDigest, "1")
+	source := digestSource()
+	source.reportErrs = map[string]error{"ar_aging": agent.ErrNoData}
+	store := newFakeStore(item)
+	sender := &fakeSender{}
+	if summary := newEvaluator(store, source, sender, false, nineAM).RunOnce(context.Background()); summary.Fired != 1 {
+		t.Fatalf("summary = %+v", summary)
+	}
+	if message := sender.sent[0].Message; strings.Contains(message, "ลูกหนี้") || !strings.Contains(message, "สินค้าถึงจุดสั่งซื้อ") {
+		t.Errorf("a report the owner may not read must be left out without a trace:\n%s", message)
+	}
+
+	// One figure still being fetched: nothing is sent and the day is not used up.
+	source = digestSource()
+	source.reports["stock_reorder"] = agent.ReportResponse{Status: "PREPARING"}
+	store = newFakeStore(item)
+	sender = &fakeSender{}
+	if summary := newEvaluator(store, source, sender, false, nineAM).RunOnce(context.Background()); summary.NotReady != 1 || len(sender.sent) != 0 || store.checked[item.RuleID] != "" {
+		t.Fatalf("waiting: %+v checked=%v", summary, store.checked)
+	}
+
+	// Nothing readable at all: the rule is marked and not retried all day.
+	source = digestSource()
+	source.compareErr = agent.ErrNoData
+	source.reportErrs = map[string]error{"ar_aging": agent.ErrNoData, "stock_reorder": agent.ErrNoData}
+	store = newFakeStore(item)
+	if summary := newEvaluator(store, source, &fakeSender{}, false, nineAM).RunOnce(context.Background()); summary.Fired != 0 || store.status[item.RuleID] != agent.AlertCheckNoAccess {
+		t.Fatalf("no access: %+v %v", summary, store.status)
+	}
+}
+
+func TestTheDigestSaysWhenLastWeeksSameDayHadNoSales(t *testing.T) {
+	item := target(agent.AlertMorningDigest, "1")
+	source := digestSource()
+	source.compare = agent.CompareResponse{Status: "READY", A: &agent.CompareSide{Value: "5000.00"}, B: &agent.CompareSide{Value: "0.00"}, CollectedAt: collected}
+	sender := &fakeSender{}
+	if summary := newEvaluator(newFakeStore(item), source, sender, false, nineAM).RunOnce(context.Background()); summary.Fired != 1 {
+		t.Fatalf("summary = %+v", summary)
+	}
+	if message := sender.sent[0].Message; !strings.Contains(message, "ไม่มียอดขาย จึงไม่เทียบ") || strings.Contains(message, "%") {
+		t.Errorf("no percentage may be invented from a zero base:\n%s", message)
 	}
 }

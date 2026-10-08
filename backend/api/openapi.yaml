@@ -528,7 +528,7 @@ paths:
       description: Sets, changes or switches off one alert for this token's recipient. This is the only write in the Agent API and it changes nothing but the recipient's own alert settings; it is audited. A rule on a report the recipient may not read answers exactly like an unknown rule.
       security: [{AgentToken: []}]
       parameters:
-        - {name: ruleKey, in: path, required: true, schema: {type: string, enum: [ar_overdue, ar_over_year, stock_reorder, sales_drop]}}
+        - {name: ruleKey, in: path, required: true, schema: {type: string, enum: [ar_overdue, ar_over_year, stock_reorder, sales_drop, morning_digest]}}
       requestBody:
         required: true
         content:
@@ -1629,10 +1629,10 @@ components:
       type: object
       required: [rule, label, description, unit, available, enabled]
       properties:
-        rule: {type: string, enum: [ar_overdue, ar_over_year, stock_reorder, sales_drop]}
+        rule: {type: string, enum: [ar_overdue, ar_over_year, stock_reorder, sales_drop, morning_digest]}
         label: {type: string, description: What the owner calls it.}
         description: {type: string, description: "What is watched, in plain Thai."}
-        unit: {type: string, enum: [THB, COUNT, PERCENT]}
+        unit: {type: string, enum: [THB, COUNT, PERCENT, SWITCH], description: "SWITCH is a rule that is only on or off and has no threshold."}
         available: {type: boolean, description: False when the recipient may not read the report the rule watches.}
         threshold: {type: string, description: "Set by the owner. Baht, a number of items or a percent, as plain digits."}
         enabled: {type: boolean}
