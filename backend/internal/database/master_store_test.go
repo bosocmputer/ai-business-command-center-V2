@@ -42,7 +42,7 @@ func TestMasterCopyTargetsReplaceFailureAndSearch(t *testing.T) {
 	exec(`insert into line_recipients (id, line_user_id_hash, line_user_id_ciphertext, line_user_id_nonce, encryption_key_id, status, verified_at) values ($1, $2, '\x01', '\x02', 'test', 'ACTIVE', $3)`, recipientID, []byte(recipientID.String()), morning)
 	exec(`insert into tenant_memberships (tenant_id, recipient_id, status, ai_chat_enabled) values ($1, $2, 'ACTIVE', true)`, tenantID, recipientID)
 	agents := NewAgentStore(pool)
-	if _, err := agents.IssueToken(ctx, []byte("admin"), "r1", tenantID, recipientID, true, hashOf("owner"), morning.Add(90*24*time.Hour), morning); err != nil {
+	if _, err := agents.IssueToken(ctx, []byte("admin"), "r1", tenantID, recipientID, true, hashOf("master-"+tenantID.String()), morning.Add(90*24*time.Hour), morning); err != nil {
 		t.Fatal(err)
 	}
 	store := NewMasterStore(pool)
