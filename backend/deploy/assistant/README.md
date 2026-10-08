@@ -136,7 +136,7 @@ put the old digest back and, if the new version had migrated the store, restore 
 - **Telegram**: a bot from @BotFather, one per deployment (never the Sentinel alert bot in `secrets/telegram`: that one
   speaks to the operators). Run `set-secret.sh TELEGRAM_BOT_TOKEN` and `set-secret.sh TELEGRAM_ALLOWED_USERS` (the
   numeric ids of the people allowed to chat; message @userinfobot to read your own), put
-  `ASSISTANT_EGRESS_ALLOW=openrouter.ai,api.telegram.org` in `.env.production`, then `up -d --force-recreate assistant`.
+  `ASSISTANT_EGRESS_ALLOW=openrouter.ai,api.telegram.org` in `.env.production`, then `up -d --force-recreate assistant`. To let one more person in later without retyping the others: `./assistant/set-secret.sh TELEGRAM_ALLOWED_USERS --add`, then recreate the assistant.
   Without the allowed-users list the assistant does not start Telegram at all. Telegram sees every question and answer
   (it is not end-to-end encrypted for bots), which belongs in the shop's agreement next to the model provider.
 
