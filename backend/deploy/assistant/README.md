@@ -60,6 +60,9 @@ Only debts up to 365 days past their due date get a reminder. Older ones are old
 report keeps them apart (KPI `stale_overdue_amount` and two charts), the draft tool answers `NOT_CHASEABLE` for them and
 the assistant says so instead of writing a letter about a debt from years ago.
 
+Receivables with no due date in SML are never counted as overdue and never chased (the owner's decision). Everything that talks
+about overdue money says so and states how much has no due date: the draft's notes, the overdue alert and the morning digest.
+
 ## Alerts: the assistant speaks first
 
 The owner sets alerts in their own words ("tell me when overdue receivables pass 500,000") and the assistant stores them

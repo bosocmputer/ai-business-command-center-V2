@@ -427,3 +427,30 @@ func TestTheDigestSaysWhenLastWeeksSameDayHadNoSales(t *testing.T) {
 		t.Errorf("no percentage may be invented from a zero base:\n%s", message)
 	}
 }
+
+func TestOverdueMessagesSayThatDocumentsWithoutADueDateAreNotCounted(t *testing.T) {
+	item := target(agent.AlertAROverdue, "1000")
+	source := &fakeSource{reports: map[string]agent.ReportResponse{"ar_aging": ready("ar_aging", collected, map[string]string{"overdue_amount": "5000", "no_due_date_amount": "6310670.10"})}}
+	sender := &fakeSender{}
+	if summary := newEvaluator(newFakeStore(item), source, sender, false, nineAM).RunOnce(context.Background()); summary.Fired != 1 {
+		t.Fatalf("summary = %+v", summary)
+	}
+	if message := sender.sent[0].Message; !strings.Contains(message, "ไม่รวมเอกสารที่ไม่มีวันครบกำหนด 6,310,670.10 บาท") {
+		t.Errorf("message lacks the warning:\n%s", message)
+	}
+	// Nothing without a due date: no sentence to add.
+	source.reports["ar_aging"] = ready("ar_aging", collected, map[string]string{"overdue_amount": "5000", "no_due_date_amount": "0.00"})
+	sender = &fakeSender{}
+	newEvaluator(newFakeStore(item), source, sender, false, nineAM).RunOnce(context.Background())
+	if strings.Contains(sender.sent[0].Message, "ไม่มีวันครบกำหนด") {
+		t.Errorf("no warning when nothing is without a due date:\n%s", sender.sent[0].Message)
+	}
+
+	digestSource := digestSource()
+	digestSource.reports["ar_aging"] = ready("ar_aging", collected, map[string]string{"overdue_amount": "641200.50", "no_due_date_amount": "6310670.10"})
+	sender = &fakeSender{}
+	newEvaluator(newFakeStore(target(agent.AlertMorningDigest, "1")), digestSource, sender, false, nineAM).RunOnce(context.Background())
+	if message := sender.sent[0].Message; !strings.Contains(message, "ลูกหนี้เลยกำหนด: 641,200.50 บาท") || !strings.Contains(message, "ไม่รวมเอกสารที่ไม่มีวันครบกำหนด 6,310,670.10 บาท") {
+		t.Errorf("digest:\n%s", message)
+	}
+}

@@ -170,9 +170,14 @@ type evaluation struct {
 func (evaluator *Evaluator) evaluate(ctx context.Context, target agent.AlertTarget, def agent.AlertRuleDef, local time.Time, location *time.Location) (evaluation, error) {
 	switch def.Key {
 	case agent.AlertAROverdue:
-		return evaluator.stateRule(ctx, target, def, "overdue_amount", location, func(value *big.Rat) string {
+		return evaluator.stateRuleWithNote(ctx, target, def, "overdue_amount", location, func(value *big.Rat) string {
 			return fmt.Sprintf("⚠️ แจ้งเตือน: ยอดลูกหนี้เลยกำหนดตอนนี้ %s บาท สูงกว่าที่คุณตั้งเตือนไว้ (%s บาท)", baht(value), baht(target.Threshold))
-		}, "ลูกหนี้รายไหนเลยกำหนดเยอะสุด")
+		}, "ลูกหนี้รายไหนเลยกำหนดเยอะสุด", func(response agent.ReportResponse) string {
+			if amount := noDueDateAmount(response); amount != nil {
+				return fmt.Sprintf("\n(ยอดนี้ไม่รวมเอกสารที่ไม่มีวันครบกำหนด %s บาท เพราะไม่มีวันครบกำหนดในระบบ จึงไม่นับว่าเลยกำหนด)", baht(amount))
+			}
+			return ""
+		})
 	case agent.AlertAROverYear:
 		return evaluator.stateRule(ctx, target, def, "over_year_amount", location, func(value *big.Rat) string {
 			return fmt.Sprintf("⚠️ แจ้งเตือน: ยอดลูกหนี้ค้างเกิน 1 ปีตอนนี้ %s บาท สูงกว่าที่คุณตั้งเตือนไว้ (%s บาท)", baht(value), baht(target.Threshold))
@@ -192,6 +197,11 @@ func (evaluator *Evaluator) evaluate(ctx context.Context, target agent.AlertTarg
 // stateRule watches a figure that is true or false right now (receivables, stock). A report that is still being
 // fetched, or that was served from a snapshot older than today's fetch, is not ready: the check waits for the fresh one.
 func (evaluator *Evaluator) stateRule(ctx context.Context, target agent.AlertTarget, def agent.AlertRuleDef, metric string, location *time.Location, headline func(*big.Rat) string, followUp string) (evaluation, error) {
+	return evaluator.stateRuleWithNote(ctx, target, def, metric, location, headline, followUp, nil)
+}
+
+// stateRuleWithNote is stateRule plus a sentence the rule adds under its headline from the same report.
+func (evaluator *Evaluator) stateRuleWithNote(ctx context.Context, target agent.AlertTarget, def agent.AlertRuleDef, metric string, location *time.Location, headline func(*big.Rat) string, followUp string, note func(agent.ReportResponse) string) (evaluation, error) {
 	response, err := evaluator.source.Report(ctx, target.Principal, string(def.Report), "", "")
 	if err != nil {
 		return evaluation{}, err
@@ -205,7 +215,11 @@ func (evaluator *Evaluator) stateRule(ctx context.Context, target agent.AlertTar
 	}
 	result := evaluation{ready: true, value: value, fired: value.Cmp(target.Threshold) >= 0}
 	if result.fired {
-		result.message = headline(value) + asOf(response.CollectedAt, location) + closing(def, followUp)
+		result.message = headline(value)
+		if note != nil {
+			result.message += note(response)
+		}
+		result.message += asOf(response.CollectedAt, location) + closing(def, followUp)
 	}
 	return result, nil
 }
@@ -285,12 +299,16 @@ func (evaluator *Evaluator) digest(ctx context.Context, target agent.AlertTarget
 
 	for _, spec := range []struct {
 		key, metric, followUp string
-		line                  func(*big.Rat) string
+		line                  func(*big.Rat, agent.ReportResponse) string
 	}{
-		{string(report.ARAging), "overdue_amount", "ลูกหนี้รายไหนเลยกำหนดเยอะสุด", func(value *big.Rat) string {
-			return fmt.Sprintf("• ลูกหนี้เลยกำหนด: %s บาท", baht(value))
+		{string(report.ARAging), "overdue_amount", "ลูกหนี้รายไหนเลยกำหนดเยอะสุด", func(value *big.Rat, response agent.ReportResponse) string {
+			line := fmt.Sprintf("• ลูกหนี้เลยกำหนด: %s บาท", baht(value))
+			if amount := noDueDateAmount(response); amount != nil {
+				line += fmt.Sprintf("\n  (ไม่รวมเอกสารที่ไม่มีวันครบกำหนด %s บาท เพราะไม่มีวันครบกำหนดในระบบ)", baht(amount))
+			}
+			return line
 		}},
-		{string(report.StockReorder), "reorder_item_count", "สินค้าอะไรใกล้หมดสต็อกบ้าง", func(value *big.Rat) string {
+		{string(report.StockReorder), "reorder_item_count", "สินค้าอะไรใกล้หมดสต็อกบ้าง", func(value *big.Rat, _ agent.ReportResponse) string {
 			return fmt.Sprintf("• สินค้าถึงจุดสั่งซื้อ: %s รายการ", whole(value))
 		}},
 	} {
@@ -308,7 +326,7 @@ func (evaluator *Evaluator) digest(ctx context.Context, target agent.AlertTarget
 		if !ok {
 			return evaluation{}, fmt.Errorf("report %s has no %s", spec.key, spec.metric)
 		}
-		lines = append(lines, spec.line(value))
+		lines = append(lines, spec.line(value, response))
 		stamps = append(stamps, response.CollectedAt)
 		if followUp == "" {
 			followUp = spec.followUp
@@ -346,6 +364,15 @@ func oldest(stamps []string) string {
 
 func closing(def agent.AlertRuleDef, followUp string) string {
 	return fmt.Sprintf("\n\nถามต่อได้เลย เช่น “%s”\nอยากปิดการเตือนนี้ พิมพ์ “ปิดเตือน%s”", followUp, def.Label)
+}
+
+// noDueDateAmount is the receivables that have no due date in the shop's system, when there are any. They are never
+// counted as overdue, so a message about overdue amounts says so.
+func noDueDateAmount(response agent.ReportResponse) *big.Rat {
+	if amount, ok := kpi(response, "no_due_date_amount"); ok && amount.Sign() > 0 {
+		return amount
+	}
+	return nil
 }
 
 func kpi(response agent.ReportResponse, key string) (*big.Rat, bool) {

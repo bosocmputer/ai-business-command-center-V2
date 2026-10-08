@@ -24,6 +24,7 @@ const (
 	MessageDraftNeedsNames = "ร่างข้อความถึงลูกค้าต้องใช้ชื่อลูกค้า แต่การเข้าถึงนี้ปิดการแสดงชื่อไว้ จึงร่างให้ไม่ได้"
 	MessageDraftNote       = "นี่เป็นร่างที่ยังไม่ได้ส่งให้ใคร ระบบไม่ส่งเอง เจ้าของคัดลอกไปส่งเองและควรตรวจยอดกับใบแจ้งหนี้ก่อน"
 	MessageDraftRecentOnly = "ร่างนี้นับเฉพาะเอกสารที่เลยกำหนดไม่เกิน %d วัน หนี้ที่เลยกำหนดนานกว่านั้นไม่รวม และไม่ได้ร่างทวงให้"
+	MessageDraftNoDueDate  = "ร้านมีเอกสารที่ไม่มีวันครบกำหนดรวม %s บาท เอกสารเหล่านี้ไม่ถูกนับว่าเลยกำหนดและไม่ร่างทวงให้ เพราะไม่มีวันครบกำหนดในระบบ ถ้าต้องการให้ทวงได้ ต้องบันทึกวันครบกำหนดหรือเครดิตวันใน SML"
 	MessageDraftStale      = "ยอดที่ใช้ในร่างเป็นข้อมูลชุดก่อนหน้า อาจไม่ใช่ยอดล่าสุด ควรตรวจยอดก่อนส่ง"
 )
 
@@ -98,6 +99,9 @@ func (service *Service) DraftCollection(ctx context.Context, principal Principal
 		}
 	}
 	response := DraftResponse{}
+	if text := noDueDateNote(snapshot.snapshot.Dashboard); text != "" {
+		response.Notes = append(response.Notes, text)
+	}
 	if finished := snapshot.snapshot.SourceFinishedAt; finished != nil {
 		response.CollectedAt = finished.In(locationOf(principal)).Format(time.RFC3339)
 	}
@@ -143,7 +147,7 @@ func (service *Service) DraftCollection(ctx context.Context, principal Principal
 	response.Status, response.Tone = "READY", tone
 	response.Customer, response.OverdueAmount, response.MaxDaysPastDue = debtor.Name, debtor.Amount.FloatString(2), debtor.DaysPastDue
 	response.Draft = collectionDraft(tone, principal.ShopName, debtor, asOf)
-	response.Notes = []string{MessageDraftNote, fmt.Sprintf(MessageDraftRecentOnly, report.AgingChaseableDays)}
+	response.Notes = append([]string{MessageDraftNote, fmt.Sprintf(MessageDraftRecentOnly, report.AgingChaseableDays)}, response.Notes...)
 	if snapshot.stale {
 		response.Notes = append(response.Notes, MessageDraftStale)
 	}
@@ -266,4 +270,19 @@ func documentList(debtor overdueDebtor) string {
 		fmt.Fprintf(&builder, "• และรายการอื่นอีกรวม %s บาท\n", thaifmt.Baht(rest))
 	}
 	return builder.String()
+}
+
+// noDueDateNote warns that part of the receivables has no due date in the shop's system. Such documents are never
+// counted as overdue and never chased, as the owner decided; the warning makes sure nobody takes "nothing overdue" for
+// "nothing owed". It states the whole shop's amount, from the report's own KPI.
+func noDueDateNote(dashboard report.Dashboard) string {
+	for _, metric := range dashboard.KPIs {
+		if metric.Key != "no_due_date_amount" {
+			continue
+		}
+		if amount, ok := new(big.Rat).SetString(metric.Value); ok && amount.Sign() > 0 {
+			return fmt.Sprintf(MessageDraftNoDueDate, thaifmt.Baht(amount))
+		}
+	}
+	return ""
 }

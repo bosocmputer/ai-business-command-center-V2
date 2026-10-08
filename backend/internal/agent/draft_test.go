@@ -19,6 +19,7 @@ func agingDashboard() report.Dashboard {
 			Categories: []string{"บริษัท ก่อสร้างดี จำกัด", "ห้างหุ้นส่วน ปูนทอง", "บริษัท ก่อสร้างเยี่ยม จำกัด"}, Series: []report.VisualizationSeries{{Key: "value", Values: values}}}
 	}
 	return report.Dashboard{ReportKey: report.ARAging, Period: period, Quality: report.DashboardQuality{Status: "OK"},
+		KPIs: []report.DashboardMetric{{Key: "no_due_date_amount", Label: "ไม่ระบุวันครบกำหนด", Value: "6310670.10", Unit: report.UnitTHB}},
 		Visualizations: []report.DashboardVisualization{
 			visualization("overdue_debtors", report.UnitTHB, "641200.50", "52000.00", "1000.00"),
 			visualization("overdue_debtor_days", report.UnitCount, "95", "12", "3"),
@@ -187,5 +188,29 @@ func TestAnOldDebtGetsNoReminderAndIsSentToTheAccountantInstead(t *testing.T) {
 	joined := strings.Join(ready.Notes, " ")
 	if ready.Status != "READY" || !strings.Contains(joined, "ไม่เกิน 365 วัน") {
 		t.Errorf("a reminder must say it counts only debts up to a year past due: %+v", ready)
+	}
+}
+
+func TestEveryAnswerWarnsAboutReceivablesThatHaveNoDueDate(t *testing.T) {
+	service, _ := draftService(agingDashboard(), report.ARAging)
+	for _, customer := range []string{"ปูนทอง", "หนี้เก่า", "ไม่มีชื่อนี้", "ก่อสร้าง"} { // READY, NOT_CHASEABLE, NOT_FOUND, AMBIGUOUS
+		got, err := service.DraftCollection(context.Background(), namedPrincipal, DraftRequest{Customer: customer, Tone: "friendly"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		joined := strings.Join(got.Notes, " ")
+		if !strings.Contains(joined, "6,310,670.10 บาท") || !strings.Contains(joined, "ไม่มีวันครบกำหนด") || !strings.Contains(joined, "ไม่ร่างทวงให้") {
+			t.Errorf("%s (%s): notes = %v", customer, got.Status, got.Notes)
+		}
+		if strings.Contains(got.Draft, "6,310,670.10") {
+			t.Errorf("the warning is for the owner, never part of the letter to the customer:\n%s", got.Draft)
+		}
+	}
+	none := agingDashboard()
+	none.KPIs = nil
+	quiet, _ := draftService(none, report.ARAging)
+	got, _ := quiet.DraftCollection(context.Background(), namedPrincipal, DraftRequest{Customer: "ปูนทอง", Tone: "friendly"})
+	if strings.Contains(strings.Join(got.Notes, " "), "ไม่มีวันครบกำหนด") {
+		t.Errorf("no warning when every document has a due date: %v", got.Notes)
 	}
 }
