@@ -449,7 +449,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Asks the shop's system one narrow question about one customer or item the master data copy already knows (customer_balance, customer_recent_sales, item_stock), read live and kept for five minutes. The statements are fixed text; the code is the only value used and must be a known record. Limited to two at once and thirty a shop per hour. Customer lookups need a token that may see names. A kind the recipient has no report for answers exactly like a missing report. The call log records the kind only. */
+        /** @description Asks the shop's system one narrow question about one customer or item the master data copy already knows (customer_balance, customer_recent_sales, item_stock) or about one document by the number written on it (document: a sale, debit note, return, purchase or debt receipt, only the kinds the recipient has a report for; the code is the document number, checked for its shape and not looked up in the master copy), read live and kept for five minutes. The statements are fixed text; the code is the only value used and must be a known record. Limited to two at once and thirty a shop per hour. Customer lookups need a token that may see names. A kind the recipient has no report for answers exactly like a missing report. The call log records the kind only. */
         get: operations["getAgentLookup"];
         put?: never;
         post?: never;
@@ -1490,7 +1490,7 @@ export interface components {
             status: "READY" | "NOT_FOUND" | "BUSY" | "UNAVAILABLE";
             message?: string;
             /** @enum {string} */
-            kind: "customer_balance" | "customer_recent_sales" | "item_stock";
+            kind: "customer_balance" | "customer_recent_sales" | "item_stock" | "document";
             subject?: {
                 code: string;
                 name: string;
@@ -1566,7 +1566,7 @@ export interface components {
         };
         AgentError: {
             /** @enum {string} */
-            status: "UNAUTHORIZED" | "NO_DATA" | "INVALID_PERIOD" | "INVALID_ALERT" | "INVALID_DRAFT" | "INVALID_SEARCH" | "INVALID_LOOKUP" | "RATE_LIMITED" | "AGENT_DISABLED" | "ERROR";
+            status: "UNAUTHORIZED" | "NO_DATA" | "INVALID_PERIOD" | "INVALID_ALERT" | "INVALID_DRAFT" | "INVALID_SEARCH" | "INVALID_LOOKUP" | "RATE_LIMITED" | "BUDGET_USED" | "AGENT_DISABLED" | "ERROR";
             /** @description Plain Thai the assistant can pass on. */
             message: string;
         };
@@ -4127,7 +4127,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                kind: "customer_balance" | "customer_recent_sales" | "item_stock";
+                kind: "customer_balance" | "customer_recent_sales" | "item_stock" | "document";
             };
             cookie?: never;
         };

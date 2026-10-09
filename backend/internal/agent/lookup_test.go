@@ -111,3 +111,71 @@ func TestLiveLookupsAreAbsentUntilConfigured(t *testing.T) {
 	}
 	_ = time.Second
 }
+
+type fakeDocLive struct {
+	fakeLive
+	classes []DocumentClass
+	numbers []string
+	found   bool
+}
+
+func (live *fakeDocLive) LookupDocument(_ context.Context, _ uuid.UUID, number string, classes []DocumentClass) (LookupResult, error) {
+	live.numbers = append(live.numbers, number)
+	live.classes = classes
+	if !live.found {
+		return LookupResult{}, nil
+	}
+	table := Table{Title: "เอกสาร", Columns: []string{"เลขที่", DocumentNameColumn}, Rows: [][]string{{number, "บริษัท ตัวอย่าง จำกัด"}}}
+	return LookupResult{Found: true, AsOf: now, Tables: []Table{table}}, nil
+}
+
+func TestALiveDocumentLookupFollowsThePermissionsAndHidesNamesWhenTheTokenMustNot(t *testing.T) {
+	live := &fakeDocLive{found: true}
+	service, store := lookupService(&live.fakeLive, report.SalesGoodsServices)
+	service = newService(store, &fakeSnapshots{}).ConfigureMaster(&fakeMaster{}).ConfigureLookups(live)
+	got, err := service.LiveLookup(context.Background(), namedPrincipal, " document ", " IV-0001 ")
+	if err != nil || got.Status != "READY" || len(got.Tables) != 1 || got.Tables[0].Rows[0][1] != "บริษัท ตัวอย่าง จำกัด" {
+		t.Fatalf("got = %+v %v", got, err)
+	}
+	if len(live.classes) != 1 || live.classes[0] != DocumentSales || live.numbers[0] != "IV-0001" {
+		t.Errorf("the family searched follows the report the recipient has: %v %v", live.classes, live.numbers)
+	}
+	masked, err := service.LiveLookup(context.Background(), principal, "document", "IV-0001") // names hidden
+	if err != nil || masked.Status != "READY" || masked.Tables[0].Rows[0][1] != "(ซ่อนชื่อ)" {
+		t.Fatalf("names must be hidden for a token that may not see them: %+v %v", masked, err)
+	}
+	if got.Tables[0].Rows[0][1] == "(ซ่อนชื่อ)" {
+		t.Error("hiding names must not change the visible result")
+	}
+	last := store.calls[len(store.calls)-1]
+	if last.Tool != ToolLookup || last.ReportKey != "document" || last.Outcome != OutcomeOK {
+		t.Errorf("the call log keeps the kind only: %+v", last)
+	}
+}
+
+func TestALiveDocumentLookupRefusesBadNumbersAndMissingPermissionAndReportsNotFound(t *testing.T) {
+	live := &fakeDocLive{}
+	service := newService(&fakeStore{permitted: []report.Key{report.SalesGoodsServices}}, &fakeSnapshots{}).ConfigureMaster(&fakeMaster{}).ConfigureLookups(live)
+	for _, number := range []string{"", "ab", "IV 0001", "IV-0001'--", strings.Repeat("9", 41), "../../x"} {
+		_, err := service.LiveLookup(context.Background(), namedPrincipal, "document", number)
+		var invalid *InvalidLookupError
+		if !errors.As(err, &invalid) {
+			t.Errorf("number %q: err = %v", number, err)
+		}
+	}
+	if len(live.numbers) != 0 {
+		t.Errorf("a number of the wrong shape must never reach the shop's system: %v", live.numbers)
+	}
+	missing, err := service.LiveLookup(context.Background(), namedPrincipal, "document", "IV-9999")
+	if err != nil || missing.Status != "NOT_FOUND" || missing.Message != MessageDocumentNotFound {
+		t.Fatalf("missing = %+v %v", missing, err)
+	}
+	none := newService(&fakeStore{permitted: []report.Key{report.ARAging}}, &fakeSnapshots{}).ConfigureMaster(&fakeMaster{}).ConfigureLookups(live)
+	if _, err := none.LiveLookup(context.Background(), namedPrincipal, "document", "IV-0001"); !errors.Is(err, ErrNoData) {
+		t.Errorf("a recipient with no document report must see a missing report: %v", err)
+	}
+	plain := newService(&fakeStore{permitted: []report.Key{report.SalesGoodsServices}}, &fakeSnapshots{}).ConfigureMaster(&fakeMaster{}).ConfigureLookups(&fakeLive{})
+	if _, err := plain.LiveLookup(context.Background(), namedPrincipal, "document", "IV-0001"); !errors.Is(err, ErrNoData) {
+		t.Errorf("a live source that cannot find documents must answer as if there were no such kind: %v", err)
+	}
+}

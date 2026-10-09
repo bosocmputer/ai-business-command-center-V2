@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -23,6 +24,10 @@ const (
 	LookupCustomerBalance LookupKind = "customer_balance"
 	LookupCustomerSales   LookupKind = "customer_recent_sales"
 	LookupItemStock       LookupKind = "item_stock"
+	// LookupDocument finds one document by the number written on it (an invoice, a purchase or a debt receipt). Unlike the
+	// others it asks about no master record: the number is checked for its shape, put into the statement as a quoted literal,
+	// and only the kinds of document the recipient has a report for are searched.
+	LookupDocument LookupKind = "document"
 )
 
 type LookupDef struct {
@@ -36,6 +41,7 @@ type LookupDef struct {
 var lookupCatalog = []LookupDef{
 	{Kind: LookupCustomerBalance, Label: "ยอดค้างชำระและเอกสารค้างของลูกค้ารายหนึ่ง", Master: MasterCustomer, Reports: []report.Key{report.ARAging}},
 	{Kind: LookupCustomerSales, Label: "ยอดขายและใบขายล่าสุดของลูกค้ารายหนึ่ง", Master: MasterCustomer, Reports: []report.Key{report.SalesGoodsServices}},
+	{Kind: LookupDocument, Label: "เอกสารหนึ่งใบตามเลขที่เอกสาร (ใบขาย ใบเพิ่มหนี้ ใบรับคืน ใบซื้อ ใบรับชำระหนี้)", Reports: []report.Key{report.SalesGoodsServices, report.PurchaseGoodsPayables, report.ARDebtReceipt}},
 	{Kind: LookupItemStock, Label: "สต็อกคงเหลือ ค้างรับ ค้างส่ง และจองของสินค้ารายการหนึ่ง", Master: MasterItem, Reports: []report.Key{report.StockBalance, report.StockReorder}},
 }
 
@@ -83,6 +89,41 @@ var ErrLookupBusy = errors.New("live lookups are busy")
 // LiveSource asks the shop's system. The code is a record the master data copy already knows.
 type LiveSource interface {
 	Lookup(ctx context.Context, tenantID uuid.UUID, kind LookupKind, code, asOfDate string) (LookupResult, error)
+}
+
+// DocumentClass is a family of documents that one report covers, so a document is shown only to a recipient who may read it.
+type DocumentClass string
+
+const (
+	DocumentSales       DocumentClass = "sales"        // codes 44, 46, 48: sales_goods_services
+	DocumentPurchase    DocumentClass = "purchase"     // code 12: purchase_goods_payables
+	DocumentDebtReceipt DocumentClass = "debt_receipt" // code 239: ar_debt_receipt
+)
+
+// DocumentSource is implemented by a live source that can find a document by its number. Without it the document kind
+// answers as if there were no such thing.
+type DocumentSource interface {
+	LookupDocument(ctx context.Context, tenantID uuid.UUID, number string, classes []DocumentClass) (LookupResult, error)
+}
+
+var documentNumberShape = regexp.MustCompile(`^[A-Za-z0-9ก-๙][A-Za-z0-9ก-๙._/-]{2,39}$`)
+
+// validDocumentNumber is a document number as people write it: it starts with a letter or digit and has no "..".
+func validDocumentNumber(number string) bool {
+	return documentNumberShape.MatchString(number) && !strings.Contains(number, "..")
+}
+
+func documentClasses(permitted []report.Key) []DocumentClass {
+	var classes []DocumentClass
+	for _, pair := range []struct {
+		key   report.Key
+		class DocumentClass
+	}{{report.SalesGoodsServices, DocumentSales}, {report.PurchaseGoodsPayables, DocumentPurchase}, {report.ARDebtReceipt, DocumentDebtReceipt}} {
+		if contains(permitted, pair.key) {
+			classes = append(classes, pair.class)
+		}
+	}
+	return classes
 }
 
 var ErrLookupUnavailable = errors.New("live lookups are not available")
@@ -150,6 +191,9 @@ func (service *Service) LiveLookup(ctx context.Context, principal Principal, raw
 	}
 	key := string(def.Kind)
 	code = strings.TrimSpace(code)
+	if def.Kind == LookupDocument {
+		return service.liveDocument(ctx, principal, code, started)
+	}
 	if code == "" || utf8.RuneCountInString(code) > 80 {
 		service.record(ctx, principal, ToolLookup, key, report.Period{}, OutcomeInvalidLookup, started, nil)
 		return LookupResponse{}, &InvalidLookupError{Message: "ต้องระบุรหัส (code) ของลูกค้าหรือสินค้าที่ได้จากการค้นหา search_master"}
@@ -188,3 +232,69 @@ func (service *Service) LiveLookup(ctx context.Context, principal Principal, raw
 	service.record(ctx, principal, ToolLookup, key, report.Period{}, OutcomeOK, started, nil)
 	return response, nil
 }
+
+// liveDocument finds one document by its number among the kinds of document the recipient may read. A number that matches
+// nothing, or only a kind the recipient has no report for, answers NOT_FOUND, the same words either way.
+func (service *Service) liveDocument(ctx context.Context, principal Principal, number string, started time.Time) (LookupResponse, error) {
+	now := started.UTC()
+	const key = string(LookupDocument)
+	source, ok := service.live.(DocumentSource)
+	if !ok {
+		service.record(ctx, principal, ToolLookup, key, report.Period{}, OutcomeNoData, started, nil)
+		return LookupResponse{}, ErrNoData
+	}
+	if !validDocumentNumber(number) {
+		service.record(ctx, principal, ToolLookup, key, report.Period{}, OutcomeInvalidLookup, started, nil)
+		return LookupResponse{}, &InvalidLookupError{Message: "ต้องระบุเลขที่เอกสารตามที่เขียนบนเอกสาร (ตัวอักษร ตัวเลข และเครื่องหมาย - . / ยาว 3 ถึง 40 ตัว)"}
+	}
+	permitted, err := service.store.PermittedReports(ctx, principal, now)
+	if err != nil {
+		return LookupResponse{}, fmt.Errorf("list permitted reports: %w", err)
+	}
+	result, err := source.LookupDocument(ctx, principal.TenantID, number, documentClasses(permitted))
+	switch {
+	case errors.Is(err, ErrLookupBusy):
+		service.record(ctx, principal, ToolLookup, key, report.Period{}, OutcomeUnavailable, started, nil)
+		return LookupResponse{Status: "BUSY", Kind: LookupDocument, Message: MessageLookupBusy}, nil
+	case err != nil:
+		service.record(ctx, principal, ToolLookup, key, report.Period{}, OutcomeUnavailable, started, nil)
+		return LookupResponse{Status: "UNAVAILABLE", Kind: LookupDocument, Message: MessageUnavailable}, nil
+	}
+	response := LookupResponse{Kind: LookupDocument, Cached: result.Cached, Subject: &Subject{Code: number}}
+	if !result.Found {
+		response.Status, response.Message = "NOT_FOUND", MessageDocumentNotFound
+		service.record(ctx, principal, ToolLookup, key, report.Period{}, OutcomeNoData, started, nil)
+		return response, nil
+	}
+	response.Status, response.Figures, response.Tables = "READY", result.Figures, hideNames(result.Tables, principal.NamesVisible)
+	response.AsOf = result.AsOf.In(locationOf(principal)).Format(time.RFC3339)
+	response.Notes = append([]string{MessageLookupLive}, result.Warnings...)
+	service.record(ctx, principal, ToolLookup, key, report.Period{}, OutcomeOK, started, nil)
+	return response, nil
+}
+
+const MessageDocumentNotFound = "ไม่พบเอกสารเลขที่นี้ในชนิดเอกสารที่ดูได้ (ใบขาย ใบเพิ่มหนี้ ใบรับคืน ใบซื้อ ใบรับชำระหนี้) ตรวจเลขที่ให้ตรงกับที่เขียนบนเอกสาร รวมตัวพิมพ์เล็กใหญ่"
+
+// hideNames blanks the party name column when the token may not see names; the party code stays.
+func hideNames(tables []Table, visible bool) []Table {
+	if visible {
+		return tables
+	}
+	out := make([]Table, len(tables))
+	for index, table := range tables {
+		rows := make([][]string, len(table.Rows))
+		for r, row := range table.Rows {
+			rows[r] = append([]string(nil), row...)
+			for c, column := range table.Columns {
+				if column == DocumentNameColumn && c < len(rows[r]) {
+					rows[r][c] = "(ซ่อนชื่อ)"
+				}
+			}
+		}
+		out[index] = Table{Title: table.Title, Columns: table.Columns, Rows: rows}
+	}
+	return out
+}
+
+// DocumentNameColumn is the header of the table column that holds a customer's or supplier's name.
+const DocumentNameColumn = "ชื่อคู่ค้า"

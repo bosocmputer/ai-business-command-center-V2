@@ -561,10 +561,10 @@ paths:
     get:
       tags: [Agent]
       operationId: getAgentLookup
-      description: Asks the shop's system one narrow question about one customer or item the master data copy already knows (customer_balance, customer_recent_sales, item_stock), read live and kept for five minutes. The statements are fixed text; the code is the only value used and must be a known record. Limited to two at once and thirty a shop per hour. Customer lookups need a token that may see names. A kind the recipient has no report for answers exactly like a missing report. The call log records the kind only.
+      description: "Asks the shop's system one narrow question about one customer or item the master data copy already knows (customer_balance, customer_recent_sales, item_stock) or about one document by the number written on it (document: a sale, debit note, return, purchase or debt receipt, only the kinds the recipient has a report for; the code is the document number, checked for its shape and not looked up in the master copy), read live and kept for five minutes. The statements are fixed text; the code is the only value used and must be a known record. Limited to two at once and thirty a shop per hour. Customer lookups need a token that may see names. A kind the recipient has no report for answers exactly like a missing report. The call log records the kind only."
       security: [{AgentToken: []}]
       parameters:
-        - {name: kind, in: path, required: true, schema: {type: string, enum: [customer_balance, customer_recent_sales, item_stock]}}
+        - {name: kind, in: path, required: true, schema: {type: string, enum: [customer_balance, customer_recent_sales, item_stock, document]}}
         - {name: code, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 80}, description: "A code returned by the search route."}
       responses:
         '200': {description: "The figures, or why there are none (NOT_FOUND, BUSY, UNAVAILABLE).", content: {application/json: {schema: {$ref: '#/components/schemas/AgentLookup'}}}}
@@ -1738,7 +1738,7 @@ components:
       properties:
         status: {type: string, enum: [READY, NOT_FOUND, BUSY, UNAVAILABLE]}
         message: {type: string}
-        kind: {type: string, enum: [customer_balance, customer_recent_sales, item_stock]}
+        kind: {type: string, enum: [customer_balance, customer_recent_sales, item_stock, document]}
         subject:
           type: object
           required: [code, name]

@@ -210,3 +210,81 @@ func TestAFailureOrAJunkFigureNeverBecomesAnAnswer(t *testing.T) {
 		t.Fatal("no connection must be an error")
 	}
 }
+
+func documentAnswer(statement string) ([]map[string]string, error) {
+	switch {
+	case strings.Contains(statement, "union all") || strings.Contains(statement, "trans_flag(x.trans_flag)"):
+		return []map[string]string{{"src": "ic", "trans_flag": "44", "label": "ขายสินค้า/บริการ", "doc_no": "IV-0001", "doc_date": "2026-10-07 00:00:00", "cust_code": "C001", "party_name": "บริษัท ตัวอย่าง จำกัด",
+			"inquiry_type": "0", "total_amount": "1070", "last_status": "0", "doc_ref": "", "due_date": ""}}, nil
+	case strings.Contains(statement, "line_count"):
+		return []map[string]string{{"line_count": "14", "line_total": "1000", "receipt_lines": "1", "paid_amount": "400"}}, nil
+	default:
+		return []map[string]string{{"trans_flag": "44", "line_number": "0", "item_code": "A01", "item_name": "ปูนซีเมนต์", "qty": "10", "unit_name": "ถุง", "price": "100", "sum_amount": "1000"}}, nil
+	}
+}
+
+func TestDocumentIsFoundByItsNumberAndReadsOnlyTheFamiliesTheCallerMayRead(t *testing.T) {
+	now := time.Date(2026, 10, 8, 5, 0, 0, 0, time.UTC)
+	client := &fakeClient{answer: documentAnswer}
+	result, err := runner(client, &now).LookupDocument(context.Background(), tenant, "IV-0001'; drop table x", []agent.DocumentClass{agent.DocumentSales})
+	if err != nil || !result.Found {
+		t.Fatalf("result = %+v %v", result, err)
+	}
+	joined := strings.Join(client.statements, "\n")
+	if !strings.Contains(joined, "in (44, 46, 48)") || strings.Contains(joined, "(12)") || strings.Contains(joined, "ap_ar_trans a") {
+		t.Errorf("a sales-only caller must search only the sales codes:\n%s", joined)
+	}
+	if !strings.Contains(joined, `'IV-0001''; drop table x'`) {
+		t.Errorf("the number must be a quoted literal:\n%s", joined)
+	}
+	if len(client.statements) != 3 {
+		t.Errorf("a document takes three statements, got %d", len(client.statements))
+	}
+	if len(result.Tables) != 2 || result.Tables[0].Rows[0][1] != "ขายสินค้า/บริการ" || result.Tables[0].Rows[0][2] != "2026-10-07" || result.Tables[0].Rows[0][7] != "เงินเชื่อ" {
+		t.Errorf("tables = %+v", result.Tables)
+	}
+	if result.Tables[1].Rows[0][0] != "1" {
+		t.Errorf("lines are counted from one for the owner, SML counts from zero: %v", result.Tables[1].Rows[0])
+	}
+	if !strings.Contains(result.Tables[1].Title, "แสดง 1 จาก 14") {
+		t.Errorf("a long document says how many lines are shown: %q", result.Tables[1].Title)
+	}
+	figures := map[string]string{}
+	for _, figure := range result.Figures {
+		figures[figure.Key] = figure.Value
+	}
+	if figures["line_count"] != "14" || figures["line_total"] != "1000.00" || figures["paid_amount"] != "400.00" {
+		t.Errorf("figures = %v", figures)
+	}
+}
+
+func TestDocumentFamiliesAreChosenByPermissionAndNoneMeansNoQuestion(t *testing.T) {
+	now := time.Date(2026, 10, 8, 5, 0, 0, 0, time.UTC)
+	client := &fakeClient{answer: documentAnswer}
+	if _, err := runner(client, &now).LookupDocument(context.Background(), tenant, "PO-1", []agent.DocumentClass{agent.DocumentPurchase, agent.DocumentDebtReceipt}); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(client.statements, "\n")
+	if !strings.Contains(joined, "in (12)") || !strings.Contains(joined, "a.trans_flag = 239") || strings.Contains(joined, "44, 46, 48") {
+		t.Errorf("purchase and debt receipts only:\n%s", joined)
+	}
+	none := &fakeClient{answer: documentAnswer}
+	if _, err := runner(none, &now).LookupDocument(context.Background(), tenant, "PO-1", nil); err == nil || len(none.statements) != 0 {
+		t.Errorf("a caller with no document family must not reach the shop's system: %v %v", err, none.statements)
+	}
+}
+
+func TestADocumentThatIsNotThereIsNotFoundAndASecondAskIsServedFromTheShortMemory(t *testing.T) {
+	now := time.Date(2026, 10, 8, 5, 0, 0, 0, time.UTC)
+	client := &fakeClient{answer: func(string) ([]map[string]string, error) { return nil, nil }}
+	value := runner(client, &now)
+	first, err := value.LookupDocument(context.Background(), tenant, "NOPE-1", []agent.DocumentClass{agent.DocumentSales})
+	if err != nil || first.Found {
+		t.Fatalf("first = %+v %v", first, err)
+	}
+	asked := len(client.statements)
+	again, _ := value.LookupDocument(context.Background(), tenant, "NOPE-1", []agent.DocumentClass{agent.DocumentSales})
+	if !again.Cached || len(client.statements) != asked {
+		t.Errorf("cached = %v, statements %d -> %d", again.Cached, asked, len(client.statements))
+	}
+}

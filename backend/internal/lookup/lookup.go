@@ -1,7 +1,8 @@
 // Package lookup answers the assistant's narrow live questions about one customer or item by reading the shop's system
 // (SML) at the moment of asking. The statements are fixed text; the only value put into them is a record code that the
 // master data copy already knows, rendered as a quoted literal. Nothing is ever written, at most two statements run per
-// question, and the number asked at once, the number asked per shop per hour and the time an answer is kept are all limited.
+// question (three for a document), and the number asked at once, the number asked per shop per hour and the time an answer
+// is kept are all limited.
 package lookup
 
 import (
@@ -110,6 +111,37 @@ func (runner *Runner) Lookup(ctx context.Context, tenantID uuid.UUID, kind agent
 	if err != nil {
 		return agent.LookupResult{}, err
 	}
+	return runner.execute(ctx, tenantID, key, now, statements, parse)
+}
+
+// LookupDocument finds one document by its number among the families of document the caller may read.
+func (runner *Runner) LookupDocument(ctx context.Context, tenantID uuid.UUID, number string, classes []agent.DocumentClass) (agent.LookupResult, error) {
+	now := runner.Now()
+	names := make([]string, len(classes))
+	for index, class := range classes {
+		names[index] = string(class)
+	}
+	key := fmt.Sprintf("%s|document|%s|%s", tenantID, number, strings.Join(names, ","))
+	runner.mu.Lock()
+	if runner.cache == nil {
+		runner.cache = map[string]cached{}
+	}
+	if entry, ok := runner.cache[key]; ok && now.Before(entry.until) {
+		runner.mu.Unlock()
+		result := entry.result
+		result.Cached = true
+		return result, nil
+	}
+	runner.mu.Unlock()
+	statements, parse, err := documentPlan(number, classes)
+	if err != nil {
+		return agent.LookupResult{}, err
+	}
+	return runner.execute(ctx, tenantID, key, now, statements, parse)
+}
+
+// execute runs fixed statements for one question under the limits, and keeps the answer for a few minutes.
+func (runner *Runner) execute(ctx context.Context, tenantID uuid.UUID, key string, now time.Time, statements []string, parse parser) (agent.LookupResult, error) {
 	if !runner.admit(tenantID, now) {
 		return agent.LookupResult{}, agent.ErrLookupBusy
 	}
