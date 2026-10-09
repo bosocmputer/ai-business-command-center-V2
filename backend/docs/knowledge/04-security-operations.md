@@ -50,6 +50,10 @@ tags: [backend, security, operations, retention]
   records the internal window by an exact UUID, and suppresses PostgreSQL
   command tags so successful inserts cannot be misclassified as failures.
 
+## SML endpoint policy (changed 2026-10-09)
+
+`SML_ALLOW_PUBLIC_ENDPOINTS=true` on the V2 server, by the owner's decision, so a shop whose JavaWS is on a public address can be connected (the second shop is). Private ranges in `SML_ALLOWED_CIDRS` still work. What still holds: only an admin can set an endpoint; the host name is resolved and checked on every request; loopback, link-local, metadata and other always-blocked addresses are refused whatever the setting; only `http`/`https`, no user info, no query. What it widens: an admin can point a shop at any public host, so keep the admin password strong. To go back to a single named host, set `SML_ALLOW_PUBLIC_ENDPOINTS=false` and `SML_ALLOWED_HOSTS=<host>`.
+
 ## Master data copy (assistant search)
 
 - `master_items` holds a copy of a shop's customers, suppliers and items: code, name, phone number (people), unit and supplier code (items), active flag. No business figures. `master_sync` records the last good copy, the last try and a short error code.
