@@ -155,6 +155,21 @@ func buildDashboardMetrics(key Key, current, previous SummaryResult, currentStep
 		if key == PurchaseGoodsPayables {
 			label = "ยอดซื้อ"
 		}
+		if key == SalesGoodsServices {
+			// Net sales = sale documents (44) + debit notes (46) - credit notes / returns (48).
+			// The average is the average sale document, so notes do not distort it.
+			averageMetric, err := average("sales_amount", "document_count", UnitTHB, "average_per_document", "ยอดเฉลี่ยต่อบิลขาย")
+			if err != nil {
+				return nil, err
+			}
+			return []dashboardMetricInput{
+				metric("total_amount", "ยอดขายสุทธิ (รวม VAT)", UnitTHB),
+				metric("document_count", "จำนวนใบขาย (รหัส 44)", UnitCount), averageMetric,
+				metric("sales_amount", "ยอดใบขาย (รหัส 44)", UnitTHB),
+				metric("debit_note_amount", "บวก: ใบเพิ่มหนี้ (รหัส 46)", UnitTHB), metric("debit_note_count", "จำนวนใบเพิ่มหนี้", UnitCount),
+				metric("return_amount", "หัก: ใบรับคืน/ลดหนี้ (รหัส 48)", UnitTHB), metric("return_count", "จำนวนใบรับคืน/ลดหนี้", UnitCount),
+			}, nil
+		}
 		averageMetric, err := average("total_amount", "document_count", UnitTHB, "average_per_document", averageLabel)
 		if err != nil {
 			return nil, err

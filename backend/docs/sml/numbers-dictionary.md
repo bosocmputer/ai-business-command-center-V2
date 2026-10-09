@@ -25,7 +25,7 @@ The rules below describe what the V2 SQL does today. Where V2 and the older smlm
 
 | Term (Thai) | Definition | Where it is used |
 |---|---|---|
-| ยอดขาย (sales, including VAT), the headline figure | Header `total_amount` of codes 44 and 46 minus code 48. Includes cash and credit sales, so a return lowers the day's sales and a debit note raises it. Always labelled "including VAT". Decided by the owner on 2026-10-01. | Sales report and every answer that says "sales". The sales report counted code 44 only until this decision was applied, and smlmcpconnect's sales tools still do. |
+| ยอดขาย (sales, including VAT), the headline figure | Header `total_amount` of codes 44 and 46 minus code 48 (`ic_trans`, `last_status = 0`, `is_doc_copy` not 1, in the date range). Includes cash and credit sales, so a return lowers the day's sales and a debit note raises it. Every `inquiry_type` of code 48 (0 and 2 credit, 1 and 3 cash) is a return and is subtracted: a cash return also lowers sales even though it does not touch the receivable. Always labelled "including VAT". Decided by the owner on 2026-10-01 and applied to the sales report on 2026-10-09. The report shows the parts next to the net figure so anyone can check it: `sales_amount` (code 44), `debit_note_amount` and `debit_note_count` (code 46), `return_amount` and `return_count` (code 48, shown as a positive number to subtract), and `document_count` = number of code 44 documents. Net = sales_amount + debit_note_amount - return_amount. | Sales report and every answer that says "sales". smlmcpconnect's sales tools still count code 44 only. |
 | ยอดขายก่อน VAT | Line `sum_amount_exclude_vat` of codes 44 and 46 minus code 48. Used next to profit, and always named "before VAT". | Gross profit reports |
 | VAT ขาย | Header `total_vat_value` of codes 44 and 46 minus code 48. Zero for `vat_type` 2 and 3. | Sales report |
 | ยอดขายสุทธิ (net sales before VAT) | Lines of codes 44 and 46 minus lines of code 48, using `sum_amount_exclude_vat`. | Gross profit reports |
@@ -57,7 +57,7 @@ Stock on hand by movement and the item master balance are different numbers. Nam
 | Topic | V2 | smlmcpconnect | Rule |
 |---|---|---|---|
 | Profit | Codes 44 and 46 minus 48, before VAT | Code 44 only | V2 |
-| Sales report POS rule | Drops POS bills that have a `doc_ref` | No rule | V2, and check on any shop that uses POS |
+| Sales report POS rule | Drops code 44 POS bills that have a `doc_ref`; a return or debit note with a `doc_ref` is kept (it points at the original bill, it does not duplicate it) | No rule | V2, and check on any shop that uses POS |
 | Aging | `ar_aging`, built | Uses `due_date` | V2, with a "no due date" bucket |
 | RFM | `customer_rfm`, built | Inverted scores | V2, 5 is the best |
 | Stock | Movement based | Not compared | Name the basis in every answer |
@@ -68,4 +68,4 @@ Settled by the owner on 2026-10-01:
 
 - `vat_type` 3 means no effect on tax. `inquiry_type` 4 does not exist. Only `last_status` 0 and 1 matter.
 - A document with no `due_date` is shown as "no due date", as the data says.
-- "Sales" is the net figure above (codes 44 and 46 minus 48), with "including VAT" and "before VAT" named separately. The live sales report still counts code 44 only; changing it changes the card the shop sees by a small amount, so it is applied when the first new reports are built and announced to the owner beforehand.
+- "Sales" is the net figure above (codes 44 and 46 minus 48), with "including VAT" and "before VAT" named separately. Applied to the sales report on 2026-10-09 (it counted code 44 only before). The card changes by the returns and debit notes of the period, so tell a shop owner before the first card with the new figure.

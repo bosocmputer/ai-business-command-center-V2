@@ -177,6 +177,11 @@ func BuildQueryPlanForProjection(key Key, period Period, projection ResultKind) 
 	return plan, nil
 }
 
+// Sales are the net figure the owner decided on 2026-10-01: sale documents (44)
+// plus debit notes (46) minus credit notes / returns (48). Every amount of a
+// return is stored with a minus sign here, so any sum over these rows is already
+// net. The POS duplicate rule applies to code 44 only: a return that carries a
+// reference to the original bill is not a duplicate of it.
 const salesHeaderSQL = `
 select
   h.doc_date,
@@ -187,22 +192,24 @@ select
   h.cust_code,
   c.name_1 as cust_name,
   h.branch_code,
-  h.total_value,
-  h.total_discount,
-  (h.total_value - h.total_discount) as total_except_discount,
-  h.total_except_vat,
+  h.trans_flag,
+  case h.trans_flag when 44 then 'ขาย' when 46 then 'เพิ่มหนี้' else 'รับคืน/ลดหนี้' end as doc_type,
+  h.total_value * (case when h.trans_flag = 48 then -1 else 1 end) as total_value,
+  h.total_discount * (case when h.trans_flag = 48 then -1 else 1 end) as total_discount,
+  (h.total_value - h.total_discount) * (case when h.trans_flag = 48 then -1 else 1 end) as total_except_discount,
+  h.total_except_vat * (case when h.trans_flag = 48 then -1 else 1 end) as total_except_vat,
   h.vat_rate,
-  h.total_vat_value,
+  h.total_vat_value * (case when h.trans_flag = 48 then -1 else 1 end) as total_vat_value,
   case when h.vat_type = 0 then 'E' when h.vat_type = 1 then 'I' when h.vat_type = 2 then 'C' when h.vat_type = 3 then '3' end as vat_type,
-  h.total_amount,
+  h.total_amount * (case when h.trans_flag = 48 then -1 else 1 end) as total_amount,
   h.cashier_code,
   cast(h.last_status as varchar) as last_status
 from ic_trans h
 left join ar_customer c on c.code = h.cust_code
-where h.trans_flag in (44)
+where h.trans_flag in (44, 46, 48)
   and h.last_status = 0
   and h.doc_date between $1::date and $2::date
-  and (coalesce(h.doc_ref, '') = '' or h.is_pos = 0)
+  and (h.trans_flag <> 44 or coalesce(h.doc_ref, '') = '' or h.is_pos = 0)
   and h.is_doc_copy <> 1
 order by h.doc_date, h.doc_no, h.doc_time, h.cust_code
 `
@@ -212,26 +219,29 @@ with filtered_headers as (
   select h.doc_no, h.doc_date, h.doc_time, h.cust_code, c.name_1 as cust_name, h.branch_code, h.trans_flag
   from ic_trans h
   left join ar_customer c on c.code = h.cust_code
-  where h.trans_flag in (44)
+  where h.trans_flag in (44, 46, 48)
     and h.last_status = 0
     and h.doc_date between $1::date and $2::date
-    and (coalesce(h.doc_ref, '') = '' or h.is_pos = 0)
+    and (h.trans_flag <> 44 or coalesce(h.doc_ref, '') = '' or h.is_pos = 0)
     and h.is_doc_copy <> 1
 )
 select
   d.discount, d.discount_amount, d.doc_date, d.doc_no, h.doc_time,
   h.cust_code, h.cust_name,
   coalesce(nullif(h.branch_code, ''), 'no_branch') as branch_code,
+  d.trans_flag,
   d.item_code, d.barcode, coalesce(i.name_1, d.item_name) as item_name,
   d.wh_code, d.shelf_code, d.unit_code, coalesce(u.name_1, '') as unit_name,
-  d.qty, d.temp_float_1, d.temp_float_2, d.price, d.sum_amount,
+  d.qty * (case when d.trans_flag = 48 then -1 else 1 end) as qty,
+  d.temp_float_1, d.temp_float_2, d.price,
+  d.sum_amount * (case when d.trans_flag = 48 then -1 else 1 end) as sum_amount,
   case when d.vat_type = 0 then 'E' when d.vat_type = 1 then 'I' when d.vat_type = 2 then 'C' when d.vat_type = 3 then '3' end as vat_type,
   cast(d.tax_type as varchar) as tax_type, d.ref_row, d.line_number
 from ic_trans_detail d
 inner join filtered_headers h on h.doc_no = d.doc_no and h.doc_date = d.doc_date and h.trans_flag = d.trans_flag
 left join ic_inventory i on i.code = d.item_code
 left join ic_unit u on u.code = d.unit_code
-where d.trans_flag in (44)
+where d.trans_flag in (44, 46, 48)
   and d.last_status = 0
   and d.doc_date between $1::date and $2::date
 order by d.doc_date, d.doc_no, d.line_number

@@ -17,7 +17,7 @@ func buildSummaryQueryPlan(key Key, period Period) (QueryPlan, error) {
 	switch key {
 	case SalesGoodsServices:
 		plan.Steps = []QueryStep{
-			{Name: "headers", Query: Query{SQL: summaryDocumentTrendSQL(salesHeaderSQL, period, false), Args: dateRangeArgs}},
+			{Name: "headers", Query: Query{SQL: summaryDocumentTrendSQL(salesHeaderSQL, period, false, true), Args: dateRangeArgs}},
 			{Name: "details", Query: Query{SQL: summarySalesProductsSQL(), Args: dateRangeArgs}},
 		}
 	case CustomerRFM:
@@ -25,7 +25,7 @@ func buildSummaryQueryPlan(key Key, period Period) (QueryPlan, error) {
 	case PurchaseFrequency:
 		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: purchaseFrequencySummarySQL, Args: dateRangeArgs}}}
 	case PurchaseGoodsPayables:
-		plan.Steps = []QueryStep{{Name: "headers", Query: Query{SQL: summaryDocumentTrendSQL(purchaseHeaderSQL, period, true), Args: dateRangeArgs}}}
+		plan.Steps = []QueryStep{{Name: "headers", Query: Query{SQL: summaryDocumentTrendSQL(purchaseHeaderSQL, period, true, false), Args: dateRangeArgs}}}
 	case GrossProfitByProduct:
 		plan.Steps = []QueryStep{{Name: "rows", Query: Query{SQL: summaryProfitSQL(grossProfitProductSQL, "code"), Args: dateRangeArgs}}}
 	case GrossProfitByARCustomer:
@@ -75,7 +75,7 @@ func summaryBucketExpression(period Period, field string) string {
 	return field + "::date"
 }
 
-func summaryDocumentTrendSQL(base string, period Period, includeSupplierRanking bool) string {
+func summaryDocumentTrendSQL(base string, period Period, includeSupplierRanking, salesBreakdown bool) string {
 	bucket := summaryBucketExpression(period, "doc_date")
 	rankingCTE := ""
 	selected := "select * from trend_rows"
@@ -91,13 +91,26 @@ supplier_rows as (
 )`
 		selected = "select * from trend_rows union all select * from supplier_rows"
 	}
+	// For sales the document count is the number of sale documents (44) and the
+	// notes are counted and summed on their own; total_amount is already net.
+	countField := "count(*)"
+	breakdown := ""
+	if salesBreakdown {
+		countField = "count(*) filter (where trans_flag = 44)"
+		breakdown = `,
+    coalesce(sum(total_amount) filter (where trans_flag = 44), 0) as _metric_sales_amount,
+    count(*) filter (where trans_flag = 46) as _metric_debit_note_count,
+    coalesce(sum(total_amount) filter (where trans_flag = 46), 0) as _metric_debit_note_amount,
+    count(*) filter (where trans_flag = 48) as _metric_return_count,
+    coalesce(-sum(total_amount) filter (where trans_flag = 48), 0) as _metric_return_amount`
+	}
 	return fmt.Sprintf(`
 with summary_source as (%s),
 summary_metrics as (
-  select count(*) as _metric_document_count,
+  select %s as _metric_document_count,
     coalesce(sum(total_amount), 0) as _metric_total_amount,
     coalesce(sum(total_amount), 0) as _metric_detail_total,
-    count(*) as _metric_row_count
+    count(*) as _metric_row_count%s
   from summary_source
 ),
 trend_rows as (
@@ -111,7 +124,7 @@ selected_rows as (%s)
 select selected_rows.*, summary_metrics.*,
   (selected_rows._summary_kind is null)::text as _summary_metric_row
 from summary_metrics left join selected_rows on true
-limit %d`, trimFinalOrderBy(base), bucket, bucket, bucket, rankingCTE, selected, summaryRowLimit)
+limit %d`, trimFinalOrderBy(base), countField, breakdown, bucket, bucket, bucket, rankingCTE, selected, summaryRowLimit)
 }
 
 func summarySalesProductsSQL() string {

@@ -225,3 +225,81 @@ func TestTheCashSummaryQueryCarriesTheInternalMoveFigureAndStaysReadOnly(t *test
 		t.Error("the debt receipt report has no document code column and must not filter on it")
 	}
 }
+
+// Net sales = sale documents (44) + debit notes (46) - credit notes / returns (48).
+// Rows carry the sign already: a return is negative.
+func TestSummarizeSalesIsNetOfDebitAndCreditNotesAndShowsEachPart(t *testing.T) {
+	steps := map[string][]map[string]string{"headers": {
+		{"doc_no": "S1", "trans_flag": "44", "total_amount": "100.00"},
+		{"doc_no": "S2", "trans_flag": "44", "total_amount": "50.00"},
+		{"doc_no": "D1", "trans_flag": "46", "total_amount": "10.00"},
+		{"doc_no": "R1", "trans_flag": "48", "total_amount": "-30.00"},
+		{"doc_no": "R2", "trans_flag": "48", "total_amount": "-5.50"},
+	}, "details": {{"sum_amount": "124.50"}}}
+	result, err := Summarize(SalesGoodsServices, steps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"total_amount": "124.50", "document_count": "2", "sales_amount": "150.00",
+		"debit_note_amount": "10.00", "debit_note_count": "1", "return_amount": "35.50", "return_count": "2",
+	}
+	for key, expected := range want {
+		if got := result.Metrics[key]; got != expected {
+			t.Errorf("metric %s = %q, want %q; all=%v", key, got, expected, result.Metrics)
+		}
+	}
+	if result.Reconciliation["difference"] != "0.00" {
+		t.Errorf("header and detail totals should agree, got %v", result.Reconciliation)
+	}
+}
+
+func TestSummarizeSalesReadsBreakdownFromTheFullSetQueryMetrics(t *testing.T) {
+	steps := map[string][]map[string]string{"headers": {{
+		"doc_date": "2026-06-01", "total_amount": "3507260.19",
+		"_metric_document_count": "5439", "_metric_total_amount": "140815932.93", "_metric_detail_total": "140815932.93", "_metric_row_count": "5794",
+		"_metric_sales_amount": "142142365.29", "_metric_debit_note_count": "2", "_metric_debit_note_amount": "365.00",
+		"_metric_return_count": "353", "_metric_return_amount": "1326797.36",
+	}}}
+	result, err := Summarize(SalesGoodsServices, steps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, expected := range map[string]string{
+		"total_amount": "140815932.93", "document_count": "5439", "sales_amount": "142142365.29",
+		"debit_note_amount": "365.00", "debit_note_count": "2", "return_amount": "1326797.36", "return_count": "353",
+	} {
+		if got := result.Metrics[key]; got != expected {
+			t.Errorf("metric %s = %q, want %q", key, got, expected)
+		}
+	}
+}
+
+func TestSalesQueriesNetTheNotesAndLeavePurchasesAlone(t *testing.T) {
+	period := Period{DateFrom: "2026-06-01", DateTo: "2026-06-30"}
+	sales, err := BuildQueryPlanForProjection(SalesGoodsServices, period, ResultSummary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers := sales.Steps[0].Query.SQL
+	for _, want := range []string{"trans_flag in (44, 46, 48)", "_metric_return_amount", "_metric_debit_note_amount", "count(*) filter (where trans_flag = 44)", "(h.trans_flag <> 44 or coalesce(h.doc_ref, '') = '' or h.is_pos = 0)"} {
+		if !strings.Contains(headers, want) {
+			t.Errorf("sales summary SQL is missing %q", want)
+		}
+	}
+	for _, step := range sales.Steps {
+		if strings.Contains(step.Query.SQL, "trans_flag in (44)") {
+			t.Errorf("step %s still counts sale documents only", step.Name)
+		}
+	}
+	if !strings.Contains(sales.Steps[1].Query.SQL, "when d.trans_flag = 48 then -1") {
+		t.Error("detail lines of returns are not negated")
+	}
+	purchases, err := BuildQueryPlanForProjection(PurchaseGoodsPayables, period, ResultSummary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(purchases.Steps[0].Query.SQL, "_metric_return_amount") || !strings.Contains(purchases.Steps[0].Query.SQL, "count(*) as _metric_document_count") {
+		t.Error("the purchase summary must not change")
+	}
+}

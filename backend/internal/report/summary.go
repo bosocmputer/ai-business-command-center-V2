@@ -45,6 +45,24 @@ func Summarize(key Key, steps map[string][]map[string]string) (SummaryResult, er
 	case SalesGoodsServices, PurchaseGoodsPayables:
 		headers := steps["headers"]
 		result.Metrics["document_count"] = summaryMetricOr(steps, "document_count", strconv.Itoa(len(realSummaryRows(headers))))
+		if key == SalesGoodsServices {
+			sales := salesBreakdownFromRows(realSummaryRows(headers))
+			result.Metrics["document_count"] = summaryMetricOr(steps, "document_count", strconv.Itoa(sales.saleCount))
+			for _, item := range []struct {
+				metric   string
+				fallback *big.Rat
+			}{
+				{"sales_amount", sales.saleAmount}, {"debit_note_amount", sales.debitAmount}, {"return_amount", sales.returnAmount},
+			} {
+				value, metricErr := summaryDecimalOrFunc(steps, item.metric, func() (*big.Rat, error) { return item.fallback, nil })
+				if metricErr != nil {
+					return SummaryResult{}, metricErr
+				}
+				result.Metrics[item.metric] = money(value)
+			}
+			result.Metrics["debit_note_count"] = integerText(summaryMetricOr(steps, "debit_note_count", strconv.Itoa(sales.debitCount)))
+			result.Metrics["return_count"] = integerText(summaryMetricOr(steps, "return_count", strconv.Itoa(sales.returnCount)))
+		}
 		total, sumErr := sumField(realSummaryRows(headers), "total_amount")
 		if sumErr != nil {
 			return SummaryResult{}, sumErr
@@ -234,6 +252,38 @@ func realSummaryRows(rows []map[string]string) []map[string]string {
 		filtered = append(filtered, row)
 	}
 	return filtered
+}
+
+// salesBreakdown is how the net sales figure is made up. Rows carry their own
+// sign (a return is negative), so the net is saleAmount + debitAmount - returnAmount.
+type salesBreakdown struct {
+	saleCount, debitCount, returnCount    int
+	saleAmount, debitAmount, returnAmount *big.Rat
+}
+
+// salesBreakdownFromRows works the breakdown out of document rows. It is used
+// when the query did not carry the metrics (detail runs). Rows without a
+// trans_flag column (summary trend rows, older stored data) count as sales.
+func salesBreakdownFromRows(rows []map[string]string) salesBreakdown {
+	out := salesBreakdown{saleAmount: new(big.Rat), debitAmount: new(big.Rat), returnAmount: new(big.Rat)}
+	for _, row := range rows {
+		amount, err := decimal(row["total_amount"])
+		if err != nil {
+			continue
+		}
+		switch strings.TrimSpace(integerText(row["trans_flag"])) {
+		case "46":
+			out.debitCount++
+			out.debitAmount.Add(out.debitAmount, amount)
+		case "48":
+			out.returnCount++
+			out.returnAmount.Sub(out.returnAmount, amount)
+		default:
+			out.saleCount++
+			out.saleAmount.Add(out.saleAmount, amount)
+		}
+	}
+	return out
 }
 
 func summaryMetric(steps map[string][]map[string]string, key string) (string, bool) {
