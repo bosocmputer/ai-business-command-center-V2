@@ -241,6 +241,41 @@ def export_report(report_key: str, date_from: str = "", date_to: str = "", kind:
 
 
 @mcp.tool()
+def explain_change(now_from: str, now_to: str, before_from: str, before_to: str) -> str:
+    """Why did sales go down (or up)? Compares the sales report of two periods from the REAL rows of both and works out, by the tool,
+    the totals, the number of documents, the average per document, how much of the change came from fewer documents and how much from a
+    smaller average document, the customers and the items that fell or rose most, customers who bought only before or only now, and the
+    day by day totals. Dates are YYYY-MM-DD; now_* is the period asked about and before_* the period to compare with (usually the same
+    number of days just before, or the same dates last month). Use it for 'ทำไมยอดตก', 'ทำไมขายดีขึ้น', 'ใครซื้อน้อยลง' and similar. It needs
+    the sales report. If it answers PREPARING the rows are still being fetched: tell the owner to ask again in a few minutes. Quote
+    figures only from the answer. It shows WHAT changed in the shop's data, never a cause outside it (weather, holidays, competitors):
+    say 'ที่เห็นในข้อมูล' and do not guess a reason. If a period is not finished (it includes today) or the two periods have different
+    lengths, say so."""
+    def fetch_for(a, b):
+        def fetch(query):
+            body = call("/exports/sales_goods_services", dict(query) if query.get("cursor") else {"dateFrom": a, "dateTo": b})
+            try:
+                return json.loads(body)
+            except ValueError:
+                return {"status": "UNAVAILABLE", "message": "ติดต่อระบบรายงานไม่ได้ในขณะนี้ ลองถามใหม่ภายหลัง"}
+        return fetch
+
+    def build():
+        wait = EXPORT_WAIT_SECONDS / 2
+        answer_now = secretary_tools.collect_export(fetch_for(now_from, now_to), {}, wait, EXPORT_POLL_SECONDS)
+        answer_before = secretary_tools.collect_export(fetch_for(before_from, before_to), {}, wait, EXPORT_POLL_SECONDS)
+        for answer in (answer_now, answer_before):
+            if answer.get("status") != "READY":
+                return answer
+        result = secretary_tools.explain_change(answer_now, answer_before)
+        truncated = bool(answer_now.get("truncated") or answer_before.get("truncated"))
+        return result | {"period_now": answer_now.get("period"), "period_before": answer_before.get("period"),
+                         "collected_at": answer_now.get("collectedAt", ""), "truncated": truncated,
+                         "notes": answer_now.get("notes") or []}
+    return as_json(build)
+
+
+@mcp.tool()
 def read_document(path: str) -> str:
     """Read a Word (.docx) or Excel (.xlsx) file the owner attached in the chat (the message says where it is saved). For a workbook the
     answer holds sheets[].column_sums, the totals of its numeric columns worked out by the tool: use those and never add numbers up

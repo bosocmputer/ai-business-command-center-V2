@@ -1,5 +1,6 @@
 import io
 import os
+from decimal import Decimal
 import tempfile
 import unittest
 import zipfile
@@ -344,3 +345,48 @@ class CollectExportTests(unittest.TestCase):
 class FileNameTests(unittest.TestCase):
     def test_a_file_name_has_no_spaces_so_the_media_line_is_not_cut(self):
         self.assertEqual(tools.safe_name("รายงานขาย 2026-10-01 ถึง 2026-10-09", "xlsx"), "รายงานขาย_2026-10-01_ถึง_2026-10-09.xlsx")
+
+
+def sales_answer(documents, lines):
+    columns = [{"key": key, "label": key, "type": "text"} for key in ("doc_date", "doc_no", "cust_code", "cust_name", "item_code", "item_name", "total_amount", "sum_amount")]
+    rows = [[d, n, c, name, "", "", total, ""] for d, n, c, name, total in documents]
+    rows += [[d, n, c, name, ic, iname, "", amount] for d, n, c, name, ic, iname, amount in lines]
+    return {"status": "READY", "columns": columns, "rows": rows}
+
+
+class ExplainChangeTests(unittest.TestCase):
+    def setUp(self):
+        before_docs = [("2026-09-01", "A1", "C1", "ลูกค้า-1", "1000"), ("2026-09-02", "A2", "C1", "ลูกค้า-1", "1000"), ("2026-09-02", "A3", "C2", "ลูกค้า-2", "500"), ("2026-09-03", "A4", "C3", "ลูกค้า-3", "300")]
+        now_docs = [("2026-09-08", "B1", "C1", "ลูกค้า-1", "400"), ("2026-09-09", "B2", "C2", "ลูกค้า-2", "500"), ("2026-09-09", "B3", "C4", "ลูกค้า-4", "200")]
+        before_lines = [("2026-09-01", "A1", "C1", "ลูกค้า-1", "P1", "ปูน", "1000"), ("2026-09-03", "A4", "C3", "ลูกค้า-3", "P2", "ทราย", "300")]
+        now_lines = [("2026-09-08", "B1", "C1", "ลูกค้า-1", "P1", "ปูน", "400"), ("2026-09-09", "B3", "C4", "ลูกค้า-4", "P3", "หิน", "200")]
+        self.before, self.now = sales_answer(before_docs, before_lines), sales_answer(now_docs, now_lines)
+
+    def test_totals_and_the_split_between_fewer_documents_and_a_smaller_average(self):
+        result = tools.explain_change(self.now, self.before)
+        self.assertEqual(result["total"], {"now": "1100.00", "before": "2800.00", "change": "-1700.00", "percent": "-60.7"})
+        self.assertEqual(result["documents"], {"now": 3, "before": 4})
+        self.assertEqual(result["average_per_document"], {"now": "366.67", "before": "700.00"})
+        parts = Decimal(result["change_from_number_of_documents"]) + Decimal(result["change_from_average_document"])
+        self.assertEqual(parts, Decimal("-1700.00"))  # the two effects add up to the whole change
+        self.assertEqual(result["change_from_number_of_documents"], "-700.00")
+
+    def test_who_and_what_moved(self):
+        result = tools.explain_change(self.now, self.before)
+        falls = result["customers"]["biggest_falls"]
+        self.assertEqual((falls[0]["code"], falls[0]["change"]), ("C1", "-1600.00"))
+        self.assertEqual(result["customers"]["only_before"], {"count": 1, "amount": "300.00"})
+        self.assertEqual(result["customers"]["only_now"], {"count": 1, "amount": "200.00"})
+        self.assertEqual(result["items"]["biggest_falls"][0]["name"], "ปูน")
+        self.assertEqual(result["top_customer_share_now_percent"], "45.5")
+        self.assertEqual(result["daily_before"]["2026-09-02"], "1500.00")
+
+    def test_it_refuses_when_there_is_nothing_to_compare(self):
+        empty = {"status": "READY", "columns": self.now["columns"], "rows": []}
+        with self.assertRaises(tools.ToolError):
+            tools.explain_change(empty, empty)
+
+    def test_a_period_with_no_sales_is_a_valid_comparison(self):
+        empty = {"status": "READY", "columns": self.now["columns"], "rows": []}
+        result = tools.explain_change(empty, self.before)
+        self.assertEqual(result["total"]["percent"], "-100.0")

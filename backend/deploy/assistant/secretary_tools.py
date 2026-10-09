@@ -401,6 +401,111 @@ def collect_export(fetch, query, wait_seconds=240.0, poll_seconds=15.0, sleep=ti
     return merged
 
 
+# ------------------------------------------------------------------------------------------- explain_change
+
+TOP_MOVERS = 5
+
+
+def _records(answer):
+    """The rows of an export answer as dicts keyed by column key."""
+    keys = [column["key"] for column in answer.get("columns") or []]
+    return [dict(zip(keys, row)) for row in answer.get("rows") or []]
+
+
+def _money(value):
+    number = as_number(value)
+    return number if number is not None else Decimal(0)
+
+
+def _text(value):
+    return Decimal(value).quantize(Decimal("0.01"))
+
+
+def _sum_by(records, key_field, name_field, amount_field):
+    """{code: (name, amount, count)} adding up amount_field per key_field."""
+    result = {}
+    for record in records:
+        code = str(record.get(key_field, "")).strip()
+        if not code:
+            continue
+        name, amount, count = result.get(code, ("", Decimal(0), 0))
+        result[code] = (name or str(record.get(name_field, "")).strip(), amount + _money(record.get(amount_field)), count + 1)
+    return result
+
+
+def _movers(now_map, before_map):
+    """Who or what moved most between two periods: biggest falls, biggest rises, and those only in one period."""
+    rows = []
+    for code in set(now_map) | set(before_map):
+        name_now, amount_now, _ = now_map.get(code, ("", Decimal(0), 0))
+        name_before, amount_before, _ = before_map.get(code, ("", Decimal(0), 0))
+        rows.append({"code": code, "name": name_now or name_before, "now": amount_now, "before": amount_before, "change": amount_now - amount_before})
+    def view(item):
+        return {"code": item["code"], "name": item["name"], "now": str(_text(item["now"])), "before": str(_text(item["before"])), "change": str(_text(item["change"]))}
+    falls = sorted((r for r in rows if r["change"] < 0), key=lambda r: r["change"])[:TOP_MOVERS]
+    rises = sorted((r for r in rows if r["change"] > 0), key=lambda r: -r["change"])[:TOP_MOVERS]
+    gone = [r for r in rows if r["now"] == 0 and r["before"] > 0]
+    new = [r for r in rows if r["before"] == 0 and r["now"] > 0]
+    return {
+        "biggest_falls": [view(r) for r in falls], "biggest_rises": [view(r) for r in rises],
+        "only_before": {"count": len(gone), "amount": str(_text(sum((r["before"] for r in gone), Decimal(0))))},
+        "only_now": {"count": len(new), "amount": str(_text(sum((r["now"] for r in new), Decimal(0))))},
+    }
+
+
+def _daily(documents, date_field, amount_field):
+    days = {}
+    for record in documents:
+        day = str(record.get(date_field, "")).strip()
+        if day:
+            days[day] = days.get(day, Decimal(0)) + _money(record.get(amount_field))
+    return {day: str(_text(amount)) for day, amount in sorted(days.items())}
+
+
+def explain_change(answer_now, answer_before):
+    """What changed in a sales report between two periods, worked out from the real rows of both (the answers of collect_export).
+    Document rows (no item code) give the totals, the number of documents, the average per document and the customers; line rows give
+    the items. Nothing here guesses a cause: it says who and what moved, and how much of the change came from fewer documents and how
+    much from a smaller average document."""
+    now, before = _records(answer_now), _records(answer_before)
+    docs_now = [r for r in now if not str(r.get("item_code", "")).strip()]
+    docs_before = [r for r in before if not str(r.get("item_code", "")).strip()]
+    lines_now = [r for r in now if str(r.get("item_code", "")).strip()]
+    lines_before = [r for r in before if str(r.get("item_code", "")).strip()]
+    if not docs_now and not docs_before:
+        raise ToolError("ไม่มีเอกสารขายในทั้งสองช่วง เทียบให้ไม่ได้")
+    total_now = sum((_money(r.get("total_amount")) for r in docs_now), Decimal(0))
+    total_before = sum((_money(r.get("total_amount")) for r in docs_before), Decimal(0))
+    count_now = len({r.get("doc_no") for r in docs_now})
+    count_before = len({r.get("doc_no") for r in docs_before})
+    average_now = total_now / count_now if count_now else Decimal(0)
+    average_before = total_before / count_before if count_before else Decimal(0)
+    change = total_now - total_before
+    volume_effect = (Decimal(count_now) - Decimal(count_before)) * average_before
+    ticket_effect = Decimal(count_now) * (average_now - average_before)
+    customers = _movers(_sum_by(docs_now, "cust_code", "cust_name", "total_amount"), _sum_by(docs_before, "cust_code", "cust_name", "total_amount"))
+    items = _movers(_sum_by(lines_now, "item_code", "item_name", "sum_amount"), _sum_by(lines_before, "item_code", "item_name", "sum_amount"))
+    per_customer_now = _sum_by(docs_now, "cust_code", "cust_name", "total_amount")
+    top_share = None
+    if per_customer_now and total_now > 0:
+        top = max(per_customer_now.values(), key=lambda value: value[1])
+        top_share = str((top[1] * 100 / total_now).quantize(Decimal("0.1")))
+    return {
+        "total": {"now": str(_text(total_now)), "before": str(_text(total_before)), "change": str(_text(change)),
+                  "percent": str((change * 100 / total_before).quantize(Decimal("0.1"))) if total_before else None},
+        "documents": {"now": count_now, "before": count_before},
+        "average_per_document": {"now": str(_text(average_now)), "before": str(_text(average_before))},
+        "change_from_number_of_documents": str(_text(volume_effect)),
+        "change_from_average_document": str(_text(ticket_effect)),
+        "customers": customers,
+        "items": items,
+        "top_customer_share_now_percent": top_share,
+        "daily_now": _daily(docs_now, "doc_date", "total_amount"),
+        "daily_before": _daily(docs_before, "doc_date", "total_amount"),
+        "note": "ทุกตัวเลขคำนวณโดยเครื่องมือจากแถวรายงานจริง บอกได้แค่ว่าอะไรเปลี่ยน ไม่รู้สาเหตุนอกระบบ (อากาศ คู่แข่ง วันหยุด) ให้พูดว่า 'ที่เห็นในข้อมูล' และห้ามเดาสาเหตุเอง",
+    }
+
+
 def parse_rows(content):
     """Rows for a table file: a JSON list of lists (or of objects), or plain text with one row per line, cells split by a tab or a comma."""
     text = str(content).strip()
