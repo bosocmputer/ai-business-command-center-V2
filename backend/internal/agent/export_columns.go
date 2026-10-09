@@ -43,6 +43,9 @@ var exportValueLabels = map[string]map[string]string{
 	"vat_type": {"E": "VAT แยกนอก", "I": "VAT รวมใน", "C": "VAT 0%", "3": "ไม่มีผลต่อภาษี"},
 }
 
+// total_except_vat is not exported: SML leaves it at zero on many documents (a pilot day showed a zero total beside a VAT
+// total of thousands), so showing it would mislead. The owner gets the VAT and the VAT-inclusive total.
+//
 // exportColumns are the columns of each report's detail rows, in the order and with the headings the web page uses. The
 // internal columns the page hides (row numbers, raw codes of a label) are left out. A column the report's rows do not
 // carry is simply empty, and the assistant's file drops it.
@@ -52,7 +55,7 @@ var exportColumns = map[report.Key][]ExportColumn{
 		textColumn("doc_ref", "เอกสารอ้างอิง"), textColumn("cust_code", "รหัสลูกค้า"), textColumn("cust_name", "ลูกค้า"),
 		textColumn("item_code", "รหัสสินค้า"), textColumn("item_name", "สินค้า"), numberColumn("qty", "จำนวน"), textColumn("unit_code", "หน่วย"),
 		numberColumn("price", "ราคา"), textColumn("discount", "ส่วนลด"), numberColumn("sum_amount", "มูลค่ารายการ"),
-		numberColumn("total_value", "ยอดก่อนส่วนลด"), numberColumn("total_discount", "ส่วนลดท้ายบิล"), numberColumn("total_except_discount", "ยอดหลังส่วนลด"), numberColumn("total_except_vat", "ยอดก่อน VAT"),
+		numberColumn("total_value", "ยอดก่อนส่วนลด"), numberColumn("total_discount", "ส่วนลดท้ายบิล"), numberColumn("total_except_discount", "ยอดหลังส่วนลด"),
 		numberColumn("vat_rate", "อัตรา VAT (%)"), numberColumn("total_vat_value", "VAT"), numberColumn("total_amount", "ยอดขายสุทธิ (รวม VAT)"),
 		textColumn("vat_type", "ประเภทภาษี"), textColumn("cashier_code", "ผู้ทำรายการ"),
 		textColumn("branch_code", "สาขา"), textColumn("wh_code", "คลัง"), textColumn("shelf_code", "ที่เก็บ"),
@@ -62,7 +65,7 @@ var exportColumns = map[report.Key][]ExportColumn{
 		dateColumn("doc_ref_date", "วันที่เอกสารอ้างอิง"), textColumn("cust_code", "รหัสผู้จำหน่าย"), textColumn("cust_name", "ผู้จำหน่าย"),
 		textColumn("item_code", "รหัสสินค้า"), textColumn("item_name", "สินค้า"), numberColumn("qty", "จำนวน"), textColumn("unit_code", "หน่วย"),
 		numberColumn("price", "ราคา"), textColumn("discount", "ส่วนลด"), numberColumn("sum_amount", "มูลค่ารายการ"),
-		numberColumn("total_value", "ยอดก่อนส่วนลด"), numberColumn("total_discount", "ส่วนลดท้ายบิล"), numberColumn("total_except_discount", "ยอดหลังส่วนลด"), numberColumn("total_except_vat", "ยอดก่อน VAT"),
+		numberColumn("total_value", "ยอดก่อนส่วนลด"), numberColumn("total_discount", "ส่วนลดท้ายบิล"), numberColumn("total_except_discount", "ยอดหลังส่วนลด"),
 		numberColumn("vat_rate", "อัตรา VAT (%)"), numberColumn("total_vat_value", "VAT"), numberColumn("total_amount", "ยอดซื้อสุทธิ (รวม VAT)"),
 		textColumn("vat_type", "ประเภทภาษี"), textColumn("cashier_code", "ผู้ทำรายการ"),
 		textColumn("branch_code", "สาขา"), textColumn("wh_code", "คลัง"), textColumn("shelf_code", "ที่เก็บ"),
