@@ -143,7 +143,7 @@ report is still not ready after the wait, the assistant says so and asks the own
 
 Reports "as of today" (receivables, stock) and the rolling 180-day customer reports are keyed to the date, so each day's
 first question would start a live fetch, and last month's snapshots go stale too (they are not kept for good). `prewarm.py`
-fetches all 12 every morning at 07:30 Bangkok, one after the other. AI-BCC allows 10 live fetches an hour, so the last two
+fetches all 12 every morning at 07:30 Bangkok, one after the other. AI-BCC allows 10 live fetches an hour by default (`AGENT_REFRESHES_PER_HOUR`; the V2 server has lifted it), so the last two
 are refused at first and it retries every five minutes until the budget frees, about an hour later, for at most two hours:
 so the owner's first questions are instant, and the last two reports are ready by about 08:40. It prints one JSON line to
 `docker logs` when it ends. Move the time with

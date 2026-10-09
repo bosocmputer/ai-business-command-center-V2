@@ -415,3 +415,21 @@ func TestMonthlyCallBudgetIsOffByDefaultAndBounded(t *testing.T) {
 		t.Fatal("a negative budget must be refused")
 	}
 }
+
+func TestAgentHourlyLimitsDefaultAndCanBeRaisedButNotZeroedByAccident(t *testing.T) {
+	cfg, err := Load(alertTestValues(nil))
+	if err != nil || cfg.AgentCallsPerHour != 60 || cfg.AgentRefreshesPerHour != 10 || cfg.AgentLookupsPerHour != 30 {
+		t.Fatalf("defaults: %d %d %d %v", cfg.AgentCallsPerHour, cfg.AgentRefreshesPerHour, cfg.AgentLookupsPerHour, err)
+	}
+	cfg, err = Load(alertTestValues(map[string]string{"AGENT_CALLS_PER_HOUR": "1000000", "AGENT_REFRESHES_PER_HOUR": "500", "AGENT_LOOKUPS_PER_HOUR": "9999"}))
+	if err != nil || cfg.AgentCallsPerHour != 1_000_000 || cfg.AgentRefreshesPerHour != 500 || cfg.AgentLookupsPerHour != 9999 {
+		t.Fatalf("raised: %d %d %d %v", cfg.AgentCallsPerHour, cfg.AgentRefreshesPerHour, cfg.AgentLookupsPerHour, err)
+	}
+	for _, name := range []string{"AGENT_CALLS_PER_HOUR", "AGENT_REFRESHES_PER_HOUR", "AGENT_LOOKUPS_PER_HOUR"} {
+		for _, bad := range []string{"0", "-1", "many"} {
+			if _, err := Load(alertTestValues(map[string]string{name: bad})); err == nil {
+				t.Fatalf("%s=%s was accepted", name, bad)
+			}
+		}
+	}
+}

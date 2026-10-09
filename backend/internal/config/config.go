@@ -55,6 +55,13 @@ type Config struct {
 	MasterSyncEnabled bool
 	// The assistant can ask the shop's system one narrow live question about a known customer or item. Off until switched on.
 	AgentLiveLookupsEnabled bool
+	// AgentCallsPerHour is how many counted calls one assistant token may make in a sliding hour (default 60). AgentRefreshesPerHour is
+	// how many live fetches from a shop's SML the assistant may start per shop per hour (default 10), and AgentLookupsPerHour how many
+	// live customer, supplier or item reads it may make per shop per hour (default 30). Raise them to lift the limit; a value that is
+	// never reached (1,000,000) removes it. They protect a shop's own SML from being asked too often, and the model bill from a loop.
+	AgentCallsPerHour     int
+	AgentRefreshesPerHour int
+	AgentLookupsPerHour   int
 	// AgentMonthlyCallBudget caps the assistant calls a shop may make in a calendar month (0 = no cap). It is the cost brake.
 	AgentMonthlyCallBudget  int
 	MasterSyncStartMinute   int
@@ -219,6 +226,18 @@ func Load(lookup LookupFunc) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	agentCallsPerHour, err := intValue(lookup, "AGENT_CALLS_PER_HOUR", 60, 1, 1_000_000)
+	if err != nil {
+		return Config{}, err
+	}
+	agentRefreshesPerHour, err := intValue(lookup, "AGENT_REFRESHES_PER_HOUR", 10, 1, 1_000_000)
+	if err != nil {
+		return Config{}, err
+	}
+	agentLookupsPerHour, err := intValue(lookup, "AGENT_LOOKUPS_PER_HOUR", 30, 1, 1_000_000)
+	if err != nil {
+		return Config{}, err
+	}
 	liveLookupsEnabled, err := boolValue(lookup, "AGENT_LIVE_LOOKUPS_ENABLED", false)
 	if err != nil {
 		return Config{}, err
@@ -348,6 +367,9 @@ func Load(lookup LookupFunc) (Config, error) {
 		AgentAlertsEnabled:           agentAlertsEnabled,
 		MasterSyncEnabled:            masterSyncEnabled,
 		AgentLiveLookupsEnabled:      liveLookupsEnabled,
+		AgentCallsPerHour:            agentCallsPerHour,
+		AgentRefreshesPerHour:        agentRefreshesPerHour,
+		AgentLookupsPerHour:          agentLookupsPerHour,
 		AgentMonthlyCallBudget:       agentMonthlyCallBudget,
 		MasterSyncStartMinute:        masterSyncStartMinute,
 		MasterSyncWindowMinutes:      masterSyncWindowMinutes,

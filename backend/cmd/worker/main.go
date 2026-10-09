@@ -150,7 +150,7 @@ func main() {
 	if cfg.AgentAlertsEnabled {
 		agentStore := database.NewAgentStore(pool)
 		// The daily check reads through the assistant's own service, so a rule sees what the owner would see.
-		source := agent.NewService(agentStore, reportStore, sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{})
+		source := agent.NewService(agentStore, reportStore, sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{CallsPerHour: cfg.AgentCallsPerHour, RefreshesPerHour: cfg.AgentRefreshesPerHour})
 		var sender alert.Sender
 		if !cfg.AgentAlertDryRun {
 			sender = &alert.WebhookSender{BaseURL: cfg.AgentAlertWebhookURL, Secret: cfg.AgentAlertWebhookSecret, Routes: cfg.AgentAlertWebhookRoutes}

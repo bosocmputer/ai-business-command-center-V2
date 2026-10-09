@@ -94,7 +94,7 @@ decision (customer names to the model provider) is made.
 
 ### Limits and audit
 
-- 60 calls per hour per token; at most 10 different reports or periods fetched per hour per tenant through this API.
+- 60 calls per hour per token; at most 10 different reports or periods fetched per hour per tenant through this API. Both are settings (`AGENT_CALLS_PER_HOUR`, `AGENT_REFRESHES_PER_HOUR`, plus `AGENT_LOOKUPS_PER_HOUR` for live lookups, default 30); the V2 server lifted all three to 1,000,000 on 2026-10-09 by the owner's decision. They exist to keep a shop's own SML from being asked too often and to stop a looping assistant from running up the model bill; with them lifted the only brakes left are the SML query concurrency and timeouts and the optional `AGENT_MONTHLY_CALL_BUDGET`.
 - `agent_calls` records each call: token, tenant, recipient, tool, report key, period, outcome, duration, snapshot run id. No values, names or
   question text. Retention 365 days like audit.
 - Issue and revoke are written to `audit_logs` as admin actions.
