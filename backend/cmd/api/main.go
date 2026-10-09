@@ -122,6 +122,7 @@ func main() {
 			RefreshPolicies:       refreshPolicyService,
 			LineWebhook:           lineWebhookService,
 			LineWebhookForwardURL: cfg.LineWebhookForwardURL,
+			AssistantSettings:     assistantSettings,
 			Schedules:             scheduleService,
 			FlexPreviews:          flexPreviewService,
 			ScheduleTests:         scheduleTestService,
