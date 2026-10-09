@@ -23,6 +23,11 @@ mcp_servers:
       WEB_SEARCH_PROVIDER: "${WEB_SEARCH_PROVIDER}"
       WEB_SEARCH_FALLBACK_PROVIDER: "${WEB_SEARCH_FALLBACK_PROVIDER}"
       WEB_SEARCH_DAILY_CAP: "${WEB_SEARCH_DAILY_CAP}"
+      # The shop's own API is reached directly, but a web search has to go out through the allow-list proxy; a stdio MCP server
+      # starts with a clean environment, so the proxy settings must be handed to it here.
+      HTTPS_PROXY: "${HTTPS_PROXY}"
+      HTTP_PROXY: "${HTTP_PROXY}"
+      NO_PROXY: "${NO_PROXY}"
 
 # Telegram: only the people named in TELEGRAM_ALLOWED_USERS may message the bot, and only in a private chat. Anyone
 # else is ignored. (entrypoint.sh also refuses to start Telegram at all when that list is empty.)
