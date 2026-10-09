@@ -55,8 +55,10 @@ type Dependencies struct {
 	AgentEnabled    bool
 	RefreshPolicies RefreshPolicyAPI
 	LineWebhook     LineWebhookAPI
-	SecureCookies   bool
-	Logger          *slog.Logger
+	// LineWebhookForwardURL passes a verified LINE webhook on (to the assistant); empty means not.
+	LineWebhookForwardURL string
+	SecureCookies         bool
+	Logger                *slog.Logger
 }
 
 type problemEnvelope struct {
@@ -117,7 +119,7 @@ func NewHandler(dependencies Dependencies) http.Handler {
 		})
 	}
 	if dependencies.LineWebhook != nil {
-		registerLineWebhookRoutes(router, dependencies.LineWebhook)
+		registerLineWebhookRoutes(router, dependencies.LineWebhook, dependencies.LineWebhookForwardURL, dependencies.Logger)
 	}
 	if dependencies.AdminAuth != nil {
 		registerAdminAuthRoutes(router, dependencies.AdminAuth, dependencies.SecureCookies)

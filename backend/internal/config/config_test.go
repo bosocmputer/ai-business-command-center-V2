@@ -288,6 +288,26 @@ func TestLoadValidatesOptionalLineChannelSecret(t *testing.T) {
 	if err != nil || cfg.LineMessagingChannelSecret != "" {
 		t.Fatalf("absent secret must stay optional: %q, %v", cfg.LineMessagingChannelSecret, err)
 	}
+	forward := func(value string) (Config, error) {
+		return Load(func(key string) (string, bool) {
+			if key == "LINE_WEBHOOK_FORWARD_URL" {
+				return value, value != ""
+			}
+			result, ok := base[key]
+			return result, ok
+		})
+	}
+	if cfg, err := forward(""); err != nil || cfg.LineWebhookForwardURL != "" {
+		t.Fatalf("the pass-on address is optional: %q %v", cfg.LineWebhookForwardURL, err)
+	}
+	if cfg, err := forward("http://assistant:8646/line/webhook"); err != nil || cfg.LineWebhookForwardURL != "http://assistant:8646/line/webhook" {
+		t.Fatalf("a plain internal address must be accepted: %q %v", cfg.LineWebhookForwardURL, err)
+	}
+	for _, bad := range []string{"assistant:8646/line/webhook", "ftp://assistant/x", "http://user:pass@assistant/x", "http:///x"} {
+		if _, err := forward(bad); err == nil {
+			t.Fatalf("pass-on address %q must be refused", bad)
+		}
+	}
 	cfg, err = load("0123456789abcdef0123456789abcdef")
 	if err != nil || cfg.LineMessagingChannelSecret != "0123456789abcdef0123456789abcdef" {
 		t.Fatalf("valid secret rejected: %v", err)

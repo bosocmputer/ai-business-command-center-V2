@@ -19,18 +19,20 @@ const production = "production"
 type LookupFunc func(string) (string, bool)
 
 type Config struct {
-	Environment                  string
-	HTTPAddr                     string
-	DatabaseURL                  string
-	PublicBaseURL                *url.URL
-	AdminUsername                string
-	AdminPasswordHash            string
-	SessionHMACKey               []byte
-	EncryptionMasterKey          []byte
-	EncryptionKeyID              string
-	LineLoginChannelID           string
-	LineMessagingAccessToken     string
-	LineMessagingChannelSecret   string
+	Environment                string
+	HTTPAddr                   string
+	DatabaseURL                string
+	PublicBaseURL              *url.URL
+	AdminUsername              string
+	AdminPasswordHash          string
+	SessionHMACKey             []byte
+	EncryptionMasterKey        []byte
+	EncryptionKeyID            string
+	LineLoginChannelID         string
+	LineMessagingAccessToken   string
+	LineMessagingChannelSecret string
+	// LineWebhookForwardURL, when set, is where a LINE webhook that passed the signature check is passed on to (the assistant).
+	LineWebhookForwardURL        string
 	SMLAllowedPrefixes           []netip.Prefix
 	SMLAllowedHosts              []string
 	SMLAllowPublicEndpoints      bool
@@ -150,6 +152,14 @@ func Load(lookup LookupFunc) (Config, error) {
 	lineMessagingChannelSecret = strings.TrimSpace(lineMessagingChannelSecret)
 	if lineMessagingChannelSecret != "" && !isLowerHex(lineMessagingChannelSecret, 32) {
 		return Config{}, errors.New("LINE_MESSAGING_CHANNEL_SECRET must be the 32-character hex channel secret")
+	}
+	lineWebhookForwardURL, _ := lookup("LINE_WEBHOOK_FORWARD_URL")
+	lineWebhookForwardURL = strings.TrimSpace(lineWebhookForwardURL)
+	if lineWebhookForwardURL != "" {
+		parsed, parseErr := url.Parse(lineWebhookForwardURL)
+		if parseErr != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
+			return Config{}, errors.New("LINE_WEBHOOK_FORWARD_URL must be an http or https URL with a host and no credentials")
+		}
 	}
 	allowedPrefixes, err := parseAllowedPrefixes(values["SML_ALLOWED_CIDRS"])
 	if err != nil {
@@ -347,6 +357,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		LineLoginChannelID:           lineLoginChannelID,
 		LineMessagingAccessToken:     lineMessagingAccessToken,
 		LineMessagingChannelSecret:   lineMessagingChannelSecret,
+		LineWebhookForwardURL:        lineWebhookForwardURL,
 		SMLAllowedPrefixes:           allowedPrefixes,
 		SMLAllowedHosts:              allowedHosts,
 		SMLAllowPublicEndpoints:      allowPublicEndpoints,

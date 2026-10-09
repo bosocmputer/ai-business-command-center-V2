@@ -56,31 +56,6 @@ services:
     logging: *assistant-logging
     networks: [agent, egress]
 
-  # LINE's webhook door. Only started with the `line` profile (docker compose --profile line up -d assistant-ingress). It listens on
-  # 127.0.0.1:8646 of the host, where the tunnel points, and forwards one thing (POST /line/webhook) to the assistant over the
-  # internal agent network; the assistant itself never leaves that network. See ingress_proxy.py.
-  assistant-ingress:
-    <<: *assistant-lock
-    profiles: [line]
-    image: *assistant-image
-    user: "10000:10000"
-    entrypoint: ["/opt/hermes/.venv/bin/python", "/assistant/ingress_proxy.py", "8646"]
-    environment:
-      INGRESS_UPSTREAM: http://assistant:8646
-    ports:
-      - "127.0.0.1:8646:8646"
-    volumes:
-      - ./assistant:/assistant:ro
-    mem_limit: 128m
-    pids_limit: 64
-    init: true
-    restart: unless-stopped
-    logging: *assistant-logging
-    networks: [agent, ingress]
-    depends_on:
-      assistant:
-        condition: service_started
-
   assistant:
     <<: *assistant-lock
     image: *assistant-image
@@ -143,9 +118,6 @@ networks:
     driver: bridge
     internal: true
   egress:
-    driver: bridge
-  # Only the LINE door sits here (published on the host's loopback); the assistant is not on it.
-  ingress:
     driver: bridge
 
 volumes:

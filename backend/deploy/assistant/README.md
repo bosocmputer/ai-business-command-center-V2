@@ -282,29 +282,27 @@ no live fetch is needed.
   incident was resolved at 15:45:51 (the probe counts "starting" as healthy) and the recovery message went out at 15:45:52.
   The alert text says "บริการระบบ AI-BCC" and shows the technical code, not that it is the owner assistant.
 
-## LINE (a second channel for the same assistant)
+## LINE (the same channel that sends the daily report cards)
 
-Hermes ships a LINE adapter. Here it is added without opening the assistant to the internet:
+Hermes ships a LINE adapter. The assistant uses the shop's existing LINE Official Account (the one that already sends the report cards), so
+the owner has one account to follow:
 
 ```
-LINE  ->  https tunnel  ->  127.0.0.1:8646 (host)  ->  assistant-ingress  ->  assistant:8646 (internal agent network)
+LINE -> the existing webhook (AI-BCC api, signature checked) -> passed on untouched -> assistant:8646 (internal agent network)
 ```
 
-- `assistant-ingress` (compose profile `line`, `ingress_proxy.py`) forwards exactly one request type, `POST /line/webhook`, with only the
-  `Content-Type` and `X-Line-Signature` headers; anything else is 404, a body over 1 MiB 413, more than 120 a minute 429. The assistant itself
-  verifies the signature with the channel secret. It logs one JSON line per request (decision and status, never a body).
-- Use a **separate LINE Official Account / Messaging API channel** for the assistant. The channel that already sends the report cards has its
-  webhook pointed at AI-BCC (recipient verification), and a channel has one webhook only.
-- Needed on the server, none of it in the repo: `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_CHANNEL_SECRET` and `LINE_ALLOWED_USERS` (the owner's LINE user id,
-  `U...`), each entered with `./assistant/set-secret.sh NAME`. Without the allowed-users list the channel does not start (entrypoint.sh), and groups
-  are ignored (`group_policy: disabled`).
-- Egress: add `api.line.me` and `api-data.line.me` to `ASSISTANT_EGRESS_ALLOW` in `.env.production`.
-- Start the door: `docker compose --profile line up -d assistant-ingress`, then point a tunnel at `http://127.0.0.1:8646`
-  (`cloudflared tunnel --url http://127.0.0.1:8646`) and set the channel's webhook URL to `https://<tunnel host>/line/webhook` (Verify in the console).
-- **A free quick tunnel changes its address every time it restarts**, and then the webhook URL in the LINE console must be changed by hand. Fine
-  for a pilot, not for a shop that is paying: move to a named tunnel or a real domain first.
-- Differences from Telegram: a reply made after about 50 seconds (a file export) is sent with LINE's push API, which the account's plan counts and
-  limits, and the owner sees a "tap to get the answer" button for answers slower than 45 seconds (texts are Thai, set in compose). LINE bots cannot send
-  a document as an attachment, only a link, so file delivery on LINE needs the media path (`/line/media/...`) opened on the door too: not done yet.
-- Find the owner's user id: with `LINE_ALLOWED_USERS` unset the channel does not start; read it from the LINE console (Basic settings > Your user ID)
-  of the owner's own account, or from the webhook event the first message produces.
+- AI-BCC's webhook only records follow and unfollow events and never replies, so the two do not collide. With `LINE_WEBHOOK_FORWARD_URL`
+  (api setting, e.g. `http://assistant:8646/line/webhook`) a webhook that passed the signature check is passed on in the background, with
+  its signature, never delaying or changing the answer to LINE and never logging a body (`internal/httpapi/line_webhook_handler.go`).
+  The assistant checks the same signature again with the same channel secret. The LINE console keeps its webhook URL: nothing is opened to
+  the internet for the assistant.
+- Needed on the server, none of it in the repo: `LINE_CHANNEL_ACCESS_TOKEN` (the channel's long-lived token, the same value as
+  `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN`), `LINE_CHANNEL_SECRET` (same as `LINE_MESSAGING_CHANNEL_SECRET`) and `LINE_ALLOWED_USERS` (the owner's LINE
+  user id, `U...`), each entered with `./assistant/set-secret.sh NAME`. Without the allowed-users list the channel does not start
+  (entrypoint.sh) and groups are ignored (`group_policy: disabled`).
+- Egress: `api.line.me` and `api-data.line.me` in `ASSISTANT_EGRESS_ALLOW` (done on the pilot server).
+- Differences from Telegram: a reply made after about 50 seconds (a file export) is sent with LINE's push API, which the account's plan
+  counts and limits, and an answer slower than 45 seconds shows a "tap to get the answer" button (texts are Thai, set in compose). LINE bots
+  cannot send a document as an attachment, only a link, so file delivery over LINE needs Hermes' media path (`/line/media/...`) reachable from
+  outside: not done. Until then an export asked for on LINE cannot be delivered.
+- Find the owner's user id: the LINE Developers console (Basic settings > Your user ID) of the owner's own account.
