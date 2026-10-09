@@ -127,3 +127,9 @@ export const reportDefinitions: ReportDefinition[] = [
 ];
 
 export const reportDefinitionByKey = new Map(reportDefinitions.map((item) => [item.reportKey, item]));
+
+export type AssistantSettings = components['schemas']['AssistantSettings'];
+export type AssistantSettingsInput = components['schemas']['AssistantSettingsInput'];
+export type AssistantModel = components['schemas']['AssistantModel'];
+export type AssistantGlobalSettings = components['schemas']['AssistantGlobalSettings'];
+export type AssistantSecretField = 'openrouter-key' | 'telegram-bot-token' | 'line-channel-secret' | 'line-channel-token';

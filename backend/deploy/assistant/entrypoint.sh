@@ -5,6 +5,17 @@
 set -u
 HERMES=/opt/hermes/bin/hermes
 MAINT_HOUR="${MAINTENANCE_HOUR_UTC:-21}"
+# Settings from AI-BCC (model, the shop's OpenRouter key, Telegram and LINE secrets) instead of files on the server, when
+# ASSISTANT_CONFIG_PULL=on. The shell lines it prints either export a secret or unset it; a shop that must not run gets everything unset, so no
+# chat platform starts. If AI-BCC has never answered and there is no earlier copy, the old way (hermes.env and config.yaml) is kept.
+CONFIG_PULLED=0
+if [ "${ASSISTANT_CONFIG_PULL:-off}" = on ]; then
+  if PULLED=$(/opt/hermes/.venv/bin/python /assistant/config_pull.py start); then
+    eval "$PULLED"; CONFIG_PULLED=1
+  else
+    echo '{"config":"pull failed: the settings from hermes.env and config.yaml are used"}'
+  fi
+fi
 # Fail closed: a bot token without a list of allowed people would let anyone who finds the bot ask for the shop's numbers.
 if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -z "${TELEGRAM_ALLOWED_USERS:-}" ]; then
   echo '{"telegram":"not started: TELEGRAM_BOT_TOKEN is set but TELEGRAM_ALLOWED_USERS is empty"}'
@@ -23,7 +34,7 @@ fi
 if [ -n "${TELEGRAM_ALLOWED_USERS:-}" ] && [ -z "${TELEGRAM_HOME_CHANNEL:-}" ]; then
   export TELEGRAM_HOME_CHANNEL="${TELEGRAM_ALLOWED_USERS%%,*}"
 fi
-cp /assistant/config.yaml /opt/data/config.yaml
+[ "$CONFIG_PULLED" = 1 ] || cp /assistant/config.yaml /opt/data/config.yaml
 mkdir -p /opt/data/outbox
 # Alerts: the routes AI-BCC's worker posts to (see render_routes.py). Without a secret nothing is opened.
 /opt/hermes/.venv/bin/python /assistant/render_routes.py
@@ -69,9 +80,21 @@ while true; do
       /opt/hermes/.venv/bin/python /assistant/prewarm.py &
     fi
     ticks=$((ticks + 1))
+    # Every minute ask AI-BCC whether the settings changed; if so, restart as soon as no conversation is running (the container is
+    # restarted by its restart policy and pulls the new settings when it starts).
+    if [ "$CONFIG_PULLED" = 1 ] && [ $((ticks % 2)) = 0 ] && /opt/hermes/.venv/bin/python /assistant/config_pull.py changed; then
+      if /opt/hermes/.venv/bin/python /assistant/is_idle.py; then restart_for_config=1; break; fi
+    fi
     if [ $((ticks % GUARD_TICKS)) = 0 ]; then /opt/hermes/.venv/bin/python /assistant/memory_guard.py --apply --locked; fi
     sleep 30 & wait $!
   done
+  if [ "${restart_for_config:-0}" = 1 ]; then
+    echo '{"config":"settings changed: restarting to use them"}'
+    kill -TERM "$GW" 2>/dev/null
+    for _ in $(seq 1 60); do kill -0 "$GW" 2>/dev/null || break; sleep 1; done
+    kill -KILL "$GW" 2>/dev/null; wait "$GW" 2>/dev/null
+    GW=""; exit 0
+  fi
   if [ "$maintenance" = 0 ]; then
     wait "$GW"; exit $?
   fi

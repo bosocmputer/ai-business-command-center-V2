@@ -12,6 +12,7 @@ import { formatSMLTestCooldown, resolveSMLJavaWSEndpoint } from '@/utils/smlConn
 import { statusLabel } from '@/utils/status';
 import SakaiTableHeader from '@/components/table/SakaiTableHeader.vue';
 import ReportModesPanel from '@/components/admin/ReportModesPanel.vue';
+import AssistantSettingsPanel from '@/components/admin/AssistantSettingsPanel.vue';
 import { useServerTable } from '@/composables/useServerTable';
 import { useSakaiFilterMenu } from '@/composables/useSakaiFilterMenu';
 import { normalizeScheduleTableRow, toRecipientQueryInput, type RecipientTableFilters } from '@/utils/adminTableFilters';
@@ -605,7 +606,7 @@ onBeforeUnmount(() => {
       <div class="flex flex-wrap gap-2"><Tag :severity="tenant.status === 'ACTIVE' ? 'success' : 'secondary'" :value="statusLabel(tenant.status)" /><Tag :severity="sml?.readinessStatus === 'READY' ? 'success' : 'warn'" :value="`SML ${statusLabel(sml?.readinessStatus ?? 'UNCONFIGURED')}`" /></div>
     </div>
     <div class="card"><Tabs v-model:value="activeTab">
-      <TabList><Tab value="overview">ข้อมูลร้าน</Tab><Tab value="sml">การเชื่อมต่อ SML</Tab><Tab value="refresh">ความสดและการดึงข้อมูล</Tab><Tab value="recipients">ผู้รับและสิทธิ์</Tab><Tab value="schedules">ตารางส่ง LINE</Tab><Tab value="modes">โหมดรายงาน</Tab></TabList>
+      <TabList><Tab value="overview">ข้อมูลร้าน</Tab><Tab value="sml">การเชื่อมต่อ SML</Tab><Tab value="refresh">ความสดและการดึงข้อมูล</Tab><Tab value="recipients">ผู้รับและสิทธิ์</Tab><Tab value="schedules">ตารางส่ง LINE</Tab><Tab value="modes">โหมดรายงาน</Tab><Tab value="assistant">เลขา AI</Tab></TabList>
       <TabPanels>
         <TabPanel value="overview"><form class="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-4xl" @submit.prevent="saveTenant"><div class="grid gap-2"><label for="tenant-name">ชื่อร้าน</label><InputText id="tenant-name" v-model="tenantForm.name" fluid /></div><div class="grid gap-2"><label for="tenant-status">สถานะ</label><Select input-id="tenant-status" aria-label="สถานะ" v-model="tenantForm.status" :options="['ACTIVE','DISABLED','EXPIRED']" fluid /></div><div class="grid gap-2"><label for="tenant-access-end">สิ้นสุดสิทธิ์ (เวลาไทย)</label><DatePicker input-id="tenant-access-end" v-model="tenantForm.accessEndsAt" show-icon show-time hour-format="24" fluid /></div><div class="md:col-span-2 flex items-center gap-3"><Button type="submit" label="บันทึกข้อมูลร้าน" icon="pi pi-save" :loading="savingTenant" :disabled="savingTenant || !tenantDirty" /><small v-if="tenantDirty" class="text-orange-600">มีการแก้ไขที่ยังไม่บันทึก</small></div><div class="md:col-span-2 flex flex-wrap items-center justify-between gap-3 border-t border-surface pt-4"><div><div class="font-semibold">ลิงก์ Dashboard ของร้าน</div><small class="text-muted-color">ลิงก์นี้ไม่โอนหรือเพิ่มสิทธิ์ ผู้รับต้องยืนยัน LINE และได้รับสิทธิ์ร้านนี้อยู่แล้ว</small></div><Button label="คัดลอกลิงก์ Dashboard" icon="pi pi-copy" outlined :disabled="!tenant.viewerUrl" @click="copyDashboardLink" /></div></form><Accordion class="mt-6 max-w-4xl"><AccordionPanel value="technical"><AccordionHeader>ข้อมูลทางเทคนิค</AccordionHeader><AccordionContent><div class="flex flex-wrap items-center gap-3"><div><div class="text-sm text-muted-color">รหัสระบบ</div><code>{{ tenant.slug }}</code></div><Button label="คัดลอกรหัส" icon="pi pi-copy" text @click="copySlug" /></div></AccordionContent></AccordionPanel></Accordion></TabPanel>
         <TabPanel value="sml">
@@ -708,6 +709,7 @@ onBeforeUnmount(() => {
           </DataTable>
         </TabPanel>
         <TabPanel value="modes"><ReportModesPanel :tenant-id="tenantId" /></TabPanel>
+        <TabPanel value="assistant"><AssistantSettingsPanel :tenant-id="tenantId" /></TabPanel>
       </TabPanels>
     </Tabs></div>
   </template>

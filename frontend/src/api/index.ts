@@ -1,5 +1,6 @@
 import { apiRequest, newIdempotencyKey, queryString } from './client';
 import type {
+  AssistantGlobalSettings, AssistantSecretField, AssistantSettings, AssistantSettingsInput,
   AdminReportCatalog, AdminSession, AgentIssuedToken, AgentTokenStatus, AuditPage, CreateReportRunInput, DataPage, DeliveryPage, Recipient, RecipientPage, ReportDefinition,
   FlexPreview, FlexPreviewInput, LineQuotaStatus, MonitorHistory, MonitorSample, ReportMode, ReportModeItem, ReportModeMeasurement, NotificationExecution, ReportKey, ReportRowPage, ReportRowQueryInput, ReportRowQueryPage, ReportRun, ReportRunDetail, ReportRunPage, Schedule, ScheduleInput, SchedulePage, SchedulePatch,
   SMLConnectionInput, SMLConnectionStatus, SMLConnectionTestResult, Tenant, TenantInput, TenantPage, TenantPatch,
@@ -55,6 +56,12 @@ export const adminApi = {
   restoreSchedule: (tenantId: string, scheduleId: string, version: number) => apiRequest<Schedule>(`${api}/admin/tenants/${tenantId}/schedules/${scheduleId}/restore${queryString({ version })}`, { method: 'POST', scope: 'admin' }),
   testSendSchedule: (tenantId: string, scheduleId: string, idempotencyKey = newIdempotencyKey('schedule-test-send')) => apiRequest<NotificationExecution>(`${api}/admin/tenants/${tenantId}/schedules/${scheduleId}/test-send`, { method: 'POST', scope: 'admin', idempotencyKey }),
   lineQuota: () => apiRequest<LineQuotaStatus>(`${api}/admin/line-quota`),
+  getAssistant: (tenantId: string, signal?: AbortSignal) => apiRequest<AssistantSettings>(`${api}/admin/tenants/${tenantId}/assistant`, { signal }),
+  updateAssistant: (tenantId: string, input: AssistantSettingsInput) => apiRequest<AssistantSettings>(`${api}/admin/tenants/${tenantId}/assistant`, { method: 'PUT', scope: 'admin', body: input }),
+  setAssistantSecret: (tenantId: string, field: AssistantSecretField, value: string, adminPassword: string) => apiRequest<AssistantSettings>(`${api}/admin/tenants/${tenantId}/assistant/secrets/${field}`, { method: 'PUT', scope: 'admin', body: { value, adminPassword } }),
+  clearAssistantSecret: (tenantId: string, field: AssistantSecretField, adminPassword: string) => apiRequest<AssistantSettings>(`${api}/admin/tenants/${tenantId}/assistant/secrets/${field}/clear`, { method: 'POST', scope: 'admin', body: { adminPassword } }),
+  getAssistantGlobal: (signal?: AbortSignal) => apiRequest<AssistantGlobalSettings>(`${api}/admin/assistant/global`, { signal }),
+  setAssistantGlobalSecret: (field: 'line-channel-secret' | 'line-channel-token', value: string, adminPassword: string) => apiRequest<AssistantGlobalSettings>(`${api}/admin/assistant/global/secrets/${field}`, { method: 'PUT', scope: 'admin', body: { value, adminPassword } }),
   listReportModes: (tenantId: string, signal?: AbortSignal) => apiRequest<{ data: ReportModeItem[] }>(`${api}/admin/tenants/${tenantId}/report-modes`, { signal }),
   setReportMode: (tenantId: string, reportKey: string, mode: ReportMode, reason?: string) => apiRequest<ReportModeItem>(`${api}/admin/tenants/${tenantId}/report-modes/${reportKey}`, { method: 'PUT', scope: 'admin', body: { mode, ...(reason ? { reason } : {}) } }),
   measureReportModes: (tenantId: string) => apiRequest<{ data: ReportModeMeasurement[] }>(`${api}/admin/tenants/${tenantId}/report-modes/measure`, { method: 'POST', scope: 'admin' }),
