@@ -8,6 +8,9 @@ type ExportColumn struct {
 	Key   string `json:"key"`
 	Label string `json:"label"`
 	Type  string `json:"type"`
+	// Total says the column is an amount that makes sense to add up (money). Prices, quantities in mixed units, days and
+	// scores do not, so the file shows no total for them.
+	Total bool `json:"total,omitempty"`
 }
 
 const (
@@ -24,6 +27,14 @@ func numberColumn(key, label string) ExportColumn {
 }
 func dateColumn(key, label string) ExportColumn {
 	return ExportColumn{Key: key, Label: label, Type: columnDate}
+}
+
+// moneyColumns are the number columns that are amounts of money and so are added up in the file's totals.
+var moneyColumns = map[string]bool{
+	"sum_amount": true, "total_amount": true, "amount_sale": true, "cost_sale": true, "amount_sale_return": true, "cost_sale_return": true,
+	"balance_amount": true, "amount_in": true, "amount_out": true, "monetary": true, "sales_amount": true, "amount": true, "paid_amount": true,
+	"balance": true, "total_net_value": true, "cash_amount": true, "transfer_amount": true, "card_amount": true, "chq_amount": true,
+	"coupon_amount": true, "petty_cash_amount": true,
 }
 
 // exportColumns are the columns of each report's detail rows, in the order and with the headings the web page uses. The
@@ -117,6 +128,6 @@ var exportNameColumns = map[report.Key][]string{
 
 // exportNotes say, per report, what the rows are, so a file does not get read as something it is not.
 var exportNotes = map[report.Key]string{
-	report.SalesGoodsServices:    "แต่ละแถวคือหนึ่งรายการสินค้าในเอกสารขาย (ใบคืนติดลบ) มูลค่ารายการยังไม่หักส่วนลดท้ายบิลและยังไม่รวม VAT จึงรวมแล้วอาจไม่เท่ายอดขายสุทธิรวม VAT ในรายงานสรุป",
-	report.PurchaseGoodsPayables: "แต่ละแถวคือหนึ่งรายการสินค้าในเอกสารซื้อ มูลค่ารายการยังไม่หักส่วนลดท้ายบิลและยังไม่รวม VAT จึงรวมแล้วอาจไม่เท่ายอดซื้อรวม VAT ในรายงานสรุป",
+	report.SalesGoodsServices:    "ข้อมูลมีสองแบบ แถวระดับเอกสาร (ยอดขายรายใบ รวม VAT ใบคืนติดลบ) และแถวระดับรายการสินค้า (มูลค่ารายการ) ยอดขายของรายงานคือผลรวมของแถวระดับเอกสาร ผลรวมของรายการสินค้าอาจต่างได้เมื่อมีส่วนลดท้ายบิลหรือ VAT",
+	report.PurchaseGoodsPayables: "ข้อมูลมีสองแบบ แถวระดับเอกสาร (ยอดซื้อรายใบ) และแถวระดับรายการสินค้า (มูลค่ารายการ) ยอดซื้อของรายงานคือผลรวมของแถวระดับเอกสาร ผลรวมของรายการสินค้าอาจต่างได้เมื่อมีส่วนลดท้ายบิลหรือ VAT",
 }

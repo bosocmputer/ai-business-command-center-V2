@@ -186,7 +186,7 @@ class TableSumsTests(unittest.TestCase):
 COLUMNS = [
     {"key": "doc_date", "label": "วันที่", "type": "date"}, {"key": "doc_no", "label": "เลขที่เอกสาร", "type": "text"},
     {"key": "cust_name", "label": "ลูกค้า", "type": "text"}, {"key": "qty", "label": "จำนวน", "type": "number"},
-    {"key": "sum_amount", "label": "มูลค่ารายการ", "type": "number"}, {"key": "empty", "label": "ว่าง", "type": "text"},
+    {"key": "sum_amount", "label": "มูลค่ารายการ", "type": "number", "total": True}, {"key": "empty", "label": "ว่าง", "type": "text"},
 ]
 ROWS = [
     ["2026-09-01", "IV-0001", "ลูกค้า-AB12", "2.0000", "250.50", ""],
@@ -206,7 +206,7 @@ class ExportFileTests(unittest.TestCase):
     def test_every_row_goes_in_with_thai_headings_and_an_unused_column_is_left_out(self):
         result = self.make()
         self.assertEqual(result["rows"], 3)
-        self.assertNotIn("ว่าง", result["columns"])
+        self.assertNotIn("ว่าง", result["sheets"][0]["columns"])
         self.assertEqual(result["reply_line"], "MEDIA:" + result["path"])
         with zipfile.ZipFile(result["path"]) as archive:
             sheets = tools.xlsx_sheets(archive)
@@ -227,9 +227,24 @@ class ExportFileTests(unittest.TestCase):
         self.assertIn('<pane ySplit="1"', xml)
         self.assertIn("<autoFilter", xml)
 
-    def test_totals_are_worked_out_by_the_tool_for_number_columns_only(self):
+    def test_totals_are_worked_out_by_the_tool_for_money_columns_only(self):
         sums = {item["column"]: item["sum"] for item in self.make()["column_sums"]}
-        self.assertEqual(sums, {"จำนวน": "11.00", "มูลค่ารายการ": "1150.75"})
+        self.assertEqual(sums, {"มูลค่ารายการ": "1150.75"})  # a quantity (units differ) is not added
+
+    def test_a_report_with_documents_and_lines_gets_two_sheets_each_with_its_own_columns(self):
+        columns = [
+            {"key": "doc_no", "label": "เลขที่เอกสาร", "type": "text"}, {"key": "item_code", "label": "รหัสสินค้า", "type": "text"},
+            {"key": "sum_amount", "label": "มูลค่ารายการ", "type": "number", "total": True}, {"key": "total_amount", "label": "ยอดขาย", "type": "number", "total": True},
+        ]
+        rows = [["IV-1", "", "", "300"], ["IV-1", "A01", "100", ""], ["IV-1", "A02", "200", ""], ["IV-2", "", "", "-50"]]
+        result = tools.export_file("xlsx", "x", "รายงานขาย", "p", "t", columns, rows, split=("item_code", "เอกสาร", "รายการสินค้า"), outbox=self.box)
+        self.assertEqual([(sheet["name"], sheet["rows"]) for sheet in result["sheets"]], [("เอกสาร", 2), ("รายการสินค้า", 2)])
+        self.assertEqual(result["sheets"][0]["columns"], ["เลขที่เอกสาร", "ยอดขาย"])
+        self.assertEqual(result["sheets"][1]["columns"], ["เลขที่เอกสาร", "รหัสสินค้า", "มูลค่ารายการ"])
+        sums = {(item["sheet"], item["column"]): item["sum"] for item in result["column_sums"]}
+        self.assertEqual(sums, {("เอกสาร", "ยอดขาย"): "250.00", ("รายการสินค้า", "มูลค่ารายการ"): "300.00"})
+        with zipfile.ZipFile(result["path"]) as archive:
+            self.assertEqual(len(tools.xlsx_sheets(archive)), 3)
 
     def test_the_explanation_sheet_says_what_the_file_is(self):
         result = self.make()

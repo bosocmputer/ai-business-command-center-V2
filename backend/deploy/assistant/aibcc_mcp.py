@@ -27,6 +27,11 @@ POLL_SECONDS = float(os.environ.get("AIBCC_POLL_SECONDS", "6"))
 # Fetching every row of a report from the shop's system takes one to several minutes; the tool waits that long, then lets the owner ask again.
 EXPORT_WAIT_SECONDS = float(os.environ.get("AIBCC_EXPORT_WAIT_SECONDS", "240"))
 EXPORT_POLL_SECONDS = float(os.environ.get("AIBCC_EXPORT_POLL_SECONDS", "15"))
+# A sales or purchase report carries the documents and their lines in one list; the file puts them on two sheets.
+EXPORT_SPLIT = {
+    "sales_goods_services": ("item_code", "เอกสาร", "รายการสินค้า"),
+    "purchase_goods_payables": ("item_code", "เอกสาร", "รายการสินค้า"),
+}
 mcp = FastMCP("aibcc")
 
 
@@ -215,6 +220,7 @@ def export_report(report_key: str, date_from: str = "", date_to: str = "", kind:
         return secretary_tools.export_file(
             kind, name, merged.get("label", report_key), f"{period.get('dateFrom', '')} ถึง {period.get('dateTo', '')}",
             merged.get("collectedAt", ""), merged.get("columns") or [], merged.get("rows") or [], merged.get("notes"),
+            split=EXPORT_SPLIT.get(report_key),
         ) | {"period": period, "collected_at": merged.get("collectedAt", ""), "truncated": bool(merged.get("truncated")),
              "total_rows": merged.get("totalRows", 0), "notes": merged.get("notes") or []}
     return as_json(build)

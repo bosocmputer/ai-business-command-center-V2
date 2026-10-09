@@ -241,11 +241,63 @@ def xlsx_workbook(sheets):
     return buffer.getvalue()
 
 
-def export_file(kind, name, label, period, collected_at, columns, rows, notes=None, outbox=None):
-    """A file made from the real rows of a report. columns are [{"key","label","type"}] and rows are lists of text cells in the same
-    order, as AI-BCC gave them. Nothing is typed by the model: the cells go into the file exactly as they came, numbers as numbers
-    and dates as dates, a column with nothing in it is left out, and totals are worked out here. xlsx has a second sheet that says what
-    the file is, for which period and as of when. Returns what make_file returns plus rows, columns and column_sums."""
+def prune(columns, rows):
+    """The columns that have something in at least one row, with the rows cut to them."""
+    keep = [i for i in range(len(columns)) if any(i < len(row) and str(row[i]).strip() for row in rows)]
+    return [columns[i] for i in keep], [[(row[i] if i < len(row) else "") for i in keep] for row in rows]
+
+
+def column_totals(columns, rows):
+    """Totals of the money columns only (the server marks them total: true). Prices, quantities in mixed units and days are not added."""
+    totals = []
+    for index, column in enumerate(columns):
+        if column.get("type") != "number" or not column.get("total"):
+            continue
+        numbers = [as_number(row[index]) for row in rows if str(row[index]).strip()]
+        numbers = [number for number in numbers if number is not None]
+        if numbers:
+            totals.append({"column": column["label"], "rows": len(numbers), "sum": str(sum(numbers).quantize(Decimal("0.01")))})
+    return totals
+
+
+def data_sheet(columns, rows):
+    """The worksheet of one table of rows: bold frozen filterable header, numbers as numbers, dates as dates, sensible widths."""
+    sheet = [[("s", column["label"]) for column in columns]]
+    styles = {}
+    for index, column in enumerate(columns):
+        if column.get("type") == "date":
+            styles[index] = STYLE_DATE
+        elif column.get("type") == "number":
+            texts = [number_text(row[index]) for row in rows if str(row[index]).strip()]
+            styles[index] = STYLE_INTEGER if all(t is not None and "." not in t for t in texts) else STYLE_DECIMAL
+    for row in rows:
+        cells = []
+        for index, cell in enumerate(row):
+            column_type = columns[index].get("type")
+            text = str(cell)
+            if not text.strip():
+                cells.append(("s", ""))
+            elif column_type == "number" and number_text(text) is not None:
+                cells.append(("n", number_text(text)))
+            elif column_type == "date" and excel_date(text) is not None:
+                cells.append(("d", excel_date(text)))
+            else:
+                cells.append(("s", text))
+        sheet.append(cells)
+    widths = []
+    for index, column in enumerate(columns):
+        longest = max([len(str(column["label"]))] + [len(str(row[index])) for row in rows[:200]])
+        widths.append(min(max(10, longest + 2), 48))
+    return sheet_xml(sheet, styles, widths, header=True)
+
+
+def export_file(kind, name, label, period, collected_at, columns, rows, notes=None, split=None, outbox=None):
+    """A file made from the real rows of a report. columns are [{"key","label","type","total"}] and rows are lists of text cells in the same
+    order, as AI-BCC gave them. Nothing is typed by the model: the cells go into the file exactly as they came, numbers as numbers and
+    dates as dates, a column with nothing in it is left out, and totals of the money columns are worked out here. xlsx has a last sheet
+    that says what the file is, for which period and as of when. split=(column_key, name_without, name_with) puts the rows that have
+    something in that column on one sheet and the others on another (a sales report carries the documents and their lines together).
+    Returns what make_file returns plus rows, columns and column_sums."""
     kind = str(kind or "xlsx").lower().strip()
     if kind not in ("xlsx", "csv"):
         raise ToolError("ไฟล์จากรายงานทำได้เฉพาะ xlsx (Excel) หรือ csv")
@@ -253,61 +305,38 @@ def export_file(kind, name, label, period, collected_at, columns, rows, notes=No
         raise ToolError("รายงานช่วงนี้ไม่มีรายการให้ใส่ในไฟล์")
     if len(rows) > EXPORT_MAX_ROWS:
         raise ToolError("แถวมากเกินกว่าที่ทำเป็นไฟล์เดียวได้")
-    keep = [i for i in range(len(columns)) if any(i < len(row) and str(row[i]).strip() for row in rows)]
-    columns = [columns[i] for i in keep]
-    rows = [[(row[i] if i < len(row) else "") for i in keep] for row in rows]
+    keys = [column["key"] for column in columns]
+    if split and split[0] in keys:
+        at = keys.index(split[0])
+        without = [row for row in rows if not str(row[at]).strip()]
+        with_ = [row for row in rows if str(row[at]).strip()]
+        groups = [(title, *prune(columns, part)) for title, part in ((split[1], without), (split[2], with_)) if part]
+    else:
+        groups = [("ข้อมูล", *prune(columns, rows))]
     sums = []
-    for index, column in enumerate(columns):
-        if column.get("type") != "number":
-            continue
-        values = [as_number(row[index]) for row in rows if str(row[index]).strip()]
-        numbers = [v for v in values if v is not None]
-        if numbers:
-            sums.append({"column": column["label"], "rows": len(numbers), "sum": str(sum(numbers).quantize(Decimal("0.01")))})
-    head = [column["label"] for column in columns]
+    for title, group_columns, group_rows in groups:
+        for item in column_totals(group_columns, group_rows):
+            sums.append({**item, "sheet": title} if len(groups) > 1 else item)
     if kind == "csv":
         buffer = io.StringIO()
         writer = csv.writer(buffer)
-        writer.writerow(head)
-        for row in rows:
-            writer.writerow([number_text(cell) or cell if columns[i].get("type") == "number" else cell for i, cell in enumerate(row)])
+        for title, group_columns, group_rows in groups:
+            if len(groups) > 1:
+                writer.writerow([title])
+            writer.writerow([column["label"] for column in group_columns])
+            for row in group_rows:
+                writer.writerow([(number_text(cell) or cell) if group_columns[i].get("type") == "number" else cell for i, cell in enumerate(row)])
         data = ("\ufeff" + buffer.getvalue()).encode("utf-8")
     else:
-        sheet = [[("s", label_) for label_ in head]]
-        styles = {}
-        for index, column in enumerate(columns):
-            if column.get("type") == "date":
-                styles[index] = STYLE_DATE
-            elif column.get("type") == "number":
-                texts = [number_text(row[index]) for row in rows if str(row[index]).strip()]
-                styles[index] = STYLE_INTEGER if all(t is not None and "." not in t for t in texts) else STYLE_DECIMAL
-        for row in rows:
-            cells = []
-            for index, cell in enumerate(row):
-                column_type = columns[index].get("type")
-                text = str(cell)
-                if not text.strip():
-                    cells.append(("s", ""))
-                elif column_type == "number" and number_text(text) is not None:
-                    cells.append(("n", number_text(text)))
-                elif column_type == "date" and excel_date(text) is not None:
-                    cells.append(("d", excel_date(text)))
-                else:
-                    cells.append(("s", text))
-            sheet.append(cells)
-        widths = []
-        for index, column in enumerate(columns):
-            longest = max([len(str(column["label"]))] + [len(str(row[index])) for row in rows[:200]])
-            widths.append(min(max(10, longest + 2), 48))
         about = [
             ("รายงาน", label), ("ช่วงข้อมูล", period), ("ข้อมูล ณ (เวลาที่อ่านจากระบบของร้าน)", collected_at),
-            ("จำนวนแถว", str(len(rows))), ("ที่มา", "AI-BCC อ่านจาก SML แบบอ่านอย่างเดียว ไม่แก้ไขข้อมูลในระบบ"),
-        ] + [("หมายเหตุ", note) for note in (notes or [])] + [("ผลรวมคอลัมน์ตัวเลข: " + item["column"], item["sum"]) for item in sums]
+            ("ที่มา", "AI-BCC อ่านจาก SML แบบอ่านอย่างเดียว ไม่แก้ไขข้อมูลในระบบ"),
+        ] + [("แผ่น " + title, f"{len(group_rows)} แถว") for title, _, group_rows in groups] \
+          + [("หมายเหตุ", note) for note in (notes or [])] \
+          + [("ผลรวมคอลัมน์เงิน: " + (item["column"] + (f" (แผ่น {item['sheet']})" if "sheet" in item else "")), item["sum"]) for item in sums]
         about_rows = [[("s", "หัวข้อ"), ("s", "รายละเอียด")]] + [[("s", key), ("w", value)] for key, value in about]
-        data = xlsx_workbook([
-            ("ข้อมูล", sheet_xml(sheet, styles, widths, header=True)),
-            ("คำอธิบาย", sheet_xml(about_rows, widths=[38, 90], header=True)),
-        ])
+        data = xlsx_workbook([(title, data_sheet(group_columns, group_rows)) for title, group_columns, group_rows in groups]
+                             + [("คำอธิบาย", sheet_xml(about_rows, widths=[38, 90], header=True))])
     if len(data) > EXPORT_MAX_BYTES:
         raise ToolError("ไฟล์ใหญ่เกิน 15 MB ให้เลือกช่วงวันที่สั้นลง")
     folder = os.path.join(outbox or OUTBOX, secrets.token_hex(6))
@@ -318,8 +347,9 @@ def export_file(kind, name, label, period, collected_at, columns, rows, notes=No
         handle.write(data)
     return {
         "path": path, "name": file_name, "bytes": len(data), "reply_line": "MEDIA:" + path, "rows": len(rows),
-        "columns": [column["label"] for column in columns], "column_sums": sums,
-        "note": "ไฟล์นี้สร้างจากแถวรายงานจริงของระบบโดยไม่ผ่านการพิมพ์ของโมเดล ผลรวมในช่อง column_sums คำนวณโดยเครื่องมือ ให้ใช้ตัวเลขนี้ ห้ามบวกเอง",
+        "sheets": [{"name": title, "rows": len(group_rows), "columns": [column["label"] for column in group_columns]} for title, group_columns, group_rows in groups],
+        "column_sums": sums,
+        "note": "ไฟล์นี้สร้างจากแถวรายงานจริงของระบบโดยไม่ผ่านการพิมพ์ของโมเดล ผลรวมในช่อง column_sums คำนวณโดยเครื่องมือ (เฉพาะคอลัมน์ที่เป็นจำนวนเงิน) ให้ใช้ตัวเลขนี้ ห้ามบวกเอง",
     }
 
 
