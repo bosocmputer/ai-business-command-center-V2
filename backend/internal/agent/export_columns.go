@@ -34,7 +34,7 @@ var moneyColumns = map[string]bool{
 	"sum_amount": true, "total_amount": true, "amount_sale": true, "cost_sale": true, "amount_sale_return": true, "cost_sale_return": true,
 	"balance_amount": true, "amount_in": true, "amount_out": true, "monetary": true, "sales_amount": true, "amount": true, "paid_amount": true,
 	"balance": true, "total_net_value": true, "cash_amount": true, "transfer_amount": true, "card_amount": true, "chq_amount": true,
-	"coupon_amount": true, "petty_cash_amount": true, "total_value": true, "total_discount": true, "total_except_vat": true,
+	"coupon_amount": true, "petty_cash_amount": true, "total_value": true, "total_discount": true,
 	"total_vat_value": true, "total_except_discount": true,
 }
 
