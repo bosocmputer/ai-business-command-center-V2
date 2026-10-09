@@ -1809,6 +1809,7 @@ components:
               key: {type: string}
               label: {type: string}
               type: {type: string, enum: [text, number, date]}
+              total: {type: boolean, description: "An amount of money that makes sense to add up; prices, quantities in mixed units, days and scores are not."}
         rows: {type: array, items: {type: array, items: {type: string}}}
         totalRows: {type: integer}
         nextCursor: {type: string}

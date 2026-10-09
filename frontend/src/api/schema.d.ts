@@ -1555,6 +1555,8 @@ export interface components {
                 label: string;
                 /** @enum {string} */
                 type: "text" | "number" | "date";
+                /** @description An amount of money that makes sense to add up; prices, quantities in mixed units, days and scores are not. */
+                total?: boolean;
             }[];
             rows?: string[][];
             totalRows?: number;

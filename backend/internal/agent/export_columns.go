@@ -23,7 +23,7 @@ func textColumn(key, label string) ExportColumn {
 	return ExportColumn{Key: key, Label: label, Type: columnText}
 }
 func numberColumn(key, label string) ExportColumn {
-	return ExportColumn{Key: key, Label: label, Type: columnNumber}
+	return ExportColumn{Key: key, Label: label, Type: columnNumber, Total: moneyColumns[key]}
 }
 func dateColumn(key, label string) ExportColumn {
 	return ExportColumn{Key: key, Label: label, Type: columnDate}

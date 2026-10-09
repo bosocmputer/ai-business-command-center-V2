@@ -244,3 +244,38 @@ func TestEveryReportThatHasRowsHasColumnsAndNameColumnsAreInThem(t *testing.T) {
 		}
 	}
 }
+
+func TestOnlyAmountsOfMoneyAreMarkedToBeAddedUp(t *testing.T) {
+	marked := map[string]bool{}
+	for key, columns := range exportColumns {
+		for _, column := range columns {
+			if column.Total && column.Type != columnNumber {
+				t.Errorf("%s %s: only a number can be added up", key, column.Key)
+			}
+			if column.Total {
+				marked[column.Key] = true
+			}
+		}
+	}
+	for _, key := range []string{"sum_amount", "total_amount", "balance", "amount_sale", "total_net_value", "cash_amount"} {
+		if !marked[key] {
+			t.Errorf("%s is money and must be added up", key)
+		}
+	}
+	for _, key := range []string{"qty", "price", "average_cost", "days_past_due", "r_score", "balance_qty", "avg_gap_days"} {
+		if marked[key] {
+			t.Errorf("%s must not be added up", key)
+		}
+	}
+	for key := range moneyColumns {
+		found := false
+		for _, columns := range exportColumns {
+			for _, column := range columns {
+				found = found || column.Key == key
+			}
+		}
+		if !found {
+			t.Errorf("money column %s belongs to no report", key)
+		}
+	}
+}
