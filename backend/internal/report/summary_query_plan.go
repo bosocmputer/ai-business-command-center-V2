@@ -260,6 +260,10 @@ func summaryCashFlowSQL(base string, period Period, debtReceipt, payment bool) s
 	if debtReceipt {
 		pettyField = "0::numeric as petty_cash_amount,"
 	}
+	internalField := fmt.Sprintf("coalesce(sum(total_amount) filter (where trans_flag_code in (%s)), 0) as _metric_internal_move_amount", internalCashFlagList())
+	if debtReceipt {
+		internalField = "0 as _metric_internal_move_amount"
+	}
 	couponField := "coalesce(sum(coupon_amount), 0) as coupon_amount,"
 	if payment || debtReceipt {
 		couponField = "0::numeric as coupon_amount,"
@@ -269,6 +273,7 @@ with summary_source as (%s),
 summary_metrics as (
   select count(*) as %s,
     coalesce(sum(%s), 0) as _metric_total_amount,
+    %s,
     %s,
     count(*) as _metric_row_count
   from summary_source
@@ -291,6 +296,6 @@ selected_rows as (
 select selected_rows.*, summary_metrics.*,
   (selected_rows.doc_date is null)::text as _summary_metric_row
 from summary_metrics left join selected_rows on true
-limit %d`, trimFinalOrderBy(base), countMetric, totalField, missingMetric,
+limit %d`, trimFinalOrderBy(base), countMetric, totalField, missingMetric, internalField,
 		bucket, totalField, totalField, cardField, chequeField, pettyField, couponField, incomeField, bucket, bucket, summaryRowLimit)
 }

@@ -189,6 +189,12 @@ func Summarize(key Key, steps map[string][]map[string]string) (SummaryResult, er
 			return SummaryResult{}, sumErr
 		}
 		result.Metrics["total_amount"] = money(total)
+		internal, internalErr := summaryDecimalOrFunc(steps, "internal_move_amount", func() (*big.Rat, error) { return internalMoveAmount(realSummaryRows(rows)) })
+		if internalErr != nil {
+			return SummaryResult{}, internalErr
+		}
+		result.Metrics["internal_move_amount"] = money(internal)
+		result.Metrics["external_amount"] = money(new(big.Rat).Sub(total, internal))
 	}
 	result.Reconciliation["rowCount"] = result.RowCount
 	return result, nil
@@ -258,6 +264,18 @@ func summaryDecimalOr(steps map[string][]map[string]string, metric string, rows 
 		return parsed, nil
 	}
 	return sumField(realSummaryRows(rows), field)
+}
+
+// summaryDecimalOrFunc reads a summary metric, or works it out from the rows when the query did not carry it.
+func summaryDecimalOrFunc(steps map[string][]map[string]string, metric string, fallback func() (*big.Rat, error)) (*big.Rat, error) {
+	if value, ok := summaryMetric(steps, metric); ok {
+		parsed, err := decimal(value)
+		if err != nil {
+			return nil, fieldDecimalError("_metric_"+metric, err)
+		}
+		return parsed, nil
+	}
+	return fallback()
 }
 
 func moneyMetricOr(steps map[string][]map[string]string, key string, fallback *big.Rat) string {

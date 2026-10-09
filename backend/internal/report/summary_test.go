@@ -174,3 +174,54 @@ func TestTheReorderReportCarriesAnAssistantOnlyListOfItemsBelowTheirPoint(t *tes
 		t.Errorf("series = %+v", list.Series)
 	}
 }
+
+func TestCashReportsKeepTheirTotalAndSayHowMuchOfItIsMoneyMovedBetweenTheShopsOwnAccounts(t *testing.T) {
+	rows := []map[string]string{
+		{"doc_no": "A", "trans_flag_code": "239", "total_amount": "1000.00"},
+		{"doc_no": "B", "trans_flag_code": "401", "total_amount": "300.00"}, // deposit
+		{"doc_no": "C", "trans_flag_code": "402", "total_amount": "50.50"},  // withdrawal
+		{"doc_no": "D", "trans_flag_code": "40", "total_amount": "200.00"},  // advance receipt: real money in
+		{"doc_no": "E", "trans_flag_code": "301", "total_amount": "10.00"},  // petty cash return
+		{"doc_no": "F", "trans_flag_code": "", "total_amount": "5.00"},      // no code: counted in the total, not as internal
+	}
+	for _, key := range []Key{CashBankReceipts, CashBankPayments} {
+		summary, err := Summarize(key, map[string][]map[string]string{"rows": rows})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if summary.Metrics["total_amount"] != "1565.50" || summary.Metrics["internal_move_amount"] != "360.50" || summary.Metrics["external_amount"] != "1205.00" {
+			t.Errorf("%s metrics = %v: the total must stay whole and the internal part is named beside it", key, summary.Metrics)
+		}
+	}
+	// A summary run carries the figure as its own metric and it wins over the rows.
+	summary, err := Summarize(CashBankPayments, map[string][]map[string]string{"rows": {{"_metric_total_amount": "900.00", "_metric_document_count": "3", "_metric_internal_move_amount": "250.00", "_summary_metric_row": "true"}}})
+	if err != nil || summary.Metrics["internal_move_amount"] != "250.00" || summary.Metrics["total_amount"] != "900.00" || summary.Metrics["external_amount"] != "650.00" {
+		t.Fatalf("summary metrics = %v %v", summary.Metrics, err)
+	}
+	// The debt receipt report is a different report and has no such figure.
+	debt, err := Summarize(ARDebtReceipt, map[string][]map[string]string{"rows": {{"doc_no": "R1", "total_net_value": "10.00"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, has := debt.Metrics["internal_move_amount"]; has {
+		t.Errorf("debt receipts have no internal moves: %v", debt.Metrics)
+	}
+}
+
+func TestTheCashSummaryQueryCarriesTheInternalMoveFigureAndStaysReadOnly(t *testing.T) {
+	period := Period{Preset: Custom, DateFrom: "2026-10-01", DateTo: "2026-10-07"}
+	for _, key := range []Key{CashBankReceipts, CashBankPayments} {
+		plan, err := BuildQueryPlanForProjection(key, period, ResultSummary)
+		if err != nil || len(plan.Steps) != 1 {
+			t.Fatalf("%s: %+v %v", key, plan, err)
+		}
+		sql := strings.ToLower(plan.Steps[0].Query.SQL)
+		if !strings.Contains(sql, "_metric_internal_move_amount") || !strings.Contains(sql, "trans_flag_code in (301, 302, 303, 401, 402, 403, 423)") {
+			t.Errorf("%s: the summary must compute the internal figure with the shared list:\n%s", key, sql)
+		}
+	}
+	plan, _ := BuildQueryPlanForProjection(ARDebtReceipt, period, ResultSummary)
+	if strings.Contains(strings.ToLower(plan.Steps[0].Query.SQL), "trans_flag_code in") {
+		t.Error("the debt receipt report has no document code column and must not filter on it")
+	}
+}

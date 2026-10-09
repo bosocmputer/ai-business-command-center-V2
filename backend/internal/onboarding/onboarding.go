@@ -289,10 +289,6 @@ const flagsWithLabelSQL = `select t.trans_flag as flag, trans_flag(t.trans_flag)
 // every payment (pay_type 2) and every receipt (pay_type 1) except code 144.
 const cashBookFlagsSQL = `select cb.trans_flag as flag, cb.pay_type as pay_type, count(*) as docs, round(sum(coalesce(cb.total_amount, 0))::numeric, 0) as total from cb_trans cb where cb.doc_date >= current_date - 365 and cb.status = 0 group by 1, 2`
 
-// internalCashFlags are cash book rows that move money between the shop's own accounts (deposit, withdrawal, petty cash). The
-// reports count them as money in or out, as the definition says, but they are not income or spending.
-var internalCashFlags = map[int]bool{401: true, 402: true, 403: true, 301: true, 302: true, 303: true, 423: true}
-
 const flagsSQL = `select t.trans_flag as flag, '' as label, count(*) as docs from ic_trans t where t.doc_date >= current_date - 365 and coalesce(t.last_status, 0) = 0 group by t.trans_flag order by docs desc limit 80`
 
 func (checker *Checker) coverageItems(ctx context.Context, period report.Period, _ time.Time) []Item {
@@ -320,7 +316,7 @@ func (checker *Checker) coverageItems(ctx context.Context, period report.Period,
 			if payType == "2" || payType == "1" && flag != 144 {
 				counted[flag] = struct{}{}
 			}
-			if internalCashFlags[flag] {
+			if report.InternalCashFlags[flag] {
 				docs, _ := strconv.Atoi(strings.TrimSpace(row["docs"]))
 				total, _ := strconv.Atoi(strings.TrimSpace(strings.Split(row["total"], ".")[0]))
 				internalDocs += docs

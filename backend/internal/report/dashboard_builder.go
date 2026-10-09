@@ -243,7 +243,9 @@ func buildDashboardMetrics(key Key, current, previous SummaryResult, currentStep
 		if err != nil {
 			return nil, err
 		}
-		return []dashboardMetricInput{metric("total_amount", label, UnitTHB), metric("document_count", "จำนวนเอกสาร", UnitCount), averageMetric}, nil
+		return []dashboardMetricInput{metric("total_amount", label, UnitTHB), metric("document_count", "จำนวนเอกสาร", UnitCount), averageMetric,
+			metric("internal_move_amount", "ในยอดนี้เป็นการย้ายเงินภายในร้านเอง (ฝาก ถอน เงินสดย่อย) ไม่ใช่รายได้หรือรายจ่ายจริง", UnitTHB),
+			metric("external_amount", "ยอดที่ไม่รวมการย้ายเงินภายในร้าน", UnitTHB)}, nil
 	default:
 		return nil, fmt.Errorf("dashboard metrics are not defined for %s", key)
 	}
