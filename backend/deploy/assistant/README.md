@@ -10,7 +10,7 @@ numbers it fetches from AI-BCC's Agent API (ADR 0001) and nothing else. Findings
 |---|---|
 | Data source | AI-BCC `api` over the internal network `agent`, with the shop's own Agent API token |
 | Internet | none directly; only hosts in `ASSISTANT_EGRESS_ALLOW` (default `openrouter.ai`) through `assistant-egress`, which logs host and decision (`docker logs`) |
-| Built-in tools | none except `memory` (on by decision, with `memory_guard.py`): terminal, files, web, browser, code execution, skills, cron are off on every channel (`platform_toolsets`) |
+| Built-in tools | none except `memory` (on by decision, with `memory_guard.py`): terminal, files, web, browser, code execution, skills, cron are off on every channel (`platform_toolsets`). The ~58 skills that ship with Hermes are also switched off at every start (`disable_skills.py` writes `skills.disabled`; only `hermes-agent`, the agent's own manual, which Hermes refuses to disable, stays on), because a chat message such as `/claude-code` would otherwise be rewritten into that skill's instructions |
 | Model | `google/gemini-3.1-flash-lite`, pinned to Google Vertex with `data_collection: deny` (`config.yaml`) |
 | Side calls | title generation, background review, compression and memory are off, because each would send the conversation to a model outside the pinned provider rules |
 | Ports | none published to the host |
@@ -183,7 +183,7 @@ could become a standing instruction, and where a recalled figure could replace a
 instruction planted in a report, memory stayed clean, but the model once said it *would* store a transfer account, so
 the rules do not rest on the model alone.
 
-Off, on purpose: **skills the agent writes for itself** (a self-written procedure could outrank the numeric rules in
+Off, on purpose: **every bundled skill** (see the table above; `upgrade-check.sh` step 2b fails if one is enabled), **skills the agent writes for itself** (a self-written procedure could outrank the numeric rules in
 `SOUL.md`; none are expected, and `memory_guard.py` reports any that appear), **context compression and title
 generation** (their model calls are not bound by the provider pin), and the built-in tools (terminal, files, web,
 browser, code, cron, delegation), which let an assistant for numbers reach beyond numbers. Each can be reviewed one at a

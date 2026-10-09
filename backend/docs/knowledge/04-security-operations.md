@@ -172,3 +172,4 @@ Use the sanitized incident template. Record safe error codes, time windows, affe
 - `agent_calls` logs token, tool, report, period, outcome, duration and snapshot run id, with no values, names or question text; retention 365 days (`agentCalls` in the retention log line).
 - `compare` computes the difference on the server and warns about different period lengths, unfinished periods and overlap. The assistant is told not to do arithmetic.
 
+- Assistant skills (2026-10-09): the built-in tools are limited to memory on every channel, which also keeps the skills index out of the model's prompt (Hermes adds it only when a skills tool exists). A skill can still be loaded by a message that starts with its name as a slash command, so `assistant/disable_skills.py` lists every skill on disk into `skills.disabled` at each container start; `upgrade-check.sh` step 2b verifies that nothing but `hermes-agent` is enabled.
