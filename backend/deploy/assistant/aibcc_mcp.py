@@ -175,6 +175,15 @@ def period_text(period):
     return f"ณ วันที่ {end}" if start == end else f"{start} ถึง {end}"
 
 
+def export_file_name(report_key, period, name=""):
+    """Telegram strips Thai vowels and tone marks from a file name, so the file is named in English (the Thai is inside the file)."""
+    name = (name or "").strip()
+    if name and name.isascii():
+        return name
+    start, end = period.get("dateFrom", ""), period.get("dateTo", "")
+    return f"{report_key}_{end}" if start == end else f"{report_key}_{start}_to_{end}"
+
+
 def as_json(action):
     """Run one of the secretary tools: its result, or its own refusal, as JSON text. Nothing else is ever shown to the model."""
     try:
@@ -201,7 +210,7 @@ def export_report(report_key: str, date_from: str = "", date_to: str = "", kind:
     """Make a file from the REAL rows of one report, for the owner to download: every line of the report (every sale line, every open
     invoice, every item in stock, every receipt), with the Thai headings of the report page, numbers as numbers and dates as dates, a
     second sheet that says what the file is, for which period and as of when, and column totals worked out by the tool. kind is xlsx
-    (Excel, the default) or csv. report_key comes from context(); dates are YYYY-MM-DD as in get_report. Use THIS, not make_file, whenever
+    (Excel, the default) or csv. name is optional and must be English letters only; leave it empty (Telegram garbles Thai file names, and the Thai headings are inside the file). report_key comes from context(); dates are YYYY-MM-DD as in get_report. Use THIS, not make_file, whenever
     the owner wants a list, a breakdown, a spreadsheet or "the data" of a report: make_file is only for text you write yourself
     (a quotation, a message), never for numbers of the shop. If AI-BCC has to fetch the rows from the shop's system the tool waits up
     to about four minutes; if it says PREPARING when it returns, tell the owner the rows are still being fetched and to ask again in a
@@ -223,7 +232,7 @@ def export_report(report_key: str, date_from: str = "", date_to: str = "", kind:
             return merged
         period = merged.get("period") or {}
         return secretary_tools.export_file(
-            kind, name, merged.get("label", report_key), period_text(period),
+            kind, export_file_name(report_key, period, name), merged.get("label", report_key), period_text(period),
             merged.get("collectedAt", ""), merged.get("columns") or [], merged.get("rows") or [], merged.get("notes"),
             split=EXPORT_SPLIT.get(report_key),
         ) | {"period": period, "collected_at": merged.get("collectedAt", ""), "truncated": bool(merged.get("truncated")),
