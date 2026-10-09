@@ -5,6 +5,8 @@
 # checks what an update must never break, and removes it. The live assistant is not touched; nobody outside is messaged.
 #   1. the gateway starts and reports healthy;
 #   2. no built-in tool is enabled on any channel (cli, api_server, telegram, webhook) except memory, which is on by decision;
+#   2b. every skill that ships with Hermes is switched off except the agent's own manual (disable_skills.py), so no slash command
+#       can load an unreviewed procedure;
 #   3. the MCP shim exposes exactly the tools this repository defines;
 #   4. real questions (assistant/example_check.py) pass against the real Agent API.
 # It uses the live token, so it spends the hourly call quota (about 3 per question): keep the question list short.
@@ -88,6 +90,15 @@ for platform in cli api_server telegram webhook; do
   if [ -n "$extra" ]; then bad="$bad $platform"; echo; echo "$extra" | sed 's/^/    /' | cut -c1-120; fi
 done
 if [ -z "$bad" ]; then echo "ok${skipped:+ (not listed by the candidate:$skipped; the live assistant is checked below)}"; else echo; fail "a built-in tool other than memory is enabled (or the list could not be read) on:$bad"; fi
+
+printf "2b. every bundled skill is switched off except the agent's own manual ... "
+skill_listing=$(docker exec "$NAME" /opt/hermes/bin/hermes skills list 2>&1 || true)
+# Table rows look like "│ name │ category │ source │ trust │ enabled │"; the name is the first column.
+skills_total=$(echo "$skill_listing" | grep -c -E '│ +(enabled|disabled) +│' || true)
+skills_on=$(echo "$skill_listing" | grep -E '│ +enabled +│' | awk -F'│' '{ gsub(/ /, "", $2); print $2 }' | grep -v '^hermes-agent$' || true)
+if [ "${skills_total:-0}" -lt 1 ]; then echo; fail "the skill list could not be read"
+elif [ -n "$skills_on" ]; then echo; echo "$skills_on" | head -8 | sed 's/^/    /'; fail "skills still enabled (first ones shown): $(echo "$skills_on" | wc -l | tr -d ' ') of $skills_total"
+else echo "ok ($skills_total skills, none enabled but hermes-agent)"; fi
 
 printf "3. the shim exposes every tool of this repository ... "
 want=$(grep -c '^@mcp.tool()' assistant/aibcc_mcp.py)

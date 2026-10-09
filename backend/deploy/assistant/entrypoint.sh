@@ -18,6 +18,9 @@ fi
 cp /assistant/config.yaml /opt/data/config.yaml
 # Alerts: the routes AI-BCC's worker posts to (see render_routes.py). Without a secret nothing is opened.
 /opt/hermes/.venv/bin/python /assistant/render_routes.py
+# Every skill that ships with Hermes is switched off, so a "/skill-name" message cannot load an unreviewed procedure (see
+# disable_skills.py). The upgrade check reads the result; a failure here must not keep the assistant from starting.
+/opt/hermes/.venv/bin/python /assistant/disable_skills.py || echo '{"skills":"NOT disabled: disable_skills.py failed"}'
 # The /new reply: a Thai line instead of an English one, and no random English "tip" (see patch_locale.py).
 if /opt/hermes/.venv/bin/python /assistant/patch_locale.py /tmp/hermes-locales; then
   export HERMES_BUNDLED_LOCALES=/tmp/hermes-locales
