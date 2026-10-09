@@ -303,3 +303,52 @@ func TestSalesQueriesNetTheNotesAndLeavePurchasesAlone(t *testing.T) {
 		t.Error("the purchase summary must not change")
 	}
 }
+
+// The part of a cash book row that was settled with an advance already paid or received is not new money: it is counted once
+// when the advance moves (document 10 or 40) and must not be counted again when it is applied.
+func TestSummarizeCashReportsSeparateAdvancesAppliedFromInternalMoves(t *testing.T) {
+	rows := []map[string]string{
+		{"doc_no": "P1", "trans_flag_code": "19", "total_amount": "1000.00", "advance_applied_amount": "400.00"},
+		{"doc_no": "P2", "trans_flag_code": "10", "total_amount": "500.00", "advance_applied_amount": "0"},
+		{"doc_no": "P3", "trans_flag_code": "401", "total_amount": "200.00", "advance_applied_amount": "0"},
+		{"doc_no": "P4", "trans_flag_code": "301", "total_amount": "50.00", "advance_applied_amount": "50.00"}, // internal rows are never counted twice
+	}
+	result, err := Summarize(CashBankPayments, map[string][]map[string]string{"rows": rows})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{"total_amount": "1750.00", "internal_move_amount": "250.00", "advance_applied_amount": "400.00", "external_amount": "1100.00"} {
+		if got := result.Metrics[key]; got != want {
+			t.Errorf("metric %s = %q, want %q; all=%v", key, got, want, result.Metrics)
+		}
+	}
+	// Rows from stored data that predate the column count as no advance applied.
+	old, err := Summarize(CashBankReceipts, map[string][]map[string]string{"rows": {{"doc_no": "R1", "trans_flag_code": "44", "total_amount": "10.00"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.Metrics["advance_applied_amount"] != "0.00" || old.Metrics["external_amount"] != "10.00" {
+		t.Errorf("rows without the column must not change the figures: %v", old.Metrics)
+	}
+}
+
+func TestCashSummaryQueriesCarryTheAdvanceMetricAndTheDebtReceiptReportDoesNot(t *testing.T) {
+	period := Period{DateFrom: "2026-06-01", DateTo: "2026-06-30"}
+	for _, key := range []Key{CashBankReceipts, CashBankPayments} {
+		plan, err := BuildQueryPlanForProjection(key, period, ResultSummary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sql := plan.Steps[0].Query.SQL
+		if !strings.Contains(sql, "_metric_advance_applied_amount") || !strings.Contains(sql, "coalesce(cb.deposit_amount, 0) as advance_applied_amount") || !strings.Contains(sql, "trans_flag_code not in (") {
+			t.Errorf("%s summary SQL does not carry the advance metric", key)
+		}
+	}
+	plan, err := BuildQueryPlanForProjection(ARDebtReceipt, period, ResultSummary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(plan.Steps[0].Query.SQL, "0 as _metric_advance_applied_amount") {
+		t.Error("the debt receipt report settles debts, so advances applied stay inside it")
+	}
+}

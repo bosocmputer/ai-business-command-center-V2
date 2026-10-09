@@ -43,3 +43,25 @@ func internalMoveAmount(rows []map[string]string) (*big.Rat, error) {
 	}
 	return total, nil
 }
+
+// advanceAppliedAmount adds up the part of each cash book row that was settled with an advance the shop had already paid or
+// received (cb_trans.deposit_amount). That money moved when the advance was paid or received (document 10 on the payment side,
+// 40 on the receipt side), so counting it again in the document that applies it counts it twice. Internal moves are left out so
+// no row is taken off the total twice.
+func advanceAppliedAmount(rows []map[string]string) (*big.Rat, error) {
+	total := new(big.Rat)
+	for _, row := range rows {
+		if code, err := strconv.Atoi(strings.TrimSpace(row["trans_flag_code"])); err == nil && InternalCashFlags[code] {
+			continue
+		}
+		if strings.TrimSpace(row["advance_applied_amount"]) == "" {
+			continue
+		}
+		amount, err := decimal(row["advance_applied_amount"])
+		if err != nil {
+			return nil, fieldDecimalError("advance_applied_amount", err)
+		}
+		total.Add(total, amount)
+	}
+	return total, nil
+}

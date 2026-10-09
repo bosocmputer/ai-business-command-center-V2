@@ -211,8 +211,14 @@ func Summarize(key Key, steps map[string][]map[string]string) (SummaryResult, er
 		if internalErr != nil {
 			return SummaryResult{}, internalErr
 		}
+		advance, advanceErr := summaryDecimalOrFunc(steps, "advance_applied_amount", func() (*big.Rat, error) { return advanceAppliedAmount(realSummaryRows(rows)) })
+		if advanceErr != nil {
+			return SummaryResult{}, advanceErr
+		}
 		result.Metrics["internal_move_amount"] = money(internal)
-		result.Metrics["external_amount"] = money(new(big.Rat).Sub(total, internal))
+		result.Metrics["advance_applied_amount"] = money(advance)
+		external := new(big.Rat).Sub(total, internal)
+		result.Metrics["external_amount"] = money(external.Sub(external, advance))
 	}
 	result.Reconciliation["rowCount"] = result.RowCount
 	return result, nil

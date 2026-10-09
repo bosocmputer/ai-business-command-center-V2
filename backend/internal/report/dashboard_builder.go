@@ -260,7 +260,8 @@ func buildDashboardMetrics(key Key, current, previous SummaryResult, currentStep
 		}
 		return []dashboardMetricInput{metric("total_amount", label, UnitTHB), metric("document_count", "จำนวนเอกสาร", UnitCount), averageMetric,
 			metric("internal_move_amount", "ในยอดนี้เป็นการย้ายเงินภายในร้านเอง (ฝาก ถอน เงินสดย่อย) ไม่ใช่รายได้หรือรายจ่ายจริง", UnitTHB),
-			metric("external_amount", "ยอดที่ไม่รวมการย้ายเงินภายในร้าน", UnitTHB)}, nil
+			metric("advance_applied_amount", "ในยอดนี้เป็นการหักเงินล่วงหน้าที่จ่ายหรือรับไปก่อนแล้ว (เงินเคลื่อนไหวไปแล้วตอนจ่ายหรือรับล่วงหน้า)", UnitTHB),
+			metric("external_amount", "เงินที่เคลื่อนไหวจริง (ไม่รวมการย้ายเงินภายในร้านและการหักเงินล่วงหน้า)", UnitTHB)}, nil
 	default:
 		return nil, fmt.Errorf("dashboard metrics are not defined for %s", key)
 	}

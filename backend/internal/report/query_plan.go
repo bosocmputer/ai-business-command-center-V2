@@ -564,6 +564,7 @@ select
   coalesce(cb.total_income_amount, 0) as total_income_amount,
   coalesce(cb.coupon_amount, 0) as coupon_amount,
   0::numeric as petty_cash_amount,
+  coalesce(cb.deposit_amount, 0) as advance_applied_amount,
   coalesce(cb.total_amount, 0) as total_amount
 from filtered_cb cb
 where (case when cb.trans_flag in (19, 239) then (select a.last_status from ap_ar_trans a where a.doc_no = cb.doc_no limit 1) else (select i.last_status from ic_trans i where i.doc_no = cb.doc_no limit 1) end) = 0
@@ -584,6 +585,7 @@ select
   coalesce(cb.total_income_amount, 0) as total_income_amount,
   0::numeric as coupon_amount,
   coalesce(cb.petty_cash_amount, 0) as petty_cash_amount,
+  coalesce(cb.deposit_amount, 0) as advance_applied_amount,
   coalesce(cb.total_amount, 0) as total_amount
 from cb_trans cb
 where cb.doc_date between $1::date and $2::date
