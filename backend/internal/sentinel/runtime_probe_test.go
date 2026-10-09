@@ -135,9 +135,19 @@ func TestRuntimeProbeAssistantIsOptionalAndNeedsTwoBadRounds(t *testing.T) {
 	if got := source.Observations(now); len(got) != 0 {
 		t.Fatalf("first bad round raised %v", got)
 	}
+	// Reading the same probe file again (the probe is written every minute, Sentinel reads every 30 seconds) is not a second
+	// bad round: a restart that a single probe happened to catch must not raise a P1.
+	if got := source.Observations(now.Add(30 * time.Second)); len(got) != 0 {
+		t.Fatalf("the same probe read twice raised %v", got)
+	}
+	writeProbeFixture(t, down, healthyHostProbe(now.Add(time.Minute), &no))
 	got := source.Observations(now.Add(time.Minute))
 	if len(got) != 1 || got[0].IncidentType != "NEXTSTEP_CONTAINER_UNHEALTHY" || got[0].SafeErrorCode != "CONTAINER_ASSISTANT_UNHEALTHY" || got[0].SubjectType != SubjectContainer {
 		t.Fatalf("second bad round=%v", got)
+	}
+	// While the container stays down every read keeps reporting it, so the incident stays open between probes.
+	if got := source.Observations(now.Add(90 * time.Second)); len(got) != 1 {
+		t.Fatalf("a read between probes must keep the incident open, got %v", got)
 	}
 	writeProbeFixture(t, down, healthyHostProbe(now.Add(2*time.Minute), &yes))
 	if got := source.Observations(now.Add(2 * time.Minute)); len(got) != 0 {

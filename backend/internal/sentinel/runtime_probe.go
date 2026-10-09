@@ -12,8 +12,11 @@ import (
 type RuntimeProbeSource struct {
 	directory            string
 	consecutiveUnhealthy map[string]int
-	memoryCriticalSince  *time.Time
-	backupPolicy         BackupPolicy
+	// lastSample is the CheckedAt of the host probe file read last. The probe file is written once a minute but read at every
+	// Sentinel cycle (30 seconds), so a container is counted as unhealthy once per probe file, not once per read.
+	lastSample          time.Time
+	memoryCriticalSince *time.Time
+	backupPolicy        BackupPolicy
 }
 
 func NewRuntimeProbeSource(directory string) *RuntimeProbeSource {
@@ -52,6 +55,8 @@ func (source *RuntimeProbeSource) Observations(now time.Time) []Observation {
 		return []Observation{platformObservation("HOST_PROBE_UNAVAILABLE", "HOST_PROBE_INVALID", SeverityP1, SourceHost, now)}
 	}
 	source.reset("host-probe")
+	newSample := !probe.CheckedAt.Equal(source.lastSample)
+	source.lastSample = probe.CheckedAt
 	observations := make([]Observation, 0, 12)
 	containers := map[string]bool{"api": probe.Containers.API, "worker": probe.Containers.Worker, "frontend": probe.Containers.Frontend, "postgres": probe.Containers.Postgres, "sentinel": probe.Containers.Sentinel}
 	if probe.Containers.Assistant != nil {
@@ -62,7 +67,11 @@ func (source *RuntimeProbeSource) Observations(now time.Time) []Observation {
 			source.reset("container-" + key)
 			continue
 		}
-		if source.increment("container-"+key) < 2 {
+		count := source.consecutiveUnhealthy["container-"+key]
+		if newSample {
+			count = source.increment("container-" + key)
+		}
+		if count < 2 {
 			continue
 		}
 		observations = append(observations, platformObservation("NEXTSTEP_CONTAINER_UNHEALTHY", "CONTAINER_"+strings.ToUpper(key)+"_UNHEALTHY", SeverityP1, SourceHost, now))
