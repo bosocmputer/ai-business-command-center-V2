@@ -19,7 +19,10 @@ mcp_servers:
       AIBCC_URL: "${AIBCC_URL}"
       AIBCC_TOKEN: "${AIBCC_TOKEN}"
       WEB_SEARCH_API_KEY: "${WEB_SEARCH_API_KEY}"
+      WEB_SEARCH_FALLBACK_KEY: "${WEB_SEARCH_FALLBACK_KEY}"
       WEB_SEARCH_PROVIDER: "${WEB_SEARCH_PROVIDER}"
+      WEB_SEARCH_FALLBACK_PROVIDER: "${WEB_SEARCH_FALLBACK_PROVIDER}"
+      WEB_SEARCH_DAILY_CAP: "${WEB_SEARCH_DAILY_CAP}"
 
 # Telegram: only the people named in TELEGRAM_ALLOWED_USERS may message the bot, and only in a private chat. Anyone
 # else is ignored. (entrypoint.sh also refuses to start Telegram at all when that list is empty.)

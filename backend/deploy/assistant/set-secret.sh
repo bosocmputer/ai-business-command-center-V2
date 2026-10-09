@@ -1,14 +1,14 @@
 #!/bin/sh
 # usage (on the server, from backend/deploy):  ssh -t <server> 'cd <deploy dir>/backend/deploy && ./assistant/set-secret.sh OPENROUTER_API_KEY'
 # Asks for one value without echoing it and stores it in secrets/assistant/hermes.env (mode 0600), replacing any
-# earlier value of the same name. Names: OPENROUTER_API_KEY, AIBCC_TOKEN, WEB_SEARCH_API_KEY (Brave Search or Tavily, chosen by WEB_SEARCH_PROVIDER in .env.production), API_SERVER_KEY (any 16+ characters; or
+# earlier value of the same name. Names: OPENROUTER_API_KEY, AIBCC_TOKEN, WEB_SEARCH_API_KEY (Serper, the primary) and WEB_SEARCH_FALLBACK_KEY (SerpApi, used when Serper fails), API_SERVER_KEY (any 16+ characters; or
 # type "generate" to make a random one), TELEGRAM_BOT_TOKEN (from @BotFather), TELEGRAM_ALLOWED_USERS (numeric Telegram
 # user ids, comma separated; the people allowed to message the bot). The value never appears in a command line, in shell history or in chat.
 # Add one more person without retyping the others:  ./assistant/set-secret.sh TELEGRAM_ALLOWED_USERS --add
 # (the new id is merged into the existing list; duplicates are dropped).
 set -eu
-NAME="${1:?name required: OPENROUTER_API_KEY | AIBCC_TOKEN | API_SERVER_KEY | TELEGRAM_BOT_TOKEN | TELEGRAM_ALLOWED_USERS | WEB_SEARCH_API_KEY}"
-case "$NAME" in OPENROUTER_API_KEY|AIBCC_TOKEN|API_SERVER_KEY|TELEGRAM_BOT_TOKEN|TELEGRAM_ALLOWED_USERS|WEB_SEARCH_API_KEY) ;; *) echo "unknown name: $NAME" >&2; exit 2;; esac
+NAME="${1:?name required: OPENROUTER_API_KEY | AIBCC_TOKEN | API_SERVER_KEY | TELEGRAM_BOT_TOKEN | TELEGRAM_ALLOWED_USERS | WEB_SEARCH_API_KEY | WEB_SEARCH_FALLBACK_KEY}"
+case "$NAME" in OPENROUTER_API_KEY|AIBCC_TOKEN|API_SERVER_KEY|TELEGRAM_BOT_TOKEN|TELEGRAM_ALLOWED_USERS|WEB_SEARCH_API_KEY|WEB_SEARCH_FALLBACK_KEY) ;; *) echo "unknown name: $NAME" >&2; exit 2;; esac
 MODE="${2:-}"
 case "$MODE" in ""|--add) ;; *) echo "unknown option: $MODE" >&2; exit 2;; esac
 [ "$MODE" != "--add" ] || [ "$NAME" = "TELEGRAM_ALLOWED_USERS" ] || { echo "--add works for TELEGRAM_ALLOWED_USERS only" >&2; exit 2; }

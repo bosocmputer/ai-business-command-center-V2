@@ -101,34 +101,66 @@ class ReadDocumentTests(unittest.TestCase):
 
 
 class WebSearchTests(unittest.TestCase):
+    def setUp(self):
+        self.count_file = os.path.join(tempfile.mkdtemp(), "count.json")
+
+    def search(self, query="ราคาเหล็กเส้นวันนี้", **kwargs):
+        kwargs.setdefault("count_file", self.count_file)
+        return tools.web_search(query, **kwargs)
+
     def test_not_enabled_without_a_key(self):
         with self.assertRaises(tools.ToolError):
-            tools.web_search("ราคาเหล็ก", key="")
+            self.search(chain=[("serper", ""), ("serpapi", "")])
 
-    def test_refuses_queries_that_carry_shop_data(self):
+    def test_refuses_queries_that_carry_shop_data_before_anything_is_sent(self):
+        sent = []
         for query in ("ยอดค้าง 12345678 บาท", "ติดต่อ somchai@example.com", "ลูกค้า-ab12cd ค้างชำระ", "x" * 300, "   "):
             with self.assertRaises(tools.ToolError, msg=query):
-                tools.web_search(query, key="k", fetch=lambda request: {})
+                self.search(query, chain=[("serper", "k")], fetch=lambda request: sent.append(request) or {})
+        self.assertEqual(sent, [])
 
-    def test_brave_and_tavily_results_are_cleaned_and_capped(self):
-        brave = {"web": {"results": [{"title": "<b>ราคาเหล็ก</b>", "url": "https://example.com/a", "description": "x" * 900}]}}
-        out = tools.web_search("ราคาเหล็กเส้นวันนี้", provider="brave", key="k", fetch=lambda request: brave)
-        self.assertEqual(out["results"][0]["title"], "ราคาเหล็ก")
-        self.assertEqual(len(out["results"][0]["snippet"]), 400)
-        tavily = {"results": [{"title": "t", "url": "https://example.com/b", "content": "c"}]}
+    def test_serper_results_are_cleaned_and_capped_and_the_key_stays_in_the_header(self):
         seen = {}
 
         def fetch(request):
-            seen["auth"] = request.get_header("Authorization")
-            return tavily
-        out = tools.web_search("ภาษีมูลค่าเพิ่มอัตราปัจจุบัน", provider="tavily", key="secret", fetch=fetch)
+            seen["url"], seen["key"] = request.full_url, request.get_header("X-api-key")
+            return {"organic": [{"title": "<b>ราคาเหล็ก</b>", "link": "https://example.com/a", "snippet": "x" * 900}]}
+        out = self.search(chain=[("serper", "secret-1")], fetch=fetch)
+        self.assertEqual(out["results"][0]["title"], "ราคาเหล็ก")
+        self.assertEqual(len(out["results"][0]["snippet"]), 400)
+        self.assertEqual(seen["key"], "secret-1")
+        self.assertNotIn("secret-1", seen["url"] + str(out))
+
+    def test_serpapi_is_the_fallback_when_serper_fails(self):
+        calls = []
+
+        def fetch(request):
+            calls.append(request.full_url.split("?")[0])
+            if "serper.dev" in request.full_url:
+                raise tools.ToolError("บริการค้นเว็บตอบกลับผิดปกติ (HTTP 429)")
+            return {"organic_results": [{"title": "t", "link": "https://example.com/b", "snippet": "c"}]}
+        out = self.search(chain=[("serper", "k1"), ("serpapi", "k2")], fetch=fetch)
         self.assertEqual(out["results"][0]["url"], "https://example.com/b")
-        self.assertEqual(seen["auth"], "Bearer secret")
-        self.assertNotIn("secret", str(out))
+        self.assertEqual(calls, ["https://google.serper.dev/search", "https://serpapi.com/search.json"])
+        self.assertNotIn("k2", str(out))
+
+    def test_a_failure_of_every_service_is_reported_without_the_key(self):
+        def fetch(request):
+            raise tools.ToolError("ติดต่อบริการค้นเว็บไม่ได้ในขณะนี้")
+        with self.assertRaises(tools.ToolError) as context:
+            self.search(chain=[("serper", "k1"), ("serpapi", "k2")], fetch=fetch)
+        self.assertNotIn("k1", str(context.exception))
+
+    def test_daily_cap_stops_a_loop(self):
+        fetch = lambda request: {"organic": [{"title": "t", "link": "https://example.com", "snippet": "s"}]}
+        for _ in range(3):
+            self.search(chain=[("serper", "k")], fetch=fetch, cap=3)
+        with self.assertRaises(tools.ToolError):
+            self.search(chain=[("serper", "k")], fetch=fetch, cap=3)
 
     def test_unknown_provider_is_refused(self):
         with self.assertRaises(tools.ToolError):
-            tools.web_search("ราคา", provider="other", key="k", fetch=lambda request: {})
+            self.search(chain=[("other", "k")], fetch=lambda request: {})
 
 
 if __name__ == "__main__":

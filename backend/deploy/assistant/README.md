@@ -212,6 +212,22 @@ the egress proxy. To update: `./assistant/backup.sh`; change the digest in `comp
 32-question set and the stale-figure test (`spikes/hermes`) and `assistant/live_check.py`; if anything regresses,
 put the old digest back and, if the new version had migrated the store, restore the backup.
 
+## What else the secretary can do (tools beyond the numbers)
+
+`secretary_tools.py` (tests: `python3 -m unittest test_secretary_tools` in this folder):
+
+- `make_file` writes a csv, xlsx, txt, md or html file under `/opt/data/outbox`. `gateway.strict` in `config.yaml` lets the gateway send a
+  file to the chat only from there (and from Hermes' own caches), whatever path a reply names; `upgrade-check.sh` step 2c checks it.
+  `maintain.sh` deletes outbox files and attachments older than `RETENTION_HOURS`.
+- `read_document` returns the text of a `.xlsx` or `.docx` the owner attached (only from the attachment folders). PDF is not read.
+- `web_search` asks Serper (`WEB_SEARCH_API_KEY`, primary) and, if that fails, SerpApi (`WEB_SEARCH_FALLBACK_KEY`); both give Google results.
+  Without `WEB_SEARCH_API_KEY` the tool says search is not enabled and the welcome text leaves the web line out. Enter the keys with
+  `set-secret.sh`, put `google.serper.dev,serpapi.com` into `ASSISTANT_EGRESS_ALLOW` in `.env.production` next to the existing hosts, then
+  `up -d --force-recreate assistant assistant-egress`. A query that looks like it carries shop data (digit runs of 7 or more, an e-mail
+  address, the alias AI-BCC gives a customer) is refused before it leaves, and `WEB_SEARCH_DAILY_CAP` (default 80 a day) keeps a loop
+  from using the free plans (Serper 2,500 a month, SerpApi 100). The query text goes to those services, which are not the
+  zero-retention model provider: say so in the shop agreement.
+
 ## Checking the real assistant
 
 Two scripts run inside the live assistant container (`docker compose exec -T assistant /opt/hermes/.venv/bin/python - < assistant/<script>`):
