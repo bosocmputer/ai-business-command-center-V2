@@ -55,7 +55,15 @@ for (session_id,) in sessions:
         elif role == "assistant" and tool_calls:
             try:
                 for call in json.loads(tool_calls):
-                    calls.append((call.get("function", {}).get("name") or call.get("name") or "?"))
+                    function = call.get("function", {})
+                    name = (function.get("name") or call.get("name") or "?").replace("mcp__aibcc__", "")
+                    try:
+                        arguments = json.loads(function.get("arguments") or "{}")
+                    except (TypeError, ValueError):
+                        arguments = {}
+                    # Only short, non-sensitive arguments (report key, period, rule, kind); text the model composed is not printed.
+                    shown = {k: v for k, v in arguments.items() if k in ("report_key", "date_from", "date_to", "metric", "rule_key", "threshold", "kind", "tone", "a_from", "a_to", "b_from", "b_to", "count") or (k == "name" and len(str(v)) < 60)}
+                    calls.append(name + (str(shown).replace(" ", "") if shown else ""))
             except (TypeError, ValueError):
                 pass
         elif role == "tool":
