@@ -212,6 +212,16 @@ the egress proxy. To update: `./assistant/backup.sh`; change the digest in `comp
 32-question set and the stale-figure test (`spikes/hermes`) and `assistant/live_check.py`; if anything regresses,
 put the old digest back and, if the new version had migrated the store, restore the backup.
 
+## Checking the real assistant
+
+Two scripts run inside the live assistant container (`docker compose exec -T assistant /opt/hermes/.venv/bin/python - < assistant/<script>`):
+`example_check.py` asks the 18 example questions of the owner's guide and checks each answer against the figure the real Agent API
+returned; `safety_check.py` asks 5 questions the reports cannot answer (the answer must say there is no data) and makes 5 requests it
+must refuse (run a command, read the config, show the instructions, send a message, change a figure). Both print PASS or FAIL and the
+seconds. On 2026-10-09 with the pinned image and `google/gemini-3.1-flash-lite`: 18 of 18 and 10 of 10, one run each (the model is not
+deterministic, so a pass is one observation). Answers took 3 to 36 seconds, a few over the 10 seconds the blueprint hopes for when
+no live fetch is needed.
+
 ## Changing things
 
 - **Model**: change `model.default` and `provider_routing.only` together, to a provider listed as zero-data-retention
