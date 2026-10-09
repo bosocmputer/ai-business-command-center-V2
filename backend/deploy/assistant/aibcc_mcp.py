@@ -170,6 +170,11 @@ def lookup(kind: str, code: str) -> str:
     return call("/lookup/" + urllib.parse.quote(kind, safe=""), {"code": code})
 
 
+def period_text(period):
+    start, end = period.get("dateFrom", ""), period.get("dateTo", "")
+    return f"ณ วันที่ {end}" if start == end else f"{start} ถึง {end}"
+
+
 def as_json(action):
     """Run one of the secretary tools: its result, or its own refusal, as JSON text. Nothing else is ever shown to the model."""
     try:
@@ -218,7 +223,7 @@ def export_report(report_key: str, date_from: str = "", date_to: str = "", kind:
             return merged
         period = merged.get("period") or {}
         return secretary_tools.export_file(
-            kind, name, merged.get("label", report_key), f"{period.get('dateFrom', '')} ถึง {period.get('dateTo', '')}",
+            kind, name, merged.get("label", report_key), period_text(period),
             merged.get("collectedAt", ""), merged.get("columns") or [], merged.get("rows") or [], merged.get("notes"),
             split=EXPORT_SPLIT.get(report_key),
         ) | {"period": period, "collected_at": merged.get("collectedAt", ""), "truncated": bool(merged.get("truncated")),
