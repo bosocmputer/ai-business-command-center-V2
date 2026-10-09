@@ -271,6 +271,8 @@ func handleRecipientError(response http.ResponseWriter, request *http.Request, e
 		writeProblem(response, request, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency key was already used with different recipient input.", false)
 	case errors.Is(err, recipient.ErrVersionConflict):
 		writeProblem(response, request, http.StatusConflict, "VERSION_CONFLICT", "Report permissions changed in another session. Reload before saving again.", false)
+	case errors.Is(err, recipient.ErrAIChatPermissionsNarrower):
+		writeProblem(response, request, http.StatusConflict, "AI_CHAT_PERMISSIONS_NARROWER", "This person may read fewer reports than the person whose token the assistant uses. Give them at least the same report permissions first, or the assistant would show them more than they may see.", false)
 	case errors.Is(err, recipient.ErrInvitationNotPending):
 		writeProblem(response, request, http.StatusConflict, "INVITATION_NOT_PENDING", "Only a pending recipient invitation can be reissued.", false)
 	default:

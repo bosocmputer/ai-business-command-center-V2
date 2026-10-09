@@ -399,6 +399,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Recipient'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: "AI_CHAT_PERMISSIONS_NARROWER: the person may read fewer reports than the person whose token the assistant uses, so the chat is refused."}
         '422': {$ref: '#/components/responses/ValidationFailed'}
   /api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/agent-token:
     get:
@@ -589,6 +590,120 @@ paths:
         '404': {$ref: '#/components/responses/AgentRefusal'}
         '422': {$ref: '#/components/responses/AgentRefusal'}
         '429': {$ref: '#/components/responses/AgentRefusal'}
+  /api/v1/admin/tenants/{tenantId}/assistant:
+    parameters: [{$ref: '#/components/parameters/TenantID'}]
+    get:
+      tags: [Admin configuration]
+      operationId: getAssistantSettings
+      description: The shop's assistant settings and what the assistant reports it is running. No secret is ever returned; a secret is set or not set, and an OpenRouter key shows its last four characters.
+      security: [{AdminSession: []}]
+      responses:
+        '200': {description: Settings, content: {application/json: {schema: {$ref: '#/components/schemas/AssistantSettings'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Admin configuration]
+      operationId: updateAssistantSettings
+      description: Switches the assistant on or off and chooses the model and the LINE mode. Switching on needs the OpenRouter key (and the LINE channel for the chosen mode). The version guards against saving from a stale page.
+      security: [{AdminSession: []}]
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AssistantSettingsInput'}}}
+      responses:
+        '200': {description: Updated settings, content: {application/json: {schema: {$ref: '#/components/schemas/AssistantSettings'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /api/v1/admin/tenants/{tenantId}/assistant/secrets/{field}:
+    parameters:
+      - {$ref: '#/components/parameters/TenantID'}
+      - {name: field, in: path, required: true, schema: {type: string, enum: [openrouter-key, telegram-bot-token, line-channel-secret, line-channel-token]}}
+    put:
+      tags: [Admin configuration]
+      operationId: setAssistantSecret
+      description: Sets one secret of the shop's assistant. The value is checked for its shape first, then the admin password is checked again (five wrong passwords lock the check for fifteen minutes). The value is sealed and never returned.
+      security: [{AdminSession: []}]
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AssistantSecretInput'}}}
+      responses:
+        '200': {description: Updated settings, content: {application/json: {schema: {$ref: '#/components/schemas/AssistantSettings'}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {description: Too many wrong passwords; try again later}
+  /api/v1/admin/tenants/{tenantId}/assistant/secrets/{field}/clear:
+    parameters:
+      - {$ref: '#/components/parameters/TenantID'}
+      - {name: field, in: path, required: true, schema: {type: string, enum: [openrouter-key, telegram-bot-token, line-channel-secret, line-channel-token]}}
+    post:
+      tags: [Admin configuration]
+      operationId: clearAssistantSecret
+      description: Removes one secret. Needs the admin password again. The OpenRouter key of a shop that is switched on cannot be removed.
+      security: [{AdminSession: []}]
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AssistantPasswordInput'}}}
+      responses:
+        '200': {description: Updated settings, content: {application/json: {schema: {$ref: '#/components/schemas/AssistantSettings'}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {description: Too many wrong passwords; try again later}
+  /api/v1/admin/assistant/global:
+    get:
+      tags: [Admin configuration]
+      operationId: getAssistantGlobalSettings
+      description: Whether the operator's shared LINE channel is set. Shops whose LINE mode is CENTRAL use it.
+      security: [{AdminSession: []}]
+      responses:
+        '200': {description: Shared channel state, content: {application/json: {schema: {$ref: '#/components/schemas/AssistantGlobalSettings'}}}}
+  /api/v1/admin/assistant/global/secrets/{field}:
+    parameters:
+      - {name: field, in: path, required: true, schema: {type: string, enum: [line-channel-secret, line-channel-token]}}
+    put:
+      tags: [Admin configuration]
+      operationId: setAssistantGlobalSecret
+      description: Sets one secret of the shared LINE channel. Same checks as a shop's secret.
+      security: [{AdminSession: []}]
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AssistantSecretInput'}}}
+      responses:
+        '200': {description: Shared channel state, content: {application/json: {schema: {$ref: '#/components/schemas/AssistantGlobalSettings'}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {description: Too many wrong passwords; try again later}
+  /api/v1/agent/assistant-config:
+    get:
+      tags: [Agent]
+      operationId: getAgentAssistantConfig
+      description: "The assistant of a shop reads its own settings with its own token: model and pinned providers, and the shop's secrets. Not cached (Cache-Control: no-store). Send the ETag back in If-None-Match and an unchanged answer is an empty 304. When the assistant must not run (off, past the shop's end date, no key) the answer says enabled false and carries no model and no secret. Not a counted call."
+      security: [{AgentToken: []}]
+      parameters: [{name: If-None-Match, in: header, required: false, schema: {type: string}}]
+      responses:
+        '200': {description: Settings, headers: {ETag: {schema: {type: string}}}, content: {application/json: {schema: {$ref: '#/components/schemas/AgentAssistantConfig'}}}}
+        '304': {description: Unchanged}
+        '401': {$ref: '#/components/responses/AgentRefusal'}
+        '404': {$ref: '#/components/responses/AgentRefusal'}
+        '429': {$ref: '#/components/responses/AgentRefusal'}
+  /api/v1/agent/assistant-status:
+    post:
+      tags: [Agent]
+      operationId: postAgentAssistantStatus
+      description: The assistant reports which settings version and model it is running, so the admin page can say whether the latest settings are in use.
+      security: [{AgentToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AgentAssistantStatus'}}}
+      responses:
+        '200': {description: Recorded, content: {application/json: {schema: {type: object, properties: {status: {type: string}}}}}}
+        '401': {$ref: '#/components/responses/AgentRefusal'}
+        '404': {$ref: '#/components/responses/AgentRefusal'}
+        '422': {$ref: '#/components/responses/AgentRefusal'}
   /api/v1/agent/search:
     get:
       tags: [Agent]
@@ -1816,6 +1931,124 @@ components:
         truncated: {type: boolean}
         notes: {type: array, items: {type: string}}
         retryAfterSeconds: {type: integer}
+    AssistantSecretState:
+      type: object
+      required: [isSet]
+      properties:
+        isSet: {type: boolean}
+        last4: {type: string, description: "Last four characters, only for the OpenRouter key."}
+    AssistantModel:
+      type: object
+      required: [key, modelId, label, summary, status, vision, selectable]
+      properties:
+        key: {type: string}
+        modelId: {type: string}
+        label: {type: string}
+        summary: {type: string}
+        status: {type: string, enum: [CERTIFIED, UNTESTED, SLOW, TEST_ONLY]}
+        vision: {type: boolean}
+        selectable: {type: boolean}
+        default: {type: boolean}
+        measured:
+          type: object
+          required: [seconds, usd]
+          properties:
+            seconds: {type: number}
+            usd: {type: number}
+    AssistantStatusView:
+      type: object
+      required: [appliedConfigVersion, lastSeenAt, upToDate]
+      properties:
+        appliedConfigVersion: {type: integer, format: int64}
+        reportedModelKey: {type: string}
+        startedAt: {type: string, format: date-time}
+        lastSeenAt: {type: string, format: date-time}
+        lastErrorCode: {type: string}
+        upToDate: {type: boolean}
+    AssistantSettings:
+      type: object
+      required: [enabled, isTest, modelKey, lineMode, secrets, centralLineConfigured, version, configVersion, models]
+      properties:
+        enabled: {type: boolean}
+        isTest: {type: boolean}
+        modelKey: {type: string}
+        lineMode: {type: string, enum: [NONE, CENTRAL, OWN]}
+        secrets:
+          type: object
+          required: [openrouterKey, telegramBotToken, lineChannelSecret, lineChannelToken]
+          properties:
+            openrouterKey: {$ref: '#/components/schemas/AssistantSecretState'}
+            telegramBotToken: {$ref: '#/components/schemas/AssistantSecretState'}
+            lineChannelSecret: {$ref: '#/components/schemas/AssistantSecretState'}
+            lineChannelToken: {$ref: '#/components/schemas/AssistantSecretState'}
+        centralLineConfigured: {type: boolean}
+        version: {type: integer}
+        configVersion: {type: integer, format: int64}
+        models: {type: array, items: {$ref: '#/components/schemas/AssistantModel'}}
+        status: {$ref: '#/components/schemas/AssistantStatusView'}
+    AssistantSettingsInput:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        enabled: {type: boolean}
+        isTest: {type: boolean}
+        modelKey: {type: string}
+        lineMode: {type: string, enum: [NONE, CENTRAL, OWN]}
+        version: {type: integer, description: "The version of the settings as loaded; 0 when the shop has none yet."}
+    AssistantSecretInput:
+      type: object
+      additionalProperties: false
+      required: [value, adminPassword]
+      properties:
+        value: {type: string, writeOnly: true, maxLength: 4096}
+        adminPassword: {type: string, writeOnly: true}
+    AssistantPasswordInput:
+      type: object
+      additionalProperties: false
+      required: [adminPassword]
+      properties:
+        adminPassword: {type: string, writeOnly: true}
+    AssistantGlobalSettings:
+      type: object
+      required: [lineChannelSecret, lineChannelToken, configVersion]
+      properties:
+        lineChannelSecret: {$ref: '#/components/schemas/AssistantSecretState'}
+        lineChannelToken: {$ref: '#/components/schemas/AssistantSecretState'}
+        configVersion: {type: integer, format: int64}
+    AgentAssistantConfig:
+      type: object
+      required: [configVersion, enabled]
+      properties:
+        configVersion: {type: integer, format: int64}
+        enabled: {type: boolean}
+        reason: {type: string, enum: [NOT_CONFIGURED, DISABLED, EXPIRED, KEY_MISSING, MODEL_NOT_ALLOWED, SECRET_UNREADABLE]}
+        shopName: {type: string}
+        lineMode: {type: string}
+        model:
+          type: object
+          required: [key, modelId, dataCollectionDeny]
+          properties:
+            key: {type: string}
+            modelId: {type: string}
+            providers: {type: array, items: {type: string}}
+            dataCollectionDeny: {type: boolean}
+        secrets:
+          type: object
+          properties:
+            openrouterKey: {type: string}
+            telegramBotToken: {type: string}
+            lineChannelSecret: {type: string}
+            lineChannelAccessToken: {type: string}
+    AgentAssistantStatus:
+      type: object
+      additionalProperties: false
+      required: [configVersion]
+      properties:
+        configVersion: {type: integer, format: int64}
+        modelKey: {type: string}
+        startedAt: {type: string, format: date-time}
+        errorCode: {type: string, pattern: '^[A-Z0-9_]{1,40}$'}
     AgentSearch:
       type: object
       required: [status, totalFound]

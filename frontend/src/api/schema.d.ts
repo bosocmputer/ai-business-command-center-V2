@@ -476,6 +476,136 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tenants/{tenantId}/assistant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+            };
+            cookie?: never;
+        };
+        /** @description The shop's assistant settings and what the assistant reports it is running. No secret is ever returned; a secret is set or not set, and an OpenRouter key shows its last four characters. */
+        get: operations["getAssistantSettings"];
+        /** @description Switches the assistant on or off and chooses the model and the LINE mode. Switching on needs the OpenRouter key (and the LINE channel for the chosen mode). The version guards against saving from a stale page. */
+        put: operations["updateAssistantSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants/{tenantId}/assistant/secrets/{field}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+                field: "openrouter-key" | "telegram-bot-token" | "line-channel-secret" | "line-channel-token";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Sets one secret of the shop's assistant. The value is checked for its shape first, then the admin password is checked again (five wrong passwords lock the check for fifteen minutes). The value is sealed and never returned. */
+        put: operations["setAssistantSecret"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants/{tenantId}/assistant/secrets/{field}/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+                field: "openrouter-key" | "telegram-bot-token" | "line-channel-secret" | "line-channel-token";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Removes one secret. Needs the admin password again. The OpenRouter key of a shop that is switched on cannot be removed. */
+        post: operations["clearAssistantSecret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/assistant/global": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Whether the operator's shared LINE channel is set. Shops whose LINE mode is CENTRAL use it. */
+        get: operations["getAssistantGlobalSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/assistant/global/secrets/{field}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                field: "line-channel-secret" | "line-channel-token";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Sets one secret of the shared LINE channel. Same checks as a shop's secret. */
+        put: operations["setAssistantGlobalSecret"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/assistant-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The assistant of a shop reads its own settings with its own token: model and pinned providers, and the shop's secrets. Not cached (Cache-Control: no-store). Send the ETag back in If-None-Match and an unchanged answer is an empty 304. When the assistant must not run (off, past the shop's end date, no key) the answer says enabled false and carries no model and no secret. Not a counted call. */
+        get: operations["getAgentAssistantConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/assistant-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description The assistant reports which settings version and model it is running, so the admin page can say whether the latest settings are in use. */
+        post: operations["postAgentAssistantStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/search": {
         parameters: {
             query?: never;
@@ -1564,6 +1694,107 @@ export interface components {
             truncated?: boolean;
             notes?: string[];
             retryAfterSeconds?: number;
+        };
+        AssistantSecretState: {
+            isSet: boolean;
+            /** @description Last four characters, only for the OpenRouter key. */
+            last4?: string;
+        };
+        AssistantModel: {
+            key: string;
+            modelId: string;
+            label: string;
+            summary: string;
+            /** @enum {string} */
+            status: "CERTIFIED" | "UNTESTED" | "SLOW" | "TEST_ONLY";
+            vision: boolean;
+            selectable: boolean;
+            default?: boolean;
+            measured?: {
+                seconds: number;
+                usd: number;
+            };
+        };
+        AssistantStatusView: {
+            /** Format: int64 */
+            appliedConfigVersion: number;
+            reportedModelKey?: string;
+            /** Format: date-time */
+            startedAt?: string;
+            /** Format: date-time */
+            lastSeenAt: string;
+            lastErrorCode?: string;
+            upToDate: boolean;
+        };
+        AssistantSettings: {
+            enabled: boolean;
+            isTest: boolean;
+            modelKey: string;
+            /** @enum {string} */
+            lineMode: "NONE" | "CENTRAL" | "OWN";
+            secrets: {
+                openrouterKey: components["schemas"]["AssistantSecretState"];
+                telegramBotToken: components["schemas"]["AssistantSecretState"];
+                lineChannelSecret: components["schemas"]["AssistantSecretState"];
+                lineChannelToken: components["schemas"]["AssistantSecretState"];
+            };
+            centralLineConfigured: boolean;
+            version: number;
+            /** Format: int64 */
+            configVersion: number;
+            models: components["schemas"]["AssistantModel"][];
+            status?: components["schemas"]["AssistantStatusView"];
+        };
+        AssistantSettingsInput: {
+            enabled?: boolean;
+            isTest?: boolean;
+            modelKey?: string;
+            /** @enum {string} */
+            lineMode?: "NONE" | "CENTRAL" | "OWN";
+            /** @description The version of the settings as loaded; 0 when the shop has none yet. */
+            version: number;
+        };
+        AssistantSecretInput: {
+            value: string;
+            adminPassword: string;
+        };
+        AssistantPasswordInput: {
+            adminPassword: string;
+        };
+        AssistantGlobalSettings: {
+            lineChannelSecret: components["schemas"]["AssistantSecretState"];
+            lineChannelToken: components["schemas"]["AssistantSecretState"];
+            /** Format: int64 */
+            configVersion: number;
+        };
+        AgentAssistantConfig: {
+            /** Format: int64 */
+            configVersion: number;
+            enabled: boolean;
+            /** @enum {string} */
+            reason?: "NOT_CONFIGURED" | "DISABLED" | "EXPIRED" | "KEY_MISSING" | "MODEL_NOT_ALLOWED" | "SECRET_UNREADABLE";
+            shopName?: string;
+            lineMode?: string;
+            model?: {
+                key: string;
+                modelId: string;
+                providers?: string[];
+                dataCollectionDeny: boolean;
+            };
+            secrets?: {
+                openrouterKey?: string;
+                telegramBotToken?: string;
+                lineChannelSecret?: string;
+                lineChannelAccessToken?: string;
+            };
+        };
+        AgentAssistantStatus: {
+            /** Format: int64 */
+            configVersion: number;
+            modelKey?: string;
+            /** Format: date-time */
+            startedAt?: string;
+            errorCode?: string;
         };
         AgentSearch: {
             /** @enum {string} */
@@ -4227,6 +4458,257 @@ export interface operations {
             404: components["responses"]["AgentRefusal"];
             422: components["responses"]["AgentRefusal"];
             429: components["responses"]["AgentRefusal"];
+        };
+    };
+    getAssistantSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantSettings"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateAssistantSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantSettingsInput"];
+            };
+        };
+        responses: {
+            /** @description Updated settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantSettings"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    setAssistantSecret: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+                field: "openrouter-key" | "telegram-bot-token" | "line-channel-secret" | "line-channel-token";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantSecretInput"];
+            };
+        };
+        responses: {
+            /** @description Updated settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantSettings"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many wrong passwords; try again later */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clearAssistantSecret: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+                field: "openrouter-key" | "telegram-bot-token" | "line-channel-secret" | "line-channel-token";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantPasswordInput"];
+            };
+        };
+        responses: {
+            /** @description Updated settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantSettings"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many wrong passwords; try again later */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getAssistantGlobalSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Shared channel state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantGlobalSettings"];
+                };
+            };
+        };
+    };
+    setAssistantGlobalSecret: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                field: "line-channel-secret" | "line-channel-token";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantSecretInput"];
+            };
+        };
+        responses: {
+            /** @description Shared channel state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantGlobalSettings"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many wrong passwords; try again later */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getAgentAssistantConfig: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-None-Match"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Settings */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentAssistantConfig"];
+                };
+            };
+            /** @description Unchanged */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AgentRefusal"];
+            404: components["responses"]["AgentRefusal"];
+            429: components["responses"]["AgentRefusal"];
+        };
+    };
+    postAgentAssistantStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentAssistantStatus"];
+            };
+        };
+        responses: {
+            /** @description Recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status?: string;
+                    };
+                };
+            };
+            401: components["responses"]["AgentRefusal"];
+            404: components["responses"]["AgentRefusal"];
+            422: components["responses"]["AgentRefusal"];
         };
     };
     getAgentSearch: {

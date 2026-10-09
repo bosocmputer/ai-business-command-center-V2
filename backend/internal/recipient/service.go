@@ -34,6 +34,10 @@ var (
 	ErrIdempotencyConflict  = errors.New("recipient idempotency conflict")
 	ErrVersionConflict      = errors.New("recipient permission version conflict")
 	ErrInvitationNotPending = errors.New("recipient invitation can only be reissued while pending")
+	// ErrAIChatPermissionsNarrower: the assistant of a shop answers with the permissions of the recipient whose token it holds, so a
+	// recipient who may read fewer reports than that holder must not be given the chat, or the assistant would show them more than
+	// their own permissions allow.
+	ErrAIChatPermissionsNarrower = errors.New("recipient may read fewer reports than the assistant's token holder")
 )
 
 type PermissionInUseError struct{ ScheduleNames []string }

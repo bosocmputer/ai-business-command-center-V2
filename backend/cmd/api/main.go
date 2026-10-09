@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/agent"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/assistantcfg"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/auth"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/config"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/database"
@@ -73,8 +74,9 @@ func main() {
 	viewerReportService := viewer.NewReportService(viewerService, database.NewReportStore(pool).ConfigureGenerationCache(cfg.GenerationCacheEnabled), time.Now).
 		ConfigureSnapshotFirst(cfg.SnapshotFirstEnabled, cfg.SnapshotFirstTenantIDs).
 		ConfigureStaleRevalidation(cfg.StaleRevalidationEnabled)
+	assistantSettings := assistantcfg.NewService(database.NewAssistantSettingsStore(pool), secretBox, time.Now)
 	agentStore := database.NewAgentStore(pool)
-	agentService := agent.NewService(agentStore, database.NewReportStore(pool), sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{CallsPerHour: cfg.AgentCallsPerHour, RefreshesPerHour: cfg.AgentRefreshesPerHour, MonthlyCallBudget: cfg.AgentMonthlyCallBudget}).ConfigureAlerts(agentStore).ConfigureMaster(database.NewMasterStore(pool)).ConfigureExports(viewerReportService)
+	agentService := agent.NewService(agentStore, database.NewReportStore(pool), sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{CallsPerHour: cfg.AgentCallsPerHour, RefreshesPerHour: cfg.AgentRefreshesPerHour, MonthlyCallBudget: cfg.AgentMonthlyCallBudget}).ConfigureAlerts(agentStore).ConfigureMaster(database.NewMasterStore(pool)).ConfigureExports(viewerReportService).ConfigureAssistantConfig(assistantSettings)
 	if cfg.AgentLiveLookupsEnabled {
 		// A narrow client: a few thousand rows and a few megabytes are far more than any one lookup returns.
 		lookupRunner := lookup.NewRunner(smlService, sml.NewClient(smlPolicy, 25*time.Second, 4*1024*1024, 5_000), time.Now)

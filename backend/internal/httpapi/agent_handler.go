@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/agent"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/assistantcfg"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -25,6 +27,8 @@ type AgentAPI interface {
 	DraftCollection(ctx context.Context, principal agent.Principal, request agent.DraftRequest) (agent.DraftResponse, error)
 	LiveLookup(ctx context.Context, principal agent.Principal, kind, code string) (agent.LookupResponse, error)
 	Export(ctx context.Context, principal agent.Principal, reportKey, dateFrom, dateTo, cursor string) (agent.ExportResponse, error)
+	AssistantConfig(ctx context.Context, principal agent.Principal) (assistantcfg.AgentConfig, error)
+	AssistantStatus(ctx context.Context, principal agent.Principal, report assistantcfg.StatusReport) error
 	SearchMaster(ctx context.Context, principal agent.Principal, kind, query string) (agent.SearchResponse, error)
 	DraftPurchaseOrder(ctx context.Context, principal agent.Principal) (agent.PurchaseDraftResponse, error)
 	IssueToken(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID, namesVisible bool) (agent.IssuedToken, error)
@@ -134,6 +138,43 @@ func registerAgentRoutes(router chi.Router, api AgentAPI, enabled bool) {
 			query := request.URL.Query()
 			result, err := api.Export(request.Context(), agentPrincipal(request), chi.URLParam(request, "reportKey"), query.Get("dateFrom"), query.Get("dateTo"), query.Get("cursor"))
 			respondAgent(response, result, err)
+		})
+		group.Get("/assistant-config", func(response http.ResponseWriter, request *http.Request) {
+			config, err := api.AssistantConfig(request.Context(), agentPrincipal(request))
+			if err != nil {
+				respondAgent(response, nil, err)
+				return
+			}
+			// The answer holds secrets: it is never cached, and it is not logged anywhere. The tag lets the assistant ask "has anything
+			// changed" every minute and get an empty 304 back.
+			response.Header().Set("Cache-Control", "no-store")
+			response.Header().Set("ETag", config.ETag())
+			if request.Header.Get("If-None-Match") == config.ETag() {
+				response.WriteHeader(http.StatusNotModified)
+				return
+			}
+			writeJSON(response, http.StatusOK, config)
+		})
+		group.Post("/assistant-status", func(response http.ResponseWriter, request *http.Request) {
+			var input struct {
+				ConfigVersion int64      `json:"configVersion"`
+				ModelKey      string     `json:"modelKey"`
+				StartedAt     *time.Time `json:"startedAt"`
+				ErrorCode     string     `json:"errorCode"`
+			}
+			decoder := json.NewDecoder(http.MaxBytesReader(response, request.Body, 4096))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&input); err != nil {
+				writeAgentJSON(response, http.StatusUnprocessableEntity, agentError{Status: "INVALID_STATUS", Message: "รายงานสถานะไม่ถูกต้อง"})
+				return
+			}
+			err := api.AssistantStatus(request.Context(), agentPrincipal(request), assistantcfg.StatusReport{ConfigVersion: input.ConfigVersion, ModelKey: input.ModelKey, StartedAt: input.StartedAt, ErrorCode: input.ErrorCode})
+			var invalid *assistantcfg.ValidationError
+			if errors.As(err, &invalid) {
+				writeAgentJSON(response, http.StatusUnprocessableEntity, agentError{Status: "INVALID_STATUS", Message: "รายงานสถานะไม่ถูกต้อง"})
+				return
+			}
+			respondAgent(response, map[string]string{"status": "OK"}, err)
 		})
 		group.Get("/search", func(response http.ResponseWriter, request *http.Request) {
 			query := request.URL.Query()

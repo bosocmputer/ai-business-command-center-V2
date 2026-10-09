@@ -55,6 +55,7 @@ type Service struct {
 	master    MasterStore
 	live      LiveSource
 	exports   ExportSource
+	assistant AssistantConfigSource
 	now       func() time.Time
 	config    Config
 }

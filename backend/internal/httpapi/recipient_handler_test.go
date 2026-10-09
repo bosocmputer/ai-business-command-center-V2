@@ -208,3 +208,14 @@ func TestAdminAIChatReportsUnknownRecipient(t *testing.T) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
+
+func TestAdminAIChatIsRefusedForARecipientWhoMaySeeLessThanTheAssistantTokenHolder(t *testing.T) {
+	tenantID, recipientID := uuid.New(), uuid.New()
+	api := &fakeRecipientAPI{aiChatErr: recipient.ErrAIChatPermissionsNarrower}
+	handler := NewHandler(Dependencies{Readiness: readinessFunc(func(context.Context) error { return nil }), AdminAuth: &fakeAdminAuth{}, Recipients: api})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, aiChatRequest(tenantID, recipientID, `{"enabled":true}`, true))
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "AI_CHAT_PERMISSIONS_NARROWER") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}

@@ -790,6 +790,27 @@ func (store *RecipientStore) SetAIChat(ctx context.Context, actorHash []byte, re
 	if err != nil {
 		return recipient.StoredRecipient{}, fmt.Errorf("lock recipient membership: %w", err)
 	}
+	if enabled && !current {
+		// The assistant of the shop answers with the permissions of whoever holds its token. A recipient who may read fewer reports than
+		// a holder must not be given the chat: they would see more through the assistant than their own permissions allow.
+		var narrower bool
+		if err := tx.QueryRow(ctx, `
+			select exists (
+			  select 1
+			  from agent_tokens t
+			  join recipient_report_permissions held on held.tenant_id = t.tenant_id and held.recipient_id = t.recipient_id
+			  where t.tenant_id = $1 and t.status = 'ACTIVE' and t.recipient_id <> $2
+			    and not exists (
+			      select 1 from recipient_report_permissions own
+			      where own.tenant_id = $1 and own.recipient_id = $2 and own.report_key = held.report_key
+			    )
+			)`, tenantID, recipientID).Scan(&narrower); err != nil {
+			return recipient.StoredRecipient{}, fmt.Errorf("check assistant token permissions: %w", err)
+		}
+		if narrower {
+			return recipient.StoredRecipient{}, recipient.ErrAIChatPermissionsNarrower
+		}
+	}
 	if current != enabled {
 		if _, err := tx.Exec(ctx, `
 			update tenant_memberships set ai_chat_enabled = $3, ai_chat_updated_at = $4, updated_at = $4

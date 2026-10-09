@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/agent"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/assistantcfg"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/auth"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/viewer"
@@ -528,5 +529,59 @@ func TestAgentExportGivesRowsWithoutNamesAndRefusesLikeAMissingReport(t *testing
 	bare := agentTestHandler(store, true)
 	if got := agentGet(bare, "/api/v1/agent/exports/sales_goods_services", "abcc_token"); got.Code != http.StatusNotFound || !bytes.Equal(got.Body.Bytes(), missing.Body.Bytes()) {
 		t.Fatalf("exports that are not switched on must answer like a missing report: %d %s", got.Code, got.Body.String())
+	}
+}
+
+type agentTestAssistantConfig struct{ received []assistantcfg.StatusReport }
+
+func (agentTestAssistantConfig) AgentConfig(_ context.Context, tenantID uuid.UUID) (assistantcfg.AgentConfig, error) {
+	return assistantcfg.AgentConfig{ConfigVersion: 7, Enabled: true, ShopName: "ร้านทดสอบ", Model: &assistantcfg.AgentModel{Key: "gemini-3.1-flash-lite", ModelID: "google/gemini-3.1-flash-lite"}, Secrets: &assistantcfg.AgentSecrets{OpenRouterKey: "sk-or-v1-test-secret"}}, nil
+}
+
+func (source *agentTestAssistantConfig) RecordStatus(_ context.Context, _ uuid.UUID, report assistantcfg.StatusReport) error {
+	if report.ModelKey == "mystery" {
+		return &assistantcfg.ValidationError{Field: "modelKey", Code: "UNKNOWN_MODEL"}
+	}
+	source.received = append(source.received, report)
+	return nil
+}
+
+func TestAgentAssistantConfigIsPrivateTaggedAndAnswersNotModified(t *testing.T) {
+	store := newAgentStore()
+	now := time.Date(2026, 10, 1, 5, 0, 0, 0, time.UTC)
+	source := &agentTestAssistantConfig{}
+	service := agent.NewService(store, agentTestSnapshots{}, agentTestHasher{}, bytes.NewReader(bytes.Repeat([]byte{3}, 64)), agent.Alias(agentTestHasher{}), func() time.Time { return now }, agent.Config{}).ConfigureAssistantConfig(source)
+	handler := NewHandler(Dependencies{Readiness: readinessFunc(func(context.Context) error { return nil }), AdminAuth: &fakeAdminAuth{}, Agent: service, AgentEnabled: true})
+
+	first := agentGet(handler, "/api/v1/agent/assistant-config", "abcc_token")
+	if first.Code != http.StatusOK || !strings.Contains(first.Body.String(), "sk-or-v1-test-secret") || first.Header().Get("Cache-Control") != "no-store" || first.Header().Get("ETag") != `"v7-true"` {
+		t.Fatalf("config = %d %v %s", first.Code, first.Header(), first.Body.String())
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/agent/assistant-config", nil)
+	request.Header.Set("Authorization", "Bearer abcc_token")
+	request.Header.Set("If-None-Match", `"v7-true"`)
+	same := httptest.NewRecorder()
+	handler.ServeHTTP(same, request)
+	if same.Code != http.StatusNotModified || same.Body.Len() != 0 {
+		t.Fatalf("unchanged = %d %q", same.Code, same.Body.String())
+	}
+	if got := agentGet(handler, "/api/v1/agent/assistant-config", "abcc_other"); got.Code != http.StatusUnauthorized || strings.Contains(got.Body.String(), "sk-or") {
+		t.Fatalf("a wrong token must get nothing: %d %s", got.Code, got.Body.String())
+	}
+
+	ok := agentPost(handler, "/api/v1/agent/assistant-status", "abcc_token", `{"configVersion":7,"modelKey":"gemini-3.1-flash-lite"}`)
+	if ok.Code != http.StatusOK || len(source.received) != 1 || source.received[0].ConfigVersion != 7 {
+		t.Fatalf("status = %d %v", ok.Code, source.received)
+	}
+	if bad := agentPost(handler, "/api/v1/agent/assistant-status", "abcc_token", `{"configVersion":7,"modelKey":"mystery"}`); bad.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("a model that is not in the catalog = %d", bad.Code)
+	}
+	if extra := agentPost(handler, "/api/v1/agent/assistant-status", "abcc_token", `{"configVersion":7,"secret":"x"}`); extra.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown fields = %d", extra.Code)
+	}
+	bare := agentTestHandler(store, true)
+	missing := agentGet(bare, "/api/v1/agent/reports/no_such_report", "abcc_token")
+	if got := agentGet(bare, "/api/v1/agent/assistant-config", "abcc_token"); got.Code != http.StatusNotFound || !bytes.Equal(got.Body.Bytes(), missing.Body.Bytes()) {
+		t.Fatalf("not switched on must answer like a missing report: %d", got.Code)
 	}
 }

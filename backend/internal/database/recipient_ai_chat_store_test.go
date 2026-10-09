@@ -115,3 +115,62 @@ func TestRecipientAIChatPermissionLifecycle(t *testing.T) {
 		t.Fatalf("revoked membership error = %v", err)
 	}
 }
+
+func TestAIChatIsRefusedForARecipientWhoMaySeeLessThanTheTokenHolder(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)
+	tenantID, owner, clerk, equal := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	if _, err := pool.Exec(ctx, `insert into tenants (id, slug, name, timezone, status, access_ends_at) values ($1, $2, 'Cover', 'Asia/Bangkok', 'ACTIVE', $3)`, tenantID, "cover-"+tenantID.String(), now.AddDate(1, 0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []uuid.UUID{owner, clerk, equal} {
+		if _, err := pool.Exec(ctx, `
+			insert into line_recipients (id, line_user_id_hash, line_user_id_ciphertext, line_user_id_nonce, display_name_ciphertext, display_name_nonce, encryption_key_id, status, verified_at)
+			values ($1, $2, '\x01', '\x02', '\x03', '\x04', 'test', 'ACTIVE', $3)`, id, []byte("cover-"+id.String()), now); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `insert into tenant_memberships (tenant_id, recipient_id, status) values ($1, $2, 'ACTIVE')`, tenantID, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	grant := func(id uuid.UUID, keys ...string) {
+		for _, key := range keys {
+			if _, err := pool.Exec(ctx, `insert into recipient_report_permissions (tenant_id, recipient_id, report_key) values ($1, $2, $3)`, tenantID, id, key); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	grant(owner, "sales_goods_services", "ar_aging", "stock_balance")
+	grant(clerk, "sales_goods_services")
+	grant(equal, "sales_goods_services", "ar_aging", "stock_balance", "cash_bank_receipts")
+	if _, err := pool.Exec(ctx, `insert into agent_tokens (tenant_id, recipient_id, token_hash, expires_at) values ($1, $2, $3, $4)`, tenantID, owner, []byte("hash-"+owner.String()), now.AddDate(0, 3, 0)); err != nil {
+		t.Fatal(err)
+	}
+	store := NewRecipientStore(pool)
+	actor := []byte("admin")
+
+	if _, err := store.SetAIChat(ctx, actor, "r1", tenantID, clerk, true, now); !errors.Is(err, recipient.ErrAIChatPermissionsNarrower) {
+		t.Fatalf("a clerk who sees less than the token holder must be refused: %v", err)
+	}
+	if _, err := store.SetAIChat(ctx, actor, "r2", tenantID, equal, true, now); err != nil {
+		t.Fatalf("a recipient who sees at least as much is allowed: %v", err)
+	}
+	if _, err := store.SetAIChat(ctx, actor, "r3", tenantID, owner, true, now); err != nil {
+		t.Fatalf("the token holder is not compared with themselves: %v", err)
+	}
+	if _, err := store.SetAIChat(ctx, actor, "r4", tenantID, clerk, false, now); err != nil {
+		t.Fatalf("switching the chat off is always allowed: %v", err)
+	}
+}
