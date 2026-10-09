@@ -199,6 +199,9 @@ func TestCashBookDocumentTypesCountAsCountedAndInternalMovesAreNamed(t *testing.
 	if !ok || strings.Contains(uncounted.Detail, "รหัส 40 ") || !strings.Contains(uncounted.Detail, "รหัส 420 บันทึกโอนเงินระหว่างธนาคาร [เข้า] 700 ใบ") {
 		t.Fatalf("advance receipts are counted through the cash book, and 420 gets its name from the reference table: %+v", uncounted)
 	}
+	if absent, ok := find(result, "doc_types_absent"); ok && strings.Contains(absent.Detail, "239") {
+		t.Errorf("239 is in the cash book, so the shop does have it: %+v", absent)
+	}
 	internal, ok := find(result, "internal_cash")
 	if !ok || internal.Status != Info || !strings.Contains(internal.Title, "127 ใบ") || !strings.Contains(internal.Title, "16,683,559") ||
 		!strings.Contains(internal.Detail, "บันทึกฝากเงิน 116 ใบ") || !strings.Contains(internal.Detail, "บันทึกถอนเงิน 11 ใบ") {

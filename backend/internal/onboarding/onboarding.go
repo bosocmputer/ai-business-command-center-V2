@@ -306,6 +306,7 @@ func (checker *Checker) coverageItems(ctx context.Context, period report.Period,
 	}
 	counted := countedFlags(period)
 	cashRows, cashErr := checker.SQL.Query(ctx, cashBookFlagsSQL)
+	cashSeen := map[int]struct{}{}
 	var internalDocs, internalTotal int
 	var internalParts []string
 	if cashErr == nil {
@@ -315,6 +316,7 @@ func (checker *Checker) coverageItems(ctx context.Context, period report.Period,
 			if flagErr != nil {
 				continue
 			}
+			cashSeen[flag] = struct{}{}
 			if payType == "2" || payType == "1" && flag != 144 {
 				counted[flag] = struct{}{}
 			}
@@ -371,11 +373,12 @@ func (checker *Checker) coverageItems(ctx context.Context, period report.Period,
 			status = Warn
 		}
 		items = append(items, Item{Area: area, Key: "doc_types_uncounted", Status: status, Title: "ประเภทเอกสารที่ร้านมี แต่ไม่มีรายงานไหนนับ",
-			Detail: strings.Join(parts, " · ") + " ให้ถามเจ้าของว่าประเภทไหนควรนับเป็นยอดขาย/ซื้อ/รับ/จ่าย (ถ้ามีประเภทของร้านเองที่ใช้บ่อย รายงานอาจขาดยอด)"})
+			Detail: strings.Join(parts, " · ") + " ดูชื่อประเภท: ถ้าเป็นเอกสารที่ไม่ใช่ยอดขาย/ซื้อ/รับ/จ่าย (เช่น โอนระหว่างธนาคาร ใบเสนอราคา ใบสั่งขาย) ไม่ต้องทำอะไร ถ้ามีประเภทของร้านเองที่ใช้บ่อยและเป็นรายได้หรือรายจ่ายจริง รายงานอาจขาดยอด ให้ตรวจจากข้อมูล (จำนวนคู่ ฝั่งเดียว ยอดเทียบกับประเภทที่นับ)"})
 	}
 	var missing []string
 	for flag := range counted {
-		if _, ok := seen[flag]; !ok {
+		_, inCashBook := cashSeen[flag]
+		if _, ok := seen[flag]; !ok && !inCashBook {
 			missing = append(missing, strconv.Itoa(flag))
 		}
 	}
