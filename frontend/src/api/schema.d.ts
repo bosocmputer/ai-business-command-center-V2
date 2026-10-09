@@ -459,6 +459,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/exports/{reportKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Gives the detail rows of a report the recipient may read, a page of at most 500 rows at a time, with the Thai column headings the web page uses. The first call (no cursor) uses the recipient's own finished detail run of the report for the period, or starts one (the same run the web page starts, once an hour per report and period) and answers PREPARING; follow nextCursor to get every row, up to 20,000. A token that may not see names gets the same codes in place of customer and supplier names as everywhere else. A report the recipient may not read answers exactly like a missing report. One export is one counted call whatever the number of pages; the call log records the report and the period only. */
+        get: operations["getAgentExport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/search": {
         parameters: {
             query?: never;
@@ -1514,6 +1531,37 @@ export interface components {
             asOf?: string;
             cached?: boolean;
             notes?: string[];
+        };
+        AgentExport: {
+            reportKey: string;
+            label: string;
+            /** @enum {string} */
+            status: "READY" | "PREPARING" | "UNAVAILABLE";
+            message?: string;
+            period?: {
+                /** Format: date */
+                dateFrom: string;
+                /** Format: date */
+                dateTo: string;
+                mode?: string;
+            };
+            /**
+             * Format: date-time
+             * @description When the shop's system was read.
+             */
+            collectedAt?: string;
+            columns?: {
+                key: string;
+                label: string;
+                /** @enum {string} */
+                type: "text" | "number" | "date";
+            }[];
+            rows?: string[][];
+            totalRows?: number;
+            nextCursor?: string;
+            truncated?: boolean;
+            notes?: string[];
+            retryAfterSeconds?: number;
         };
         AgentSearch: {
             /** @enum {string} */
@@ -4140,6 +4188,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentLookup"];
+                };
+            };
+            401: components["responses"]["AgentRefusal"];
+            404: components["responses"]["AgentRefusal"];
+            422: components["responses"]["AgentRefusal"];
+            429: components["responses"]["AgentRefusal"];
+        };
+    };
+    getAgentExport: {
+        parameters: {
+            query?: {
+                dateFrom?: string;
+                dateTo?: string;
+                /** @description The nextCursor of the previous page. */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                reportKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of rows, or why there are none (PREPARING, UNAVAILABLE). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentExport"];
                 };
             };
             401: components["responses"]["AgentRefusal"];

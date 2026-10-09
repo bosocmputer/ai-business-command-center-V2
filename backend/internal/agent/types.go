@@ -24,6 +24,7 @@ const (
 	ToolDraft          Tool = "draft"
 	ToolSearch         Tool = "search"
 	ToolLookup         Tool = "lookup"
+	ToolExport         Tool = "export"
 )
 
 type Outcome string

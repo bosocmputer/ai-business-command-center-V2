@@ -24,6 +24,7 @@ type AgentAPI interface {
 	SetAlert(ctx context.Context, principal agent.Principal, rule string, request agent.AlertSetRequest, requestID string) (agent.AlertView, error)
 	DraftCollection(ctx context.Context, principal agent.Principal, request agent.DraftRequest) (agent.DraftResponse, error)
 	LiveLookup(ctx context.Context, principal agent.Principal, kind, code string) (agent.LookupResponse, error)
+	Export(ctx context.Context, principal agent.Principal, reportKey, dateFrom, dateTo, cursor string) (agent.ExportResponse, error)
 	SearchMaster(ctx context.Context, principal agent.Principal, kind, query string) (agent.SearchResponse, error)
 	DraftPurchaseOrder(ctx context.Context, principal agent.Principal) (agent.PurchaseDraftResponse, error)
 	IssueToken(ctx context.Context, actorHash []byte, requestID string, tenantID, recipientID uuid.UUID, namesVisible bool) (agent.IssuedToken, error)
@@ -129,6 +130,11 @@ func registerAgentRoutes(router chi.Router, api AgentAPI, enabled bool) {
 			result, err := api.LiveLookup(request.Context(), agentPrincipal(request), chi.URLParam(request, "kind"), request.URL.Query().Get("code"))
 			respondAgent(response, result, err)
 		})
+		group.Get("/exports/{reportKey}", func(response http.ResponseWriter, request *http.Request) {
+			query := request.URL.Query()
+			result, err := api.Export(request.Context(), agentPrincipal(request), chi.URLParam(request, "reportKey"), query.Get("dateFrom"), query.Get("dateTo"), query.Get("cursor"))
+			respondAgent(response, result, err)
+		})
 		group.Get("/search", func(response http.ResponseWriter, request *http.Request) {
 			query := request.URL.Query()
 			result, err := api.SearchMaster(request.Context(), agentPrincipal(request), query.Get("kind"), query.Get("q"))
@@ -173,7 +179,7 @@ func respondAgent(response http.ResponseWriter, result any, err error) {
 	switch {
 	case err == nil:
 		writeAgentJSON(response, http.StatusOK, result)
-	case errors.Is(err, agent.ErrNoData), errors.Is(err, agent.ErrAlertsUnavailable), errors.Is(err, agent.ErrMasterUnavailable), errors.Is(err, agent.ErrLookupUnavailable):
+	case errors.Is(err, agent.ErrNoData), errors.Is(err, agent.ErrAlertsUnavailable), errors.Is(err, agent.ErrMasterUnavailable), errors.Is(err, agent.ErrLookupUnavailable), errors.Is(err, agent.ErrExportUnavailable):
 		writeAgentJSON(response, http.StatusNotFound, agentError{Status: "NO_DATA", Message: agent.MessageNoData})
 	case isInvalidAlert(err):
 		var invalid *agent.InvalidAlertError

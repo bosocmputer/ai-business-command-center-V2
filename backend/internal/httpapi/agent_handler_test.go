@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -478,5 +479,54 @@ func TestAgentAnswersBudgetUsedWithRetryAfterAndThaiMessage(t *testing.T) {
 	got := agentGet(handler, "/api/v1/agent/context", "abcc_token")
 	if got.Code != http.StatusTooManyRequests || !strings.Contains(got.Body.String(), "BUDGET_USED") || !strings.Contains(got.Body.String(), "ต้นเดือนหน้า") || got.Header().Get("Retry-After") == "" {
 		t.Fatalf("budget: %d %s %v", got.Code, got.Body.String(), got.Header())
+	}
+}
+
+type agentTestExports struct{}
+
+func (agentTestExports) OwnDetailRun(context.Context, uuid.UUID, uuid.UUID, report.Key, report.Period) (viewer.DashboardSnapshot, error) {
+	return viewer.DashboardSnapshot{RunID: uuid.New(), FreshnessStatus: viewer.FreshnessFresh}, nil
+}
+
+func (agentTestExports) Create(context.Context, uuid.UUID, uuid.UUID, report.Key, string, viewer.CreateReportRunInput) (report.Run, error) {
+	return report.Run{}, errors.New("not expected")
+}
+
+func (agentTestExports) Get(_ context.Context, _, _ uuid.UUID, key report.Key, runID uuid.UUID) (report.Run, error) {
+	return report.Run{ID: runID, ReportKey: key, Status: report.StatusSucceeded, RowCount: 1, Period: report.Period{DateFrom: "2026-09-01", DateTo: "2026-09-30"}}, nil
+}
+
+func (agentTestExports) ListRows(context.Context, uuid.UUID, uuid.UUID, report.Key, uuid.UUID, string, int) (viewer.ReportRows, error) {
+	return viewer.ReportRows{Rows: []map[string]string{{"doc_no": "IV-001", "cust_name": "บริษัท ตัวอย่าง จำกัด", "sum_amount": "250.00"}}}, nil
+}
+
+func TestAgentExportGivesRowsWithoutNamesAndRefusesLikeAMissingReport(t *testing.T) {
+	store := newAgentStore()
+	store.permitted = []report.Key{report.SalesGoodsServices}
+	now := time.Date(2026, 10, 1, 5, 0, 0, 0, time.UTC)
+	service := agent.NewService(store, agentTestSnapshots{}, agentTestHasher{}, bytes.NewReader(bytes.Repeat([]byte{3}, 64)), agent.Alias(agentTestHasher{}), func() time.Time { return now }, agent.Config{}).
+		ConfigureExports(agentTestExports{})
+	handler := NewHandler(Dependencies{Readiness: readinessFunc(func(context.Context) error { return nil }), AdminAuth: &fakeAdminAuth{}, Agent: service, AgentEnabled: true})
+	ok := agentGet(handler, "/api/v1/agent/exports/sales_goods_services?dateFrom=2026-09-01&dateTo=2026-09-30", "abcc_token")
+	if ok.Code != http.StatusOK || !strings.Contains(ok.Body.String(), `"status":"READY"`) || !strings.Contains(ok.Body.String(), `"IV-001"`) || !strings.Contains(ok.Body.String(), `"label":"เลขที่เอกสาร"`) {
+		t.Fatalf("export: %d %s", ok.Code, ok.Body.String())
+	}
+	if strings.Contains(ok.Body.String(), "ตัวอย่าง") || !strings.Contains(ok.Body.String(), "ลูกค้า-") {
+		t.Fatalf("a token that may not see names must get codes: %s", ok.Body.String())
+	}
+	missing := agentGet(handler, "/api/v1/agent/reports/no_such_report", "abcc_token")
+	forbidden := agentGet(handler, "/api/v1/agent/exports/stock_balance", "abcc_token")
+	if forbidden.Code != http.StatusNotFound || !bytes.Equal(forbidden.Body.Bytes(), missing.Body.Bytes()) {
+		t.Fatalf("a forbidden export must answer like a missing report: %d %s", forbidden.Code, forbidden.Body.String())
+	}
+	if got := agentGet(handler, "/api/v1/agent/exports/sales_goods_services?cursor=bad", "abcc_token"); got.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("a made-up cursor: %d %s", got.Code, got.Body.String())
+	}
+	if got := agentGet(handler, "/api/v1/agent/exports/sales_goods_services", "abcc_other"); got.Code != http.StatusUnauthorized {
+		t.Fatalf("a wrong token: %d", got.Code)
+	}
+	bare := agentTestHandler(store, true)
+	if got := agentGet(bare, "/api/v1/agent/exports/sales_goods_services", "abcc_token"); got.Code != http.StatusNotFound || !bytes.Equal(got.Body.Bytes(), missing.Body.Bytes()) {
+		t.Fatalf("exports that are not switched on must answer like a missing report: %d %s", got.Code, got.Body.String())
 	}
 }

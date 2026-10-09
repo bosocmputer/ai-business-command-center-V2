@@ -74,7 +74,7 @@ func main() {
 		ConfigureSnapshotFirst(cfg.SnapshotFirstEnabled, cfg.SnapshotFirstTenantIDs).
 		ConfigureStaleRevalidation(cfg.StaleRevalidationEnabled)
 	agentStore := database.NewAgentStore(pool)
-	agentService := agent.NewService(agentStore, database.NewReportStore(pool), sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{CallsPerHour: cfg.AgentCallsPerHour, RefreshesPerHour: cfg.AgentRefreshesPerHour, MonthlyCallBudget: cfg.AgentMonthlyCallBudget}).ConfigureAlerts(agentStore).ConfigureMaster(database.NewMasterStore(pool))
+	agentService := agent.NewService(agentStore, database.NewReportStore(pool), sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{CallsPerHour: cfg.AgentCallsPerHour, RefreshesPerHour: cfg.AgentRefreshesPerHour, MonthlyCallBudget: cfg.AgentMonthlyCallBudget}).ConfigureAlerts(agentStore).ConfigureMaster(database.NewMasterStore(pool)).ConfigureExports(viewerReportService)
 	if cfg.AgentLiveLookupsEnabled {
 		// A narrow client: a few thousand rows and a few megabytes are far more than any one lookup returns.
 		lookupRunner := lookup.NewRunner(smlService, sml.NewClient(smlPolicy, 25*time.Second, 4*1024*1024, 5_000), time.Now)

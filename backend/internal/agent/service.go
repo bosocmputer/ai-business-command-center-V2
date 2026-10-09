@@ -54,6 +54,7 @@ type Service struct {
 	alerts    AlertStore
 	master    MasterStore
 	live      LiveSource
+	exports   ExportSource
 	now       func() time.Time
 	config    Config
 }

@@ -181,3 +181,141 @@ class TableSumsTests(unittest.TestCase):
         box = tempfile.mkdtemp()
         result = tools.make_file("txt", "a", "x", outbox=box)
         self.assertEqual(result["reply_line"], "MEDIA:" + result["path"])
+
+
+COLUMNS = [
+    {"key": "doc_date", "label": "วันที่", "type": "date"}, {"key": "doc_no", "label": "เลขที่เอกสาร", "type": "text"},
+    {"key": "cust_name", "label": "ลูกค้า", "type": "text"}, {"key": "qty", "label": "จำนวน", "type": "number"},
+    {"key": "sum_amount", "label": "มูลค่ารายการ", "type": "number"}, {"key": "empty", "label": "ว่าง", "type": "text"},
+]
+ROWS = [
+    ["2026-09-01", "IV-0001", "ลูกค้า-AB12", "2.0000", "250.50", ""],
+    ["2026-09-02", "IV-0002", "ลูกค้า-CD34", "10", "1,000.25", ""],
+    ["2026-09-30", "IV-0003", "ลูกค้า-AB12", "-1", "-100", ""],
+]
+
+
+class ExportFileTests(unittest.TestCase):
+    def setUp(self):
+        self.box = tempfile.mkdtemp()
+
+    def make(self, kind="xlsx", rows=None, **kwargs):
+        return tools.export_file(kind, kwargs.pop("name", "ขายกันยายน"), "รายงานขาย", "2026-09-01 ถึง 2026-09-30", "2026-10-01T12:00:00+07:00",
+                                 COLUMNS, ROWS if rows is None else rows, notes=["ยอดนี้ยังไม่รวม VAT"], outbox=self.box)
+
+    def test_every_row_goes_in_with_thai_headings_and_an_unused_column_is_left_out(self):
+        result = self.make()
+        self.assertEqual(result["rows"], 3)
+        self.assertNotIn("ว่าง", result["columns"])
+        self.assertEqual(result["reply_line"], "MEDIA:" + result["path"])
+        with zipfile.ZipFile(result["path"]) as archive:
+            sheets = tools.xlsx_sheets(archive)
+        self.assertEqual([name for name, _ in sheets], ["sheet1.xml", "sheet2.xml"])
+        data = sheets[0][1]
+        self.assertEqual(data[0], ["วันที่", "เลขที่เอกสาร", "ลูกค้า", "จำนวน", "มูลค่ารายการ"])
+        self.assertEqual(len(data), 4)
+        self.assertEqual(data[2][1], "IV-0002")
+        self.assertEqual(data[2][4], "1000.25")  # a number with a thousands comma becomes a number
+
+    def test_numbers_are_numbers_and_dates_are_dates_in_the_sheet(self):
+        result = self.make()
+        with zipfile.ZipFile(result["path"]) as archive:
+            xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        self.assertIn('<c r="A2" s="4"><v>46266</v></c>', xml)  # 2026-09-01
+        self.assertIn('<c r="D2" s="2"><v>2</v></c>', xml)  # a column of whole numbers is shown without decimals
+        self.assertIn('<c r="E2" s="3"><v>250.5</v></c>', xml)
+        self.assertIn('<pane ySplit="1"', xml)
+        self.assertIn("<autoFilter", xml)
+
+    def test_totals_are_worked_out_by_the_tool_for_number_columns_only(self):
+        sums = {item["column"]: item["sum"] for item in self.make()["column_sums"]}
+        self.assertEqual(sums, {"จำนวน": "11.00", "มูลค่ารายการ": "1150.75"})
+
+    def test_the_explanation_sheet_says_what_the_file_is(self):
+        result = self.make()
+        with zipfile.ZipFile(result["path"]) as archive:
+            about = tools.xlsx_sheets(archive)[1][1]
+        text = "\n".join("\t".join(row) for row in about)
+        for expected in ("รายงานขาย", "2026-09-01 ถึง 2026-09-30", "2026-10-01T12:00:00+07:00", "ยอดนี้ยังไม่รวม VAT", "1150.75", "อ่านอย่างเดียว"):
+            self.assertIn(expected, text)
+
+    def test_csv_has_a_byte_order_mark_and_plain_numbers(self):
+        raw = open(self.make("csv")["path"], "rb").read().decode("utf-8")
+        self.assertTrue(raw.startswith("\ufeff"))
+        self.assertIn("วันที่,เลขที่เอกสาร,ลูกค้า,จำนวน,มูลค่ารายการ", raw)
+        self.assertIn("2026-09-02,IV-0002,ลูกค้า-CD34,10,1000.25", raw)
+
+    def test_refusals(self):
+        with self.assertRaises(tools.ToolError):
+            self.make(rows=[])
+        with self.assertRaises(tools.ToolError):
+            self.make("txt")
+        with self.assertRaises(tools.ToolError):
+            self.make(rows=[ROWS[0]] * (tools.EXPORT_MAX_ROWS + 1))
+
+    def test_the_file_name_cannot_escape_the_outbox(self):
+        result = self.make(name="../../etc/x")
+        self.assertTrue(os.path.realpath(result["path"]).startswith(os.path.realpath(self.box) + os.sep))
+
+    def test_text_in_the_rows_cannot_break_the_workbook(self):
+        rows = [["2026-09-01", "<x>&\"", "ลูกค้า", "1", "2", ""]]
+        result = self.make(rows=rows)
+        with zipfile.ZipFile(result["path"]) as archive:
+            self.assertEqual(tools.xlsx_sheets(archive)[0][1][1][1], '<x>&"')
+
+
+class CollectExportTests(unittest.TestCase):
+    def pages(self, total, per_page, ready_after=0):
+        calls = {"n": 0, "queries": []}
+
+        def fetch(query):
+            calls["queries"].append(dict(query))
+            calls["n"] += 1
+            if calls["n"] <= ready_after:
+                return {"status": "PREPARING", "message": "กำลังดึง", "retryAfterSeconds": 45}
+            start = int(query["cursor"]) if query.get("cursor") else 0
+            end = min(start + per_page, total)
+            page = {"status": "READY", "reportKey": "sales_goods_services", "label": "รายงานขาย", "columns": COLUMNS,
+                    "rows": [["2026-09-01", f"IV-{i}", "x", "1", "1", ""] for i in range(start, end)], "totalRows": total}
+            if end < total:
+                page["nextCursor"] = str(end)
+            return page
+        return fetch, calls
+
+    def test_follows_every_page_to_the_end(self):
+        fetch, calls = self.pages(1234, 500)
+        out = tools.collect_export(fetch, {"dateFrom": "2026-09-01"})
+        self.assertEqual(out["status"], "READY")
+        self.assertEqual(len(out["rows"]), 1234)
+        self.assertEqual(out["rows"][-1][1], "IV-1233")
+        self.assertEqual(calls["queries"][0], {"dateFrom": "2026-09-01"})
+        self.assertEqual([q.get("cursor") for q in calls["queries"][1:]], ["500", "1000"])
+
+    def test_waits_while_preparing_then_gives_the_rows(self):
+        fetch, calls = self.pages(3, 500, ready_after=2)
+        slept = []
+        out = tools.collect_export(fetch, {}, wait_seconds=60, poll_seconds=5, sleep=slept.append, clock=lambda: 0 + len(slept))
+        self.assertEqual((out["status"], len(out["rows"])), ("READY", 3))
+        self.assertEqual(len(slept), 2)
+
+    def test_gives_up_waiting_and_says_preparing_so_the_owner_can_ask_again(self):
+        fetch, _ = self.pages(3, 500, ready_after=99)
+        slept = []
+        out = tools.collect_export(fetch, {}, wait_seconds=10, poll_seconds=5, sleep=slept.append, clock=lambda: len(slept) * 5)
+        self.assertEqual(out["status"], "PREPARING")
+        self.assertNotIn("rows", out)
+
+    def test_a_refusal_or_failure_passes_through_untouched(self):
+        out = tools.collect_export(lambda q: {"status": "NO_DATA", "message": "ไม่มีข้อมูลเรื่องนี้ให้ดู"}, {})
+        self.assertEqual(out, {"status": "NO_DATA", "message": "ไม่มีข้อมูลเรื่องนี้ให้ดู"})
+
+    def test_a_page_that_fails_midway_is_an_error_not_a_short_file(self):
+        answers = iter([{"status": "READY", "rows": [["a"]], "nextCursor": "1"}, {"status": "UNAVAILABLE", "message": "หมดอายุ"}])
+        with self.assertRaises(tools.ToolError):
+            tools.collect_export(lambda q: next(answers), {})
+
+    def test_stops_at_the_row_cap_and_says_truncated(self):
+        fetch, _ = self.pages(tools.EXPORT_MAX_ROWS + 900, 500)
+        out = tools.collect_export(fetch, {})
+        self.assertEqual(len(out["rows"]), tools.EXPORT_MAX_ROWS)
+        self.assertTrue(out["truncated"])

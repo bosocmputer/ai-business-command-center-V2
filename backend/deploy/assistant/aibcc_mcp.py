@@ -24,6 +24,9 @@ TOKEN = os.environ.get("AIBCC_TOKEN", "")
 # hourly call limit (the first 240 an hour), and Hermes allows a tool five minutes.
 WAIT_SECONDS = float(os.environ.get("AIBCC_WAIT_SECONDS", "100"))
 POLL_SECONDS = float(os.environ.get("AIBCC_POLL_SECONDS", "6"))
+# Fetching every row of a report from the shop's system takes one to several minutes; the tool waits that long, then lets the owner ask again.
+EXPORT_WAIT_SECONDS = float(os.environ.get("AIBCC_EXPORT_WAIT_SECONDS", "240"))
+EXPORT_POLL_SECONDS = float(os.environ.get("AIBCC_EXPORT_POLL_SECONDS", "15"))
 mcp = FastMCP("aibcc")
 
 
@@ -178,9 +181,43 @@ def make_file(kind: str, name: str, content: str) -> str:
     cells split by a tab or comma), or txt, md or html (content is the text; html must have no scripts). name is the file name
     in Thai or English without a folder. The word Excel means kind xlsx. The answer holds reply_line (it starts with MEDIA:): put
     that line, exactly as returned and alone on its own line, in your reply and the file is sent to the chat; do not write the
-    path anywhere else. Use it only for what the owner asked for (a quotation, a list, a summary).
+    path anywhere else. Use it only for what the owner asked for and only for text or tables YOU write (a quotation, a message, a checklist). For a list, breakdown or spreadsheet of the shop's own data use export_report instead.
     Every figure in the file must come from the shop's tools, with its period and date; never type one from memory."""
     return as_json(lambda: secretary_tools.make_file(kind, name, content))
+
+
+@mcp.tool()
+def export_report(report_key: str, date_from: str = "", date_to: str = "", kind: str = "xlsx", name: str = "") -> str:
+    """Make a file from the REAL rows of one report, for the owner to download: every line of the report (every sale line, every open
+    invoice, every item in stock, every receipt), with the Thai headings of the report page, numbers as numbers and dates as dates, a
+    second sheet that says what the file is, for which period and as of when, and column totals worked out by the tool. kind is xlsx
+    (Excel, the default) or csv. report_key comes from context(); dates are YYYY-MM-DD as in get_report. Use THIS, not make_file, whenever
+    the owner wants a list, a breakdown, a spreadsheet or "the data" of a report: make_file is only for text you write yourself
+    (a quotation, a message), never for numbers of the shop. If AI-BCC has to fetch the rows from the shop's system the tool waits up
+    to about four minutes; if it says PREPARING when it returns, tell the owner the rows are still being fetched and to ask again in a
+    few minutes (it continues by itself, asking again does not start a second fetch). The answer holds reply_line (it starts with MEDIA:):
+    put it, exactly as returned and alone on its own line, in your reply. rows, columns and column_sums describe the file: quote totals
+    only from column_sums, and say if truncated is true that the file holds only the first 20,000 rows. Customer names are codes if
+    the shop's settings hide names: say so."""
+    def fetch(query):
+        body = call("/exports/" + urllib.parse.quote(report_key, safe=""), query)
+        try:
+            return json.loads(body)
+        except ValueError:
+            return {"status": "UNAVAILABLE", "message": "ติดต่อระบบรายงานไม่ได้ในขณะนี้ ลองถามใหม่ภายหลัง"}
+
+    def build():
+        merged = secretary_tools.collect_export(
+            fetch, {"dateFrom": date_from, "dateTo": date_to}, EXPORT_WAIT_SECONDS, EXPORT_POLL_SECONDS)
+        if merged.get("status") != "READY":
+            return merged
+        period = merged.get("period") or {}
+        return secretary_tools.export_file(
+            kind, name, merged.get("label", report_key), f"{period.get('dateFrom', '')} ถึง {period.get('dateTo', '')}",
+            merged.get("collectedAt", ""), merged.get("columns") or [], merged.get("rows") or [], merged.get("notes"),
+        ) | {"period": period, "collected_at": merged.get("collectedAt", ""), "truncated": bool(merged.get("truncated")),
+             "total_rows": merged.get("totalRows", 0), "notes": merged.get("notes") or []}
+    return as_json(build)
 
 
 @mcp.tool()

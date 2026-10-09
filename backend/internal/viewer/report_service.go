@@ -109,6 +109,19 @@ func newerSnapshot(tenant DashboardSnapshot, tenantErr error, own DashboardSnaps
 	return own, nil
 }
 
+// OwnDetailRun gives the viewer's newest finished run of a report for exactly this period, the one that holds the detail
+// rows, or report.ErrRunNotFound. It is how a person's own earlier run is found again without asking SML a second time.
+func (service *ReportService) OwnDetailRun(ctx context.Context, recipientID, tenantID uuid.UUID, reportKey report.Key, period report.Period) (DashboardSnapshot, error) {
+	if err := service.authorizeReport(ctx, recipientID, tenantID, reportKey); err != nil {
+		return DashboardSnapshot{}, err
+	}
+	own, ok := service.store.(ViewerOwnSnapshotStore)
+	if !ok {
+		return DashboardSnapshot{}, report.ErrRunNotFound
+	}
+	return own.GetOwnDetailSnapshotForPeriod(ctx, recipientID, tenantID, reportKey, period, service.now().UTC())
+}
+
 type CreateReportRunInput struct {
 	PeriodPreset report.Preset
 	DateFrom     *string

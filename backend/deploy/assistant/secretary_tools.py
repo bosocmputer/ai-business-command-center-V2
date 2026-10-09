@@ -10,6 +10,7 @@ The three functions are wrapped as MCP tools by aibcc_mcp.py. Each one keeps its
                  own data (long digit runs, e-mail addresses, the aliases AI-BCC gives customers) is refused before it leaves.
 """
 import csv
+from datetime import date
 import html
 import io
 from decimal import Decimal, InvalidOperation
@@ -115,6 +116,242 @@ def xlsx_bytes(rows, sheet_name="Sheet1"):
         archive.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
         archive.writestr("xl/worksheets/sheet1.xml", sheet)
     return buffer.getvalue()
+
+
+EXPORT_MAX_BYTES = 15 * 1024 * 1024
+EXPORT_MAX_ROWS = 20000
+STYLE_DEFAULT, STYLE_HEADER, STYLE_INTEGER, STYLE_DECIMAL, STYLE_DATE, STYLE_WRAP = 0, 1, 2, 3, 4, 5
+
+
+def excel_date(text):
+    """The Excel serial number of an ISO date, or None."""
+    match = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", str(text).strip())
+    if not match:
+        return None
+    try:
+        return (date(int(match[1]), int(match[2]), int(match[3])) - date(1899, 12, 30)).days
+    except ValueError:
+        return None
+
+
+def number_text(value):
+    """A number as plain text without an exponent or trailing zeros, or None when the text is not a number."""
+    number = as_number(value)
+    if number is None or not number.is_finite():
+        return None
+    text = format(number.normalize(), "f")
+    return "0" if text in ("-0", "") else text
+
+
+def sheet_xml(rows, styles=None, widths=None, header=False):
+    """One worksheet. rows hold ready cells: ("n", text) number, ("d", serial) date, ("s", text) text. styles maps a column to a style id."""
+    styles = styles or {}
+    cells = []
+    for row_number, row in enumerate(rows, 1):
+        parts = []
+        for column, (kind, value) in enumerate(row):
+            reference = f"{column_letters(column)}{row_number}"
+            style = STYLE_HEADER if header and row_number == 1 else styles.get(column, STYLE_DEFAULT) if kind != "s" else STYLE_DEFAULT
+            if kind == "w":
+                style, kind = STYLE_WRAP, "s"
+            attribute = f' s="{style}"' if style else ""
+            if kind in ("n", "d"):
+                parts.append(f'<c r="{reference}"{attribute}><v>{value}</v></c>')
+            else:
+                parts.append(f'<c r="{reference}"{attribute} t="inlineStr"><is><t xml:space="preserve">{escape(str(value))}</t></is></c>')
+        cells.append(f'<row r="{row_number}">{"".join(parts)}</row>')
+    views = ""
+    if header:
+        views = ('<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>')
+    columns = ""
+    if widths:
+        columns = "<cols>" + "".join(f'<col min="{i + 1}" max="{i + 1}" width="{w}" customWidth="1"/>' for i, w in enumerate(widths)) + "</cols>"
+    last = f"{column_letters(max(len(r) for r in rows) - 1)}{len(rows)}" if rows else "A1"
+    filter_xml = f'<autoFilter ref="A1:{last}"/>' if header and rows else ""
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' + views + columns
+        + "<sheetData>" + "".join(cells) + "</sheetData>" + filter_xml + "</worksheet>"
+    )
+
+
+STYLES_XML = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    '<numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/></numFmts>'
+    '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+    '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFE8EEF4"/></patternFill></fill></fills>'
+    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    '<cellXfs count="6">'
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+    '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>'
+    '<xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+    '<xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+    '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>'
+    "</cellXfs></styleSheet>"
+)
+
+
+def xlsx_workbook(sheets):
+    """A workbook from [(name, sheet_xml)]; used for the files made from real report rows."""
+    names = [re.sub(r"[\[\]:*?/\\]", "_", name)[:31] or f"Sheet{i + 1}" for i, (name, _) in enumerate(sheets)]
+    workbook = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+        + "".join(f'<sheet name="{escape(name)}" sheetId="{i + 1}" r:id="rId{i + 1}"/>' for i, name in enumerate(names))
+        + "</sheets></workbook>"
+    )
+    count = len(sheets)
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+        + "".join(f'<Override PartName="/xl/worksheets/sheet{i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' for i in range(count))
+        + "</Types>"
+    )
+    root_rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+        "</Relationships>"
+    )
+    workbook_rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + "".join(f'<Relationship Id="rId{i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i + 1}.xml"/>' for i in range(count))
+        + f'<Relationship Id="rId{count + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+        "</Relationships>"
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", content_types)
+        archive.writestr("_rels/.rels", root_rels)
+        archive.writestr("xl/workbook.xml", workbook)
+        archive.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
+        archive.writestr("xl/styles.xml", STYLES_XML)
+        for index, (_, xml) in enumerate(sheets):
+            archive.writestr(f"xl/worksheets/sheet{index + 1}.xml", xml)
+    return buffer.getvalue()
+
+
+def export_file(kind, name, label, period, collected_at, columns, rows, notes=None, outbox=None):
+    """A file made from the real rows of a report. columns are [{"key","label","type"}] and rows are lists of text cells in the same
+    order, as AI-BCC gave them. Nothing is typed by the model: the cells go into the file exactly as they came, numbers as numbers
+    and dates as dates, a column with nothing in it is left out, and totals are worked out here. xlsx has a second sheet that says what
+    the file is, for which period and as of when. Returns what make_file returns plus rows, columns and column_sums."""
+    kind = str(kind or "xlsx").lower().strip()
+    if kind not in ("xlsx", "csv"):
+        raise ToolError("ไฟล์จากรายงานทำได้เฉพาะ xlsx (Excel) หรือ csv")
+    if not rows:
+        raise ToolError("รายงานช่วงนี้ไม่มีรายการให้ใส่ในไฟล์")
+    if len(rows) > EXPORT_MAX_ROWS:
+        raise ToolError("แถวมากเกินกว่าที่ทำเป็นไฟล์เดียวได้")
+    keep = [i for i in range(len(columns)) if any(i < len(row) and str(row[i]).strip() for row in rows)]
+    columns = [columns[i] for i in keep]
+    rows = [[(row[i] if i < len(row) else "") for i in keep] for row in rows]
+    sums = []
+    for index, column in enumerate(columns):
+        if column.get("type") != "number":
+            continue
+        values = [as_number(row[index]) for row in rows if str(row[index]).strip()]
+        numbers = [v for v in values if v is not None]
+        if numbers:
+            sums.append({"column": column["label"], "rows": len(numbers), "sum": str(sum(numbers).quantize(Decimal("0.01")))})
+    head = [column["label"] for column in columns]
+    if kind == "csv":
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(head)
+        for row in rows:
+            writer.writerow([number_text(cell) or cell if columns[i].get("type") == "number" else cell for i, cell in enumerate(row)])
+        data = ("\ufeff" + buffer.getvalue()).encode("utf-8")
+    else:
+        sheet = [[("s", label_) for label_ in head]]
+        styles = {}
+        for index, column in enumerate(columns):
+            if column.get("type") == "date":
+                styles[index] = STYLE_DATE
+            elif column.get("type") == "number":
+                texts = [number_text(row[index]) for row in rows if str(row[index]).strip()]
+                styles[index] = STYLE_INTEGER if all(t is not None and "." not in t for t in texts) else STYLE_DECIMAL
+        for row in rows:
+            cells = []
+            for index, cell in enumerate(row):
+                column_type = columns[index].get("type")
+                text = str(cell)
+                if not text.strip():
+                    cells.append(("s", ""))
+                elif column_type == "number" and number_text(text) is not None:
+                    cells.append(("n", number_text(text)))
+                elif column_type == "date" and excel_date(text) is not None:
+                    cells.append(("d", excel_date(text)))
+                else:
+                    cells.append(("s", text))
+            sheet.append(cells)
+        widths = []
+        for index, column in enumerate(columns):
+            longest = max([len(str(column["label"]))] + [len(str(row[index])) for row in rows[:200]])
+            widths.append(min(max(10, longest + 2), 48))
+        about = [
+            ("รายงาน", label), ("ช่วงข้อมูล", period), ("ข้อมูล ณ (เวลาที่อ่านจากระบบของร้าน)", collected_at),
+            ("จำนวนแถว", str(len(rows))), ("ที่มา", "AI-BCC อ่านจาก SML แบบอ่านอย่างเดียว ไม่แก้ไขข้อมูลในระบบ"),
+        ] + [("หมายเหตุ", note) for note in (notes or [])] + [("ผลรวมคอลัมน์ตัวเลข: " + item["column"], item["sum"]) for item in sums]
+        about_rows = [[("s", "หัวข้อ"), ("s", "รายละเอียด")]] + [[("s", key), ("w", value)] for key, value in about]
+        data = xlsx_workbook([
+            ("ข้อมูล", sheet_xml(sheet, styles, widths, header=True)),
+            ("คำอธิบาย", sheet_xml(about_rows, widths=[38, 90], header=True)),
+        ])
+    if len(data) > EXPORT_MAX_BYTES:
+        raise ToolError("ไฟล์ใหญ่เกิน 15 MB ให้เลือกช่วงวันที่สั้นลง")
+    folder = os.path.join(outbox or OUTBOX, secrets.token_hex(6))
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    file_name = safe_name(name or f"{label} {period}", kind)
+    path = os.path.join(folder, file_name)
+    with open(path, "wb") as handle:
+        handle.write(data)
+    return {
+        "path": path, "name": file_name, "bytes": len(data), "reply_line": "MEDIA:" + path, "rows": len(rows),
+        "columns": [column["label"] for column in columns], "column_sums": sums,
+        "note": "ไฟล์นี้สร้างจากแถวรายงานจริงของระบบโดยไม่ผ่านการพิมพ์ของโมเดล ผลรวมในช่อง column_sums คำนวณโดยเครื่องมือ ให้ใช้ตัวเลขนี้ ห้ามบวกเอง",
+    }
+
+
+def collect_export(fetch, query, wait_seconds=240.0, poll_seconds=15.0, sleep=time.sleep, clock=time.monotonic):
+    """Ask AI-BCC for a report's detail rows and follow its pages to the end. fetch(query) gives one answer as a dict. While AI-BCC says
+    PREPARING (it is fetching the rows from the shop's system) ask again every few seconds, up to wait_seconds, then give the PREPARING
+    answer back so the owner can ask again later: the fetch goes on without us. Anything but READY is returned as it came."""
+    answer = fetch(dict(query))
+    deadline = clock() + wait_seconds
+    while answer.get("status") == "PREPARING" and clock() < deadline:
+        sleep(max(0.0, min(poll_seconds, deadline - clock())))
+        answer = fetch(dict(query))
+    if answer.get("status") != "READY":
+        return {key: value for key, value in answer.items() if key not in ("rows", "columns")}
+    merged = dict(answer)
+    rows = list(answer.get("rows") or [])
+    cursor = answer.get("nextCursor", "")
+    notes = list(answer.get("notes") or [])
+    while cursor and len(rows) < EXPORT_MAX_ROWS:
+        page = fetch({"cursor": cursor})
+        if page.get("status") != "READY":
+            raise ToolError("ดึงแถวรายงานไม่ครบ (" + str(page.get("message") or page.get("status") or "ไม่ทราบสาเหตุ") + ") ลองใหม่ภายหลัง")
+        rows.extend(page.get("rows") or [])
+        for note in page.get("notes") or []:
+            if note not in notes:
+                notes.append(note)
+        merged["truncated"] = merged.get("truncated") or page.get("truncated")
+        cursor = page.get("nextCursor", "")
+    if cursor:
+        merged["truncated"] = True
+    merged["rows"], merged["notes"], merged["nextCursor"] = rows[:EXPORT_MAX_ROWS], notes, ""
+    return merged
 
 
 def parse_rows(content):

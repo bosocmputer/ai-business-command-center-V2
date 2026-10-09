@@ -572,6 +572,23 @@ paths:
         '404': {$ref: '#/components/responses/AgentRefusal'}
         '422': {$ref: '#/components/responses/AgentRefusal'}
         '429': {$ref: '#/components/responses/AgentRefusal'}
+  /api/v1/agent/exports/{reportKey}:
+    get:
+      tags: [Agent]
+      operationId: getAgentExport
+      description: "Gives the detail rows of a report the recipient may read, a page of at most 500 rows at a time, with the Thai column headings the web page uses. The first call (no cursor) uses the recipient's own finished detail run of the report for the period, or starts one (the same run the web page starts, once an hour per report and period) and answers PREPARING; follow nextCursor to get every row, up to 20,000. A token that may not see names gets the same codes in place of customer and supplier names as everywhere else. A report the recipient may not read answers exactly like a missing report. One export is one counted call whatever the number of pages; the call log records the report and the period only."
+      security: [{AgentToken: []}]
+      parameters:
+        - {name: reportKey, in: path, required: true, schema: {type: string}}
+        - {name: dateFrom, in: query, required: false, schema: {type: string, format: date}}
+        - {name: dateTo, in: query, required: false, schema: {type: string, format: date}}
+        - {name: cursor, in: query, required: false, schema: {type: string, maxLength: 200}, description: "The nextCursor of the previous page."}
+      responses:
+        '200': {description: "A page of rows, or why there are none (PREPARING, UNAVAILABLE).", content: {application/json: {schema: {$ref: '#/components/schemas/AgentExport'}}}}
+        '401': {$ref: '#/components/responses/AgentRefusal'}
+        '404': {$ref: '#/components/responses/AgentRefusal'}
+        '422': {$ref: '#/components/responses/AgentRefusal'}
+        '429': {$ref: '#/components/responses/AgentRefusal'}
   /api/v1/agent/search:
     get:
       tags: [Agent]
@@ -1767,6 +1784,37 @@ components:
         asOf: {type: string, format: date-time, description: "When the shop's system was read."}
         cached: {type: boolean}
         notes: {type: array, items: {type: string}}
+    AgentExport:
+      type: object
+      required: [reportKey, label, status]
+      properties:
+        reportKey: {type: string}
+        label: {type: string}
+        status: {type: string, enum: [READY, PREPARING, UNAVAILABLE]}
+        message: {type: string}
+        period:
+          type: object
+          required: [dateFrom, dateTo]
+          properties:
+            dateFrom: {type: string, format: date}
+            dateTo: {type: string, format: date}
+            mode: {type: string}
+        collectedAt: {type: string, format: date-time, description: "When the shop's system was read."}
+        columns:
+          type: array
+          items:
+            type: object
+            required: [key, label, type]
+            properties:
+              key: {type: string}
+              label: {type: string}
+              type: {type: string, enum: [text, number, date]}
+        rows: {type: array, items: {type: array, items: {type: string}}}
+        totalRows: {type: integer}
+        nextCursor: {type: string}
+        truncated: {type: boolean}
+        notes: {type: array, items: {type: string}}
+        retryAfterSeconds: {type: integer}
     AgentSearch:
       type: object
       required: [status, totalFound]

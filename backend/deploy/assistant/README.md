@@ -219,6 +219,7 @@ put the old digest back and, if the new version had migrated the store, restore 
 - `make_file` writes a csv, xlsx, txt, md or html file under `/opt/data/outbox`. `gateway.strict` in `config.yaml` lets the gateway send a
   file to the chat only from there (and from Hermes' own caches), whatever path a reply names; `upgrade-check.sh` step 2c checks it.
   `maintain.sh` deletes outbox files and attachments older than `RETENTION_HOURS`.
+- `export_report` (MCP tool; `collect_export` and `export_file` in `secretary_tools.py`) makes an xlsx or csv from the real rows of a report through `GET /api/v1/agent/exports/{reportKey}` of the Agent API (see `04-security-operations.md`), so nothing in the file is typed by the model. It waits up to `AIBCC_EXPORT_WAIT_SECONDS` (240) for the rows to be fetched from the shop's system, then answers PREPARING and the owner asks again; the file is written under `/opt/data/outbox` like `make_file`, up to 15 MB.
 - `lookup` kind `document` (a lookup of the Agent API, not a tool of `secretary_tools.py`) finds one document by its number; see `04-security-operations.md`.
 - `read_document` returns the text of a `.xlsx` or `.docx` the owner attached (only from the attachment folders). PDF is not read.
 - `web_search` asks Serper (`WEB_SEARCH_API_KEY`, primary) and, if that fails, SerpApi (`WEB_SEARCH_FALLBACK_KEY`); both give Google results.
