@@ -46,7 +46,7 @@ class ToolError(Exception):
 def safe_name(name, kind):
     """A file name with no path, no leading dot and the extension of the kind. Thai letters are kept."""
     base = os.path.basename(str(name or "").replace("\\", "/")).strip()
-    base = re.sub(r"[^\w .\-()ก-๙]", "_", base, flags=re.UNICODE)
+    base = re.sub(r"[^\w.\-()ก-๙]", "_", base, flags=re.UNICODE)  # no spaces: a MEDIA: line ends at the first space
     base = re.sub(r"\.+$", "", base).lstrip(". ")
     stem = base.rsplit(".", 1)[0] if "." in base else base
     stem = stem.strip() or "เอกสาร"

@@ -334,3 +334,8 @@ class CollectExportTests(unittest.TestCase):
         out = tools.collect_export(fetch, {})
         self.assertEqual(len(out["rows"]), tools.EXPORT_MAX_ROWS)
         self.assertTrue(out["truncated"])
+
+
+class FileNameTests(unittest.TestCase):
+    def test_a_file_name_has_no_spaces_so_the_media_line_is_not_cut(self):
+        self.assertEqual(tools.safe_name("รายงานขาย 2026-10-01 ถึง 2026-10-09", "xlsx"), "รายงานขาย_2026-10-01_ถึง_2026-10-09.xlsx")
