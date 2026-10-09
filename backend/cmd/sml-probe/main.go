@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -25,9 +26,20 @@ import (
 )
 
 const (
-	queryTimeout = 60 * time.Second
-	maxRows      = 200
+	defaultQueryTimeout = 60 * time.Second
+	maxQueryTimeout     = 10 * time.Minute
+	maxRows             = 200
 )
+
+// queryTimeout is 60 seconds unless SML_PROBE_TIMEOUT_SECONDS asks for longer (at most 10 minutes), for the heavy
+// aggregates a big shop needs; a wrong value keeps the default.
+func queryTimeout() time.Duration {
+	seconds, err := strconv.Atoi(strings.TrimSpace(os.Getenv("SML_PROBE_TIMEOUT_SECONDS")))
+	if err != nil || seconds < 1 || time.Duration(seconds)*time.Second > maxQueryTimeout {
+		return defaultQueryTimeout
+	}
+	return time.Duration(seconds) * time.Second
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -70,10 +82,11 @@ func run() error {
 	if err != nil {
 		return errors.New("tenant SML connection could not be opened")
 	}
-	client := sml.NewClient(policy, queryTimeout, 8*1024*1024, maxRows)
+	timeout := queryTimeout()
+	client := sml.NewClient(policy, timeout, 8*1024*1024, maxRows)
 
 	for index, statement := range statements {
-		queryCtx, cancel := context.WithTimeout(ctx, queryTimeout)
+		queryCtx, cancel := context.WithTimeout(ctx, timeout)
 		started := time.Now()
 		rows, err := client.Query(queryCtx, connection, "select * from (\n"+statement+"\n) as probe limit "+fmt.Sprint(maxRows))
 		cancel()
