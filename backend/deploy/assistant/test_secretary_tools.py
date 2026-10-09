@@ -165,3 +165,19 @@ class WebSearchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TableSumsTests(unittest.TestCase):
+    def test_xlsx_read_returns_column_sums_computed_by_the_tool(self):
+        root = tempfile.mkdtemp()
+        made = tools.make_file("xlsx", "t", '[["รหัสบัญชี","ชื่อ","เดบิต","เครดิต"],["110100","เงินสด",1000.5,0],["110200","ธนาคาร",2000.25,10],["210100","เจ้าหนี้",0,500.75]]', outbox=root)
+        result = tools.read_document(made["path"], [root])
+        sums = {item["column"]: item["sum"] for item in result["sheets"][0]["column_sums"]}
+        self.assertEqual(sums, {"เดบิต": "3000.75", "เครดิต": "510.75"})  # the code column is not summed
+        self.assertEqual(result["sheets"][0]["rows"], 4)
+        self.assertIn("ห้ามบวกเลข", result["note"])
+
+    def test_make_file_gives_the_line_to_put_in_the_reply(self):
+        box = tempfile.mkdtemp()
+        result = tools.make_file("txt", "a", "x", outbox=box)
+        self.assertEqual(result["reply_line"], "MEDIA:" + result["path"])

@@ -57,6 +57,11 @@ platforms:
 approvals:
   destructive_slash_confirm: false
 
+# A picture the owner sends goes to the main model (the pinned zero-retention provider) as it is. Left to itself Hermes decided
+# this model could not see pictures and had a second model describe them in English first, which is neither pinned nor lossless.
+agent:
+  image_input_mode: native
+
 # A file reaches the chat only from the outbox (where make_file writes) or from the folders where Hermes keeps what the owner
 # sent: nothing else on the machine can be delivered, whatever path a reply names, and a fresh file elsewhere is not trusted.
 gateway:
