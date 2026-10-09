@@ -1,6 +1,6 @@
 ---
 status: current
-last_verified: 2026-10-08
+last_verified: 2026-10-09
 source_of_truth: [cmd/onboarding-check, internal/onboarding, deploy/onboard-check.sh]
 tags: [onboarding, runbook]
 ---
@@ -48,3 +48,24 @@ order that gets there. Steps marked **tool** have a command; the rest are screen
 
 Nothing the check does is written. To take a shop out: pause its schedules, revoke its assistant token (admin → recipient), and set
 the shop inactive. The master data copy is removed with the shop.
+
+## What the second shop taught us (2026-10-09)
+
+- **A JavaWS on a public address** is refused by the default endpoint policy (`ENDPOINT_NOT_ALLOWED`). The V2 server runs with
+  `SML_ALLOW_PUBLIC_ENDPOINTS=true` by the owner's decision (see `04-security-operations.md`); read that section before changing it.
+- **A copy of a customer's database made for testing stops at the date it was copied.** Before judging any card, look at the latest
+  document date. A "yesterday" or "last month" card on such a copy is near zero, which is the data and not a fault; compare numbers on
+  a month that has data. The digest at 08:15, the alerts and the 06:30 master copy cannot be seen working on a snapshot.
+- **Verify the numbers against raw data, one report at a time**, with SQL written separately from the report's own, on a period with
+  data: sales (the sum of the headers of codes 44, 46 and 48 over the same filters), receivable movement (debits and credits per
+  document code), gross profit (the line sums), purchases and debt receipts. Use `deploy/` tools or the read-only probe; print counts
+  and totals only. All six matched to the satang on the second shop.
+- **The aging total can legitimately differ from the receivable movement total.** Three causes were found and are worth checking
+  first: fixed-asset receipts (code 1802) are in movement but not in aging; debt receipt lines billed against documents that were
+  later cancelled (or that no longer exist) are subtracted in movement but cannot be matched in aging; and receipt lines can add up
+  to a little more than their own receipt header in SML itself. When the gap is the sum of these, it is explained; anything left over
+  is a real defect.
+- **Connecting the shop's real database later:** create it as a new shop. Renaming the database of the test shop would mix stored
+  reports, the master data copy and evidence cases from two sources. Get the customer's permission first and run the heavy reports
+  outside business hours.
+
