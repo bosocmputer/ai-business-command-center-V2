@@ -80,8 +80,8 @@ func TestAssistantSettingsStoreKeepsSecretsSealedVersionsAndAuditsWithoutValues(
 			t.Fatalf("an audit row holds a secret: %s", text)
 		}
 	}
-	if count < 3 {
-		t.Fatalf("every change is audited, got %d rows", count)
+	if count != 2 { // the secret and the switch-on; the refused stale update writes nothing
+		t.Fatalf("every change, and only a change, is audited: got %d rows", count)
 	}
 	if _, err := service.SetGlobalSecret(ctx, actor, "req-4", assistantcfg.FieldLineSecret, "0123456789abcdef0123456789abcdef"); err != nil {
 		t.Fatal(err)
