@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/thaifmt"
 	"github.com/google/uuid"
 )
 
@@ -283,6 +284,15 @@ func countedFlags(period report.Period) map[int]struct{} {
 }
 
 const flagsWithLabelSQL = `select t.trans_flag as flag, trans_flag(t.trans_flag) as label, count(*) as docs from ic_trans t where t.doc_date >= current_date - 365 and coalesce(t.last_status, 0) = 0 group by t.trans_flag order by docs desc limit 80`
+
+// The cash and bank reports read the cash book (cb_trans), not ic_trans, so the document types they count are the cash book's:
+// every payment (pay_type 2) and every receipt (pay_type 1) except code 144.
+const cashBookFlagsSQL = `select cb.trans_flag as flag, cb.pay_type as pay_type, count(*) as docs, round(sum(coalesce(cb.total_amount, 0))::numeric, 0) as total from cb_trans cb where cb.doc_date >= current_date - 365 and cb.status = 0 group by 1, 2`
+
+// internalCashFlags are cash book rows that move money between the shop's own accounts (deposit, withdrawal, petty cash). The
+// reports count them as money in or out, as the definition says, but they are not income or spending.
+var internalCashFlags = map[int]bool{401: true, 402: true, 403: true, 301: true, 302: true, 303: true, 423: true}
+
 const flagsSQL = `select t.trans_flag as flag, '' as label, count(*) as docs from ic_trans t where t.doc_date >= current_date - 365 and coalesce(t.last_status, 0) = 0 group by t.trans_flag order by docs desc limit 80`
 
 func (checker *Checker) coverageItems(ctx context.Context, period report.Period, _ time.Time) []Item {
@@ -295,6 +305,28 @@ func (checker *Checker) coverageItems(ctx context.Context, period report.Period,
 		return []Item{{Area: area, Key: "doc_types", Status: Warn, Title: "อ่านประเภทเอกสารของร้านไม่ได้", Detail: "รหัส " + safeCode(err)}}
 	}
 	counted := countedFlags(period)
+	cashRows, cashErr := checker.SQL.Query(ctx, cashBookFlagsSQL)
+	var internalDocs, internalTotal int
+	var internalParts []string
+	if cashErr == nil {
+		for _, row := range cashRows {
+			flag, flagErr := strconv.Atoi(strings.TrimSpace(row["flag"]))
+			payType := strings.TrimSpace(row["pay_type"])
+			if flagErr != nil {
+				continue
+			}
+			if payType == "2" || payType == "1" && flag != 144 {
+				counted[flag] = struct{}{}
+			}
+			if internalCashFlags[flag] {
+				docs, _ := strconv.Atoi(strings.TrimSpace(row["docs"]))
+				total, _ := strconv.Atoi(strings.TrimSpace(strings.Split(row["total"], ".")[0]))
+				internalDocs += docs
+				internalTotal += total
+				internalParts = append(internalParts, fmt.Sprintf("%s %d ใบ", flagName(flag, ""), docs))
+			}
+		}
+	}
 	type present struct {
 		flag  int
 		label string
@@ -328,10 +360,7 @@ func (checker *Checker) coverageItems(ctx context.Context, period report.Period,
 			if index >= 8 {
 				break
 			}
-			name := entry.label
-			if name == "" {
-				name = "ไม่ทราบชื่อ"
-			}
+			name := flagName(entry.flag, entry.label)
 			parts = append(parts, fmt.Sprintf("รหัส %d %s %d ใบ", entry.flag, name, entry.docs))
 			if total > 0 && entry.docs*10 >= total {
 				heavy = true
@@ -349,6 +378,11 @@ func (checker *Checker) coverageItems(ctx context.Context, period report.Period,
 		if _, ok := seen[flag]; !ok {
 			missing = append(missing, strconv.Itoa(flag))
 		}
+	}
+	if internalDocs > 0 {
+		sort.Strings(internalParts)
+		items = append(items, Item{Area: area, Key: "internal_cash", Status: Info, Title: fmt.Sprintf("ในรายงานรับเงิน/จ่ายเงิน มีรายการย้ายเงินภายในร้านเอง %d ใบ รวม %s บาท ใน 12 เดือน", internalDocs, thaifmt.Group(strconv.Itoa(internalTotal))),
+			Detail: strings.Join(internalParts, " · ") + " รายงานนับตามนิยาม (ทุกรายการในสมุดเงินสด/ธนาคาร) ยอดเหล่านี้ไม่ใช่รายได้หรือรายจ่ายจริง ควรอ่านยอดเงินรับ/จ่ายโดยรู้ข้อนี้"})
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 && len(missing) <= 40 {
@@ -427,4 +461,15 @@ func overdueText(value *big.Rat) string {
 		return "0.00"
 	}
 	return value.FloatString(2)
+}
+
+// flagName gives the Thai name of a document code: the shop's own SML name when it has one, else the project's reference table.
+func flagName(flag int, smlLabel string) string {
+	if name, ok := flagNames[flag]; ok {
+		return name
+	}
+	if strings.TrimSpace(smlLabel) != "" {
+		return strings.TrimSpace(smlLabel)
+	}
+	return "ไม่ทราบชื่อ"
 }

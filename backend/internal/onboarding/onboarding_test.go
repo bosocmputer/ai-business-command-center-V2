@@ -179,3 +179,29 @@ func TestTheDocumentTypesTheReportsCountAreReadFromTheirOwnSQL(t *testing.T) {
 		}
 	}
 }
+
+func TestCashBookDocumentTypesCountAsCountedAndInternalMovesAreNamed(t *testing.T) {
+	sql := &fakeSQL{answers: map[string][]map[string]string{
+		"group by t.trans_flag": {
+			{"flag": "44", "label": "ขาย", "docs": "700"},
+			{"flag": "40", "label": "", "docs": "500"},
+			{"flag": "420", "label": "", "docs": "700"},
+		},
+		"from cb_trans cb": {
+			{"flag": "40", "pay_type": "1", "docs": "500", "total": "8846036"},
+			{"flag": "239", "pay_type": "1", "docs": "2400", "total": "38002524"},
+			{"flag": "401", "pay_type": "2", "docs": "116", "total": "13349569"},
+			{"flag": "402", "pay_type": "1", "docs": "11", "total": "3333990"},
+			{"flag": "144", "pay_type": "1", "docs": "9", "total": "100"},
+		}}}
+	result := run(readyFacts(), sql)
+	uncounted, ok := find(result, "doc_types_uncounted")
+	if !ok || strings.Contains(uncounted.Detail, "รหัส 40 ") || !strings.Contains(uncounted.Detail, "รหัส 420 บันทึกโอนเงินระหว่างธนาคาร [เข้า] 700 ใบ") {
+		t.Fatalf("advance receipts are counted through the cash book, and 420 gets its name from the reference table: %+v", uncounted)
+	}
+	internal, ok := find(result, "internal_cash")
+	if !ok || internal.Status != Info || !strings.Contains(internal.Title, "127 ใบ") || !strings.Contains(internal.Title, "16,683,559") ||
+		!strings.Contains(internal.Detail, "บันทึกฝากเงิน 116 ใบ") || !strings.Contains(internal.Detail, "บันทึกถอนเงิน 11 ใบ") {
+		t.Fatalf("internal moves = %+v", internal)
+	}
+}
