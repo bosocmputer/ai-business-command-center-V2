@@ -31,30 +31,32 @@ type AdminAuthenticator interface {
 	ValidateCSRF(auth.AuthenticatedAdmin, string) error
 	Logout(context.Context, auth.AuthenticatedAdmin) error
 	RotatePassword(context.Context, auth.AuthenticatedAdmin, string, string) error
+	ConfirmPassword(context.Context, auth.AuthenticatedAdmin, string) error
 }
 
 type Dependencies struct {
-	Readiness       Readiness
-	AdminAuth       AdminAuthenticator
-	Tenants         TenantAPI
-	SMLConnections  SMLAPI
-	Recipients      RecipientAPI
-	Schedules       ScheduleAPI
-	FlexPreviews    SchedulePreviewAPI
-	ScheduleTests   ScheduleTestSendAPI
-	Operations      OperationsAPI
-	Monitor         MonitorAPI
-	ViewEvents      viewevent.Recorder
-	ExecutionModes  ExecutionModeAPI
-	TableQueries    any
-	Incidents       IncidentAPI
-	Watchdog        WatchdogAPI
-	ViewerAuth      ViewerAPI
-	ViewerReports   ViewerReportAPI
-	Agent           AgentAPI
-	AgentEnabled    bool
-	RefreshPolicies RefreshPolicyAPI
-	LineWebhook     LineWebhookAPI
+	Readiness         Readiness
+	AdminAuth         AdminAuthenticator
+	Tenants           TenantAPI
+	SMLConnections    SMLAPI
+	AssistantSettings AssistantSettingsAPI
+	Recipients        RecipientAPI
+	Schedules         ScheduleAPI
+	FlexPreviews      SchedulePreviewAPI
+	ScheduleTests     ScheduleTestSendAPI
+	Operations        OperationsAPI
+	Monitor           MonitorAPI
+	ViewEvents        viewevent.Recorder
+	ExecutionModes    ExecutionModeAPI
+	TableQueries      any
+	Incidents         IncidentAPI
+	Watchdog          WatchdogAPI
+	ViewerAuth        ViewerAPI
+	ViewerReports     ViewerReportAPI
+	Agent             AgentAPI
+	AgentEnabled      bool
+	RefreshPolicies   RefreshPolicyAPI
+	LineWebhook       LineWebhookAPI
 	// LineWebhookForwardURL passes a verified LINE webhook on (to the assistant); empty means not.
 	LineWebhookForwardURL string
 	SecureCookies         bool
@@ -132,6 +134,9 @@ func NewHandler(dependencies Dependencies) http.Handler {
 		}
 		if dependencies.SMLConnections != nil {
 			registerSMLRoutes(router, dependencies.AdminAuth, dependencies.SMLConnections)
+		}
+		if dependencies.AssistantSettings != nil {
+			registerAssistantSettingsRoutes(router, dependencies.AdminAuth, dependencies.AssistantSettings)
 		}
 		if dependencies.Recipients != nil {
 			registerRecipientRoutes(router, dependencies.AdminAuth, dependencies.Recipients)

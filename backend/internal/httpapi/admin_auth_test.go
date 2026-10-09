@@ -21,6 +21,8 @@ type fakeAdminAuth struct {
 	authErr     error
 	csrfErr     error
 	logoutCount int
+	confirmErr  error
+	confirmed   []string
 }
 
 func (fake *fakeAdminAuth) Login(_ context.Context, username, password, _ string) (auth.LoginResult, error) {
@@ -44,6 +46,11 @@ func (fake *fakeAdminAuth) Logout(context.Context, auth.AuthenticatedAdmin) erro
 
 func (fake *fakeAdminAuth) RotatePassword(context.Context, auth.AuthenticatedAdmin, string, string) error {
 	return nil
+}
+
+func (fake *fakeAdminAuth) ConfirmPassword(_ context.Context, _ auth.AuthenticatedAdmin, password string) error {
+	fake.confirmed = append(fake.confirmed, password)
+	return fake.confirmErr
 }
 
 func TestAdminLoginSetsHardenedCookieAndReturnsCSRFToken(t *testing.T) {

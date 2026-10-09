@@ -153,3 +153,31 @@ func TestAdminServiceUsesFallbackHashForUnknownUser(t *testing.T) {
 		t.Fatal("unknown user created a session")
 	}
 }
+
+func TestAdminServiceConfirmsThePasswordAgainAndLocksRepeatedMistakes(t *testing.T) {
+	now := time.Date(2026, 7, 10, 8, 0, 0, 0, time.UTC)
+	passwordHash := encodedHash("correct horse battery staple", 64*1024, 3, 2)
+	store := &memoryAdminStore{user: AdminUser{Username: "superadmin", PasswordHash: passwordHash}}
+	manager, _ := NewSessionManager(bytes.Repeat([]byte{1}, 32), bytes.NewReader(bytes.Repeat([]byte{2}, 64)), func() time.Time { return now })
+	service := NewAdminService(store, manager, passwordHash, bytes.NewReader(bytes.Repeat([]byte{3}, 32)), func() time.Time { return now })
+	admin := AuthenticatedAdmin{Username: "superadmin"}
+
+	if err := service.ConfirmPassword(context.Background(), admin, "correct horse battery staple"); err != nil {
+		t.Fatalf("the right password must confirm: %v", err)
+	}
+	for attempt := 1; attempt <= 4; attempt++ {
+		if err := service.ConfirmPassword(context.Background(), admin, "wrong password value"); !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("attempt %d error = %v", attempt, err)
+		}
+	}
+	if err := service.ConfirmPassword(context.Background(), admin, "wrong password value"); !errors.Is(err, ErrLoginLocked) {
+		t.Fatalf("fifth mistake must lock: %v", err)
+	}
+	if err := service.ConfirmPassword(context.Background(), admin, "correct horse battery staple"); !errors.Is(err, ErrLoginLocked) {
+		t.Fatalf("the right password during the lock must be refused: %v", err)
+	}
+	fresh := NewAdminService(&memoryAdminStore{user: store.user}, manager, passwordHash, bytes.NewReader(bytes.Repeat([]byte{3}, 32)), func() time.Time { return now })
+	if err := fresh.ConfirmPassword(context.Background(), AuthenticatedAdmin{Username: "nobody"}, "x"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("an unknown admin must not confirm: %v", err)
+	}
+}

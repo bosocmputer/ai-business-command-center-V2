@@ -170,6 +170,41 @@ func (service *AdminService) Logout(ctx context.Context, admin AuthenticatedAdmi
 	return service.store.RevokeAdminSession(ctx, admin.TokenHash, service.now().UTC())
 }
 
+// ConfirmPassword checks the signed-in admin's password again before a change that must not happen from a borrowed session, such as
+// setting a secret. Wrong attempts are counted like login failures (five in 15 minutes lock it for 15 minutes) under their own identity,
+// so they do not lock the admin out of logging in.
+func (service *AdminService) ConfirmPassword(ctx context.Context, admin AuthenticatedAdmin, password string) error {
+	now := service.now().UTC()
+	identityHash := service.sessions.HashToken("admin-confirm:" + strings.ToLower(admin.Username))
+	lockedUntil, err := service.store.LoginLockedUntil(ctx, identityHash, now)
+	if err != nil {
+		return err
+	}
+	if lockedUntil != nil && lockedUntil.After(now) {
+		return ErrLoginLocked
+	}
+	user, userErr := service.store.FindAdminUser(ctx, admin.Username)
+	hash := service.fallbackHash
+	if userErr == nil {
+		hash = user.PasswordHash
+	}
+	valid, err := VerifyArgon2ID(hash, password)
+	if err != nil {
+		return errors.New("configured admin password hash is invalid")
+	}
+	if userErr != nil || !valid {
+		lockedUntil, recordErr := service.store.RecordLoginFailure(ctx, identityHash, now, loginWindow, maximumFailures, loginLockDuration)
+		if recordErr != nil {
+			return recordErr
+		}
+		if lockedUntil != nil && lockedUntil.After(now) {
+			return ErrLoginLocked
+		}
+		return ErrInvalidCredentials
+	}
+	return service.store.ClearLoginFailures(ctx, identityHash)
+}
+
 func (service *AdminService) RotatePassword(ctx context.Context, admin AuthenticatedAdmin, currentPassword, newPassword string) error {
 	user, err := service.store.FindAdminUser(ctx, admin.Username)
 	if err != nil {
