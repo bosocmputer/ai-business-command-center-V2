@@ -16,6 +16,7 @@ if [ -n "${TELEGRAM_ALLOWED_USERS:-}" ] && [ -z "${TELEGRAM_HOME_CHANNEL:-}" ]; 
   export TELEGRAM_HOME_CHANNEL="${TELEGRAM_ALLOWED_USERS%%,*}"
 fi
 cp /assistant/config.yaml /opt/data/config.yaml
+mkdir -p /opt/data/outbox
 # Alerts: the routes AI-BCC's worker posts to (see render_routes.py). Without a secret nothing is opened.
 /opt/hermes/.venv/bin/python /assistant/render_routes.py
 # Every skill that ships with Hermes is switched off, so a "/skill-name" message cannot load an unreviewed procedure (see
@@ -27,7 +28,12 @@ if /opt/hermes/.venv/bin/python /assistant/patch_locale.py /tmp/hermes-locales; 
 else
   echo '{"locale":"default messages kept: patch_locale.py found nothing to change"}'
 fi
-cp /assistant/SOUL.md /opt/data/SOUL.md
+# The welcome text offers web search only when a search key is set (a line that starts with [[WEB]] is kept without the marker, or dropped).
+if [ -n "${WEB_SEARCH_API_KEY:-}" ] && [ "${WEB_SEARCH_API_KEY#\$\{}" = "$WEB_SEARCH_API_KEY" ]; then
+  sed 's/^\[\[WEB\]\]//' /assistant/SOUL.md > /opt/data/SOUL.md
+else
+  sed '/^\[\[WEB\]\]/d' /assistant/SOUL.md > /opt/data/SOUL.md
+fi
 GW=""
 trap '[ -n "$GW" ] && kill -TERM "$GW" 2>/dev/null; [ -n "$GW" ] && wait "$GW"; exit 0' TERM INT
 last_day=""

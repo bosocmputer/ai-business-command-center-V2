@@ -18,6 +18,8 @@ mcp_servers:
     env:
       AIBCC_URL: "${AIBCC_URL}"
       AIBCC_TOKEN: "${AIBCC_TOKEN}"
+      WEB_SEARCH_API_KEY: "${WEB_SEARCH_API_KEY}"
+      WEB_SEARCH_PROVIDER: "${WEB_SEARCH_PROVIDER}"
 
 # Telegram: only the people named in TELEGRAM_ALLOWED_USERS may message the bot, and only in a private chat. Anyone
 # else is ignored. (entrypoint.sh also refuses to start Telegram at all when that list is empty.)
@@ -46,6 +48,13 @@ platforms:
 # /new asks "approve once / always / cancel" before it resets a conversation. An owner should not see that.
 approvals:
   destructive_slash_confirm: false
+
+# A file reaches the chat only from the outbox (where make_file writes) or from the folders where Hermes keeps what the owner
+# sent: nothing else on the machine can be delivered, whatever path a reply names, and a fresh file elsewhere is not trusted.
+gateway:
+  strict: true
+  media_delivery_allow_dirs: [/opt/data/outbox]
+  trust_recent_files: false
 
 # Built-in toolsets are chosen per channel: every channel must be listed or it gets the defaults
 # (web, browser, terminal, file, code execution). Verify with: hermes tools list --platform <channel>

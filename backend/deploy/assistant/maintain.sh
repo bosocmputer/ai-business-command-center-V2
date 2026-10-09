@@ -13,5 +13,8 @@ cat /tmp/purge.out
 /opt/hermes/.venv/bin/python /assistant/memory_guard.py --apply
 /opt/hermes/.venv/bin/python -c "import sys; sys.path.insert(0, \"/assistant\"); import usage_ledger; usage_ledger.prune()" || result="$result,ledger-prune-failed"
 find /opt/data/logs -type f -mtime +"$LOG_DAYS" -delete 2>/dev/null
+# What the owner sent (pictures, files) and what the secretary made for the owner are kept no longer than a conversation.
+/opt/hermes/.venv/bin/python -c "import sys; sys.path.insert(0, \"/assistant\"); import secretary_tools; secretary_tools.purge_outbox(max_age_seconds=$HOURS * 3600)" || result="$result,outbox-purge-failed"
+find /opt/data/document_cache /opt/data/image_cache /opt/data/audio_cache /opt/data/video_cache /opt/data/cache -type f -mmin +$((HOURS * 60)) -delete 2>/dev/null
 "$HERMES" sessions optimize > /tmp/optimize.out 2>&1 || result="$result,optimize-failed"
 printf '{"maintenance":"%s","idle_hours":%s,"log_days":%s,"t":%s}\n' "$result" "$HOURS" "$LOG_DAYS" "$(date +%s)"

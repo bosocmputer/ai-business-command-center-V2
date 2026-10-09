@@ -7,6 +7,7 @@
 #   2. no built-in tool is enabled on any channel (cli, api_server, telegram, webhook) except memory, which is on by decision;
 #   2b. every skill that ships with Hermes is switched off except the agent's own manual (disable_skills.py), so no slash command
 #       can load an unreviewed procedure;
+#   2c. a reply can send a file to the chat only from the outbox (media_policy_check.py);
 #   3. the MCP shim exposes exactly the tools this repository defines;
 #   4. real questions (assistant/example_check.py) pass against the real Agent API.
 # It uses the live token, so it spends the hourly call quota (about 3 per question): keep the question list short.
@@ -99,6 +100,10 @@ skills_on=$(echo "$skill_listing" | grep -E '│ +enabled +│' | awk -F'│' '{
 if [ "${skills_total:-0}" -lt 1 ]; then echo; fail "the skill list could not be read"
 elif [ -n "$skills_on" ]; then echo; echo "$skills_on" | head -8 | sed 's/^/    /'; fail "skills still enabled (first ones shown): $(echo "$skills_on" | wc -l | tr -d ' ') of $skills_total"
 else echo "ok ($skills_total skills, none enabled but hermes-agent)"; fi
+
+printf "2c. only the outbox can be sent to a chat ... "
+media=$(docker exec -i "$NAME" "$PY" - < assistant/media_policy_check.py 2>&1 || true)
+if echo "$media" | grep -q '^FAIL' || ! echo "$media" | grep -q '^PASS'; then echo; echo "$media" | grep -E '^(PASS|FAIL)|Error' | sed 's/^/    /' | head -10; fail "a file outside the outbox can be sent, or the check could not run"; else echo "ok ($(echo "$media" | grep -c '^PASS') paths)"; fi
 
 printf "3. the shim exposes every tool of this repository ... "
 want=$(grep -c '^@mcp.tool()' assistant/aibcc_mcp.py)
