@@ -219,6 +219,7 @@ put the old digest back and, if the new version had migrated the store, restore 
 - `make_file` writes a csv, xlsx, txt, md or html file under `/opt/data/outbox`. `gateway.strict` in `config.yaml` lets the gateway send a
   file to the chat only from there (and from Hermes' own caches), whatever path a reply names; `upgrade-check.sh` step 2c checks it.
   `maintain.sh` deletes outbox files and attachments older than `RETENTION_HOURS`.
+- `lookup` kind `document` (a lookup of the Agent API, not a tool of `secretary_tools.py`) finds one document by its number; see `04-security-operations.md`.
 - `read_document` returns the text of a `.xlsx` or `.docx` the owner attached (only from the attachment folders). PDF is not read.
 - `web_search` asks Serper (`WEB_SEARCH_API_KEY`, primary) and, if that fails, SerpApi (`WEB_SEARCH_FALLBACK_KEY`); both give Google results.
   Without `WEB_SEARCH_API_KEY` the tool says search is not enabled and the welcome text leaves the web line out. Enter the keys with
