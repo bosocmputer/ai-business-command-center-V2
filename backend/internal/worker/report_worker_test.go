@@ -25,6 +25,7 @@ type fakeRunStore struct {
 	completed        *report.SummaryResult
 	persistRows      bool
 	retriedCode      string
+	retriedNotBefore time.Time
 	failedCode       string
 	failureEvidence  *failure.Evidence
 	failCalls        int
@@ -60,8 +61,9 @@ func (store *fakeRunStore) Complete(_ context.Context, _ uuid.UUID, _ string, su
 	store.persistRows = persistRows
 	return nil
 }
-func (store *fakeRunStore) Retry(_ context.Context, _ uuid.UUID, _, safeCode string, _, _ time.Time) error {
+func (store *fakeRunStore) Retry(_ context.Context, _ uuid.UUID, _, safeCode string, notBefore, _ time.Time) error {
 	store.retriedCode = safeCode
+	store.retriedNotBefore = notBefore
 	return nil
 }
 func (store *fakeRunStore) RetryPreRequestFailure(_ context.Context, _ uuid.UUID, _, safeCode string, _, _ time.Time) error {

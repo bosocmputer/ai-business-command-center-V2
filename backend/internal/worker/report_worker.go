@@ -56,6 +56,11 @@ const (
 	timeoutStreakBeforeSwitch = 2
 	modeProbeTimeout          = 10 * time.Second
 	modeSwitchRetryDelay      = 5 * time.Second
+	// A summary result is bounded (a few rows and the totals), so a report that is fetched in chunks for its detail rows
+	// can still try its summary as one query first: it is much faster on a shop where that works. When it fails with a
+	// size signal or a timeout the report goes back to chunks for summaryDirectDenyTTL, and the run is requeued.
+	summaryDirectDenyTTL          = 24 * time.Hour
+	summaryDirectTimeoutRetryWait = 10 * time.Minute
 )
 
 type runStatsKey struct{}
@@ -68,6 +73,9 @@ type runStats struct {
 	units       int
 	modeDecided bool
 	chunked     bool
+	// summaryDirect is true when a report whose mode is CHUNKED ran its summary as one query. Such a run says nothing
+	// about the size of the detail rows, so it is not recorded as a measurement.
+	summaryDirect bool
 }
 
 func statsFrom(ctx context.Context) *runStats {
@@ -109,6 +117,7 @@ type ReportWorker struct {
 	modes                 ExecutionModeStore
 	modeMu                sync.Mutex
 	modeCache             map[string]cachedMode
+	summaryDirectDenied   map[string]time.Time
 	heartbeatInterval     time.Duration
 }
 
@@ -150,7 +159,23 @@ func (worker *ReportWorker) ConfigureHeavyChunks(enabled, scheduleEnabled bool, 
 func (worker *ReportWorker) ConfigureExecutionModes(store ExecutionModeStore) *ReportWorker {
 	worker.modes = store
 	worker.modeCache = map[string]cachedMode{}
+	worker.summaryDirectDenied = map[string]time.Time{}
 	return worker
+}
+
+func (worker *ReportWorker) summaryDirectAllowed(tenantID uuid.UUID, key report.Key) bool {
+	worker.modeMu.Lock()
+	defer worker.modeMu.Unlock()
+	until, denied := worker.summaryDirectDenied[tenantID.String()+"/"+string(key)]
+	return !denied || !worker.now().Before(until)
+}
+
+func (worker *ReportWorker) denySummaryDirect(tenantID uuid.UUID, key report.Key) {
+	worker.modeMu.Lock()
+	defer worker.modeMu.Unlock()
+	if worker.summaryDirectDenied != nil {
+		worker.summaryDirectDenied[tenantID.String()+"/"+string(key)] = worker.now().Add(summaryDirectDenyTTL)
+	}
 }
 
 func (worker *ReportWorker) modeFor(ctx context.Context, tenantID uuid.UUID, key report.Key) report.ExecutionMode {
@@ -291,6 +316,19 @@ func (worker *ReportWorker) adjustExecutionMode(ctx context.Context, run report.
 		validation = string(execution.ProtocolEvidence.ResultValidationCode)
 	}
 	cacheKey := run.TenantID.String() + "/" + string(run.ReportKey)
+	if stats.summaryDirect {
+		// The mode is already CHUNKED: a failed one-query summary only means the shop cannot do it that way, so go back to
+		// chunks and run the same run again, after a pause when the shop may still be working on the query.
+		switch {
+		case report.IsSizeSignal(execution.Code, validation):
+			worker.denySummaryDirect(run.TenantID, run.ReportKey)
+			return true, worker.store.Retry(ctx, run.ID, worker.workerID, execution.Code, now.Add(modeSwitchRetryDelay), now)
+		case execution.Code == "SML_TIMEOUT":
+			worker.denySummaryDirect(run.TenantID, run.ReportKey)
+			return true, worker.store.Retry(ctx, run.ID, worker.workerID, execution.Code, now.Add(summaryDirectTimeoutRetryWait), now)
+		}
+		return false, nil
+	}
 	if report.IsSizeSignal(execution.Code, validation) {
 		reason := execution.Code
 		if validation != "" {
@@ -325,7 +363,7 @@ func (worker *ReportWorker) shopAnswers(ctx context.Context, tenantID uuid.UUID)
 }
 
 func (worker *ReportWorker) recordModeSuccess(ctx context.Context, run report.Run, stats *runStats, elapsed time.Duration) {
-	if worker.modes == nil || !stats.modeDecided {
+	if worker.modes == nil || !stats.modeDecided || stats.summaryDirect {
 		return
 	}
 	definition, ok := report.DefinitionFor(run.ReportKey)
@@ -354,6 +392,10 @@ func (worker *ReportWorker) execute(ctx context.Context, run report.Run) (report
 		projection = report.ResultDetail
 	}
 	chunked := worker.chunkDecision(ctx, run, definition, projection)
+	summaryDirect := false
+	if chunked && projection == report.ResultSummary && worker.modes != nil && worker.summaryDirectAllowed(run.TenantID, run.ReportKey) {
+		chunked, summaryDirect = false, true
+	}
 	totalTimeout := worker.executionTimeout(run, definition, chunked)
 	executionCtx, cancelExecution := context.WithTimeout(ctx, totalTimeout)
 	defer cancelExecution()
@@ -369,7 +411,7 @@ func (worker *ReportWorker) execute(ctx context.Context, run report.Run) (report
 		return report.SummaryResult{}, &executionFailure{Code: "SML_CONNECTION_LOAD_FAILED", Stage: failure.StageLoadConnection, Retryable: true}
 	}
 	if stats := statsFrom(ctx); stats != nil {
-		stats.modeDecided, stats.chunked = true, chunked
+		stats.modeDecided, stats.chunked, stats.summaryDirect = true, chunked, summaryDirect
 	}
 	if chunked {
 		return worker.executeChunked(executionCtx, run, definition, connection, projection)

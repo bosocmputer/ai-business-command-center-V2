@@ -104,6 +104,7 @@ func TestModeTableDecidesBetweenDirectAndChunked(t *testing.T) {
 				}
 				return stockRows(), nil
 			}, test.master)
+			worker.denySummaryDirect(tenantID, report.StockBalance) // these cases are about the chunked path itself
 			if err := worker.ProcessOne(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -160,6 +161,7 @@ func TestSizeSignalInChunkedModeIsNotSwitchedOrRetried(t *testing.T) {
 		}
 		return nil, xmlMalformed()
 	}, true)
+	worker.denySummaryDirect(tenantID, report.StockBalance)
 	if err := worker.ProcessOne(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -260,6 +262,7 @@ func TestSuccessfulRunsRecordObservedSize(t *testing.T) {
 		}
 		return stockRows(), nil
 	}, true)
+	chunked.denySummaryDirect(tenantID, report.StockBalance)
 	if err := chunked.ProcessOne(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -279,5 +282,111 @@ func TestLegacyAllowlistStillWorksWithoutAModeStore(t *testing.T) {
 	other := modeRun(uuid.New(), report.StockBalance)
 	if worker.chunkDecision(context.Background(), other, definition, report.ResultSummary) {
 		t.Fatal("a tenant outside the allowlist must not be chunked")
+	}
+}
+
+// A report fetched in chunks for its detail rows still tries its bounded summary as one query first.
+func TestChunkedModeSummaryTriesOneQueryFirstAndRecordsNoMeasurement(t *testing.T) {
+	tenantID := uuid.New()
+	store := &fakeRunStore{run: modeRun(tenantID, report.StockBalance)}
+	modes := &fakeModeStore{mode: report.ModeChunked}
+	worker := newModeWorker(store, modes, func(_ context.Context, _ sml.Connection, sql string) ([]map[string]string, error) {
+		if strings.Contains(sql, "select code as unit_key") {
+			t.Error("the manifest must not be read when the summary runs as one query")
+		}
+		return stockRows(), nil
+	}, true)
+	if err := worker.ProcessOne(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if store.completed == nil || len(store.chunkManifests) != 0 {
+		t.Fatalf("completed=%v manifests=%d fail=%q", store.completed != nil, len(store.chunkManifests), store.failedCode)
+	}
+	if len(modes.measurements) != 0 || len(modes.directSuccess) != 0 || len(modes.switchReasons) != 0 {
+		t.Fatalf("a one-query summary says nothing about the detail size: measurements=%v directSuccess=%v switches=%v", modes.measurements, modes.directSuccess, modes.switchReasons)
+	}
+}
+
+func TestChunkedModeSummaryFallsBackToChunksAfterASizeSignalAndRemembersIt(t *testing.T) {
+	tenantID := uuid.New()
+	store := &fakeRunStore{run: modeRun(tenantID, report.StockBalance)}
+	modes := &fakeModeStore{mode: report.ModeChunked}
+	worker := newModeWorker(store, modes, func(_ context.Context, _ sml.Connection, sql string) ([]map[string]string, error) {
+		if strings.Contains(sql, "select code as unit_key") {
+			return []map[string]string{{"unit_key": "001"}}, nil
+		}
+		return nil, xmlMalformed()
+	}, true)
+	if err := worker.ProcessOne(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if store.retriedCode != "SML_RESULT_INVALID" || store.failCalls != 0 || len(modes.switchReasons) != 0 {
+		t.Fatalf("retry=%q fail=%d switches=%v; the run must be requeued without touching the mode", store.retriedCode, store.failCalls, modes.switchReasons)
+	}
+	if worker.summaryDirectAllowed(tenantID, report.StockBalance) {
+		t.Fatal("the shop must not be asked for a one-query summary again straight away")
+	}
+	if !worker.summaryDirectAllowed(uuid.New(), report.StockBalance) {
+		t.Fatal("another shop must not be affected")
+	}
+	// Once denied, the next run goes through the chunks.
+	store.retriedCode = ""
+	if err := worker.ProcessOne(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.chunkManifests) == 0 {
+		t.Fatal("after a denial the summary must be fetched in chunks")
+	}
+}
+
+func TestChunkedModeSummaryTimeoutWaitsBeforeTheChunkedRetry(t *testing.T) {
+	tenantID := uuid.New()
+	store := &fakeRunStore{run: modeRun(tenantID, report.StockBalance)}
+	modes := &fakeModeStore{mode: report.ModeChunked}
+	worker := newModeWorker(store, modes, func(context.Context, sml.Connection, string) ([]map[string]string, error) {
+		return nil, &sml.SafeError{Code: "SML_TIMEOUT", Retryable: true, Phase: sml.RequestSentResultUnknown}
+	}, true)
+	if err := worker.ProcessOne(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if store.retriedCode != "SML_TIMEOUT" || store.failCalls != 0 || store.remoteFailCalls != 0 {
+		t.Fatalf("retry=%q fail=%d remoteFail=%d", store.retriedCode, store.failCalls, store.remoteFailCalls)
+	}
+	if wait := store.retriedNotBefore.Sub(modeTestNow); wait < summaryDirectTimeoutRetryWait {
+		t.Fatalf("retry after %s, the remote query may still be running", wait)
+	}
+	if worker.summaryDirectAllowed(tenantID, report.StockBalance) {
+		t.Fatal("a timeout must send the report back to chunks")
+	}
+}
+
+func TestChunkedModeDetailRunsStayChunkedAndOtherFailuresAreNotRetriedAsChunks(t *testing.T) {
+	tenantID := uuid.New()
+	detail := modeRun(tenantID, report.StockBalance)
+	detail.ResultKind = report.ResultDetail
+	store := &fakeRunStore{run: detail}
+	modes := &fakeModeStore{mode: report.ModeChunked}
+	worker := newModeWorker(store, modes, func(_ context.Context, _ sml.Connection, sql string) ([]map[string]string, error) {
+		if strings.Contains(sql, "select code as unit_key") {
+			return []map[string]string{{"unit_key": "001"}}, nil
+		}
+		return stockRows(), nil
+	}, true)
+	if err := worker.ProcessOne(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.chunkManifests) == 0 {
+		t.Fatal("detail rows are not bounded and must keep using chunks")
+	}
+
+	other := &fakeRunStore{run: modeRun(tenantID, report.StockBalance)}
+	failing := newModeWorker(other, &fakeModeStore{mode: report.ModeChunked}, func(context.Context, sml.Connection, string) ([]map[string]string, error) {
+		return nil, &sml.SafeError{Code: "SML_AUTH_FAILED", Phase: sml.BeforeRequestSent}
+	}, true)
+	if err := failing.ProcessOne(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !failing.summaryDirectAllowed(tenantID, report.StockBalance) {
+		t.Fatal("an unrelated failure must not deny the one-query summary")
 	}
 }
