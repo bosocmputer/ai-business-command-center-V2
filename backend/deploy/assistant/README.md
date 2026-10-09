@@ -306,3 +306,27 @@ LINE -> the existing webhook (AI-BCC api, signature checked) -> passed on untouc
   cannot send a document as an attachment, only a link, so file delivery over LINE needs Hermes' media path (`/line/media/...`) reachable from
   outside: not done. Until then an export asked for on LINE cannot be delivered.
 - Find the owner's user id: the LINE Developers console (Basic settings > Your user ID) of the owner's own account.
+
+## Settings from the admin page (per shop)
+
+The model, the shop's OpenRouter key and its Telegram and LINE secrets can be kept in AI-BCC and set from the shop's page in the admin
+(tab "เลขา AI"), instead of in `hermes.env` and `config.yaml`. The assistant then needs only its AI-BCC token.
+
+- **Switch:** `ASSISTANT_CONFIG_PULL=on` in `.env.production` (default `off`). With `off` nothing changes: `hermes.env` and `config.yaml` are used.
+- **At start** (`config_pull.py start`, called by `entrypoint.sh`): fetch `GET /api/v1/agent/assistant-config` with the container's token, keep a
+  private copy in the data volume (`assistant-config.json`, mode 0600), write `/opt/data/config.yaml` (the repository's file with the shop's model
+  and its pinned providers put in), export the secrets, and report the version in use (`POST /api/v1/agent/assistant-status`). If AI-BCC cannot be
+  reached the earlier copy is used; if there is no copy either, the old way is kept.
+- **A shop that must not run** (switched off, past its end date, no OpenRouter key) gets `enabled: false` and no secret: every secret is unset, so
+  no chat platform starts and nobody can reach the assistant.
+- **Changes:** every minute the container asks whether the settings changed (an ETag; unchanged is an empty 304). When they did, it waits until no
+  conversation is running (`is_idle.py`), stops, and the restart policy starts it again with the new settings.
+- **Check before switching on** (`docker compose exec assistant /opt/hermes/.venv/bin/python /assistant/config_pull.py check`): compares what
+  AI-BCC would give with what is in use now, by hash, never printing a value. Everything must say `same`.
+- **Still in `hermes.env`:** the AI-BCC token, `API_SERVER_KEY`, `ALERT_WEBHOOK_SECRET`, the web search keys (the operator's, shared), and the
+  allowed Telegram and LINE users (until the LINE front gate reads them from the recipients).
+- **Moving a shop in:** enter the keys in the admin page, run `check`, set `ASSISTANT_CONFIG_PULL=on`, recreate the assistant, ask three questions,
+  and after a day remove the moved secrets from `hermes.env` (keep a copy). To go back: `ASSISTANT_CONFIG_PULL=off` and restore the copy.
+- **Models** are a fixed list in code (`internal/assistantcfg/catalog.go`), each with providers pinned to hosts OpenRouter lists as not keeping
+  data. A test-only model can be chosen only for a shop marked as a test shop. `model-probe.sh` puts one measurable question to a model on a
+  throwaway assistant; it is not a safety check.
