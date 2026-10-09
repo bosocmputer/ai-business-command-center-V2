@@ -4,14 +4,15 @@
 # earlier value of the same name. Names: OPENROUTER_API_KEY, AIBCC_TOKEN, WEB_SEARCH_API_KEY (Serper, the primary) and WEB_SEARCH_FALLBACK_KEY (SerpApi, used when Serper fails), API_SERVER_KEY (any 16+ characters; or
 # type "generate" to make a random one), TELEGRAM_BOT_TOKEN (from @BotFather), TELEGRAM_ALLOWED_USERS (numeric Telegram
 # user ids, comma separated; the people allowed to message the bot). The value never appears in a command line, in shell history or in chat.
-# Add one more person without retyping the others:  ./assistant/set-secret.sh TELEGRAM_ALLOWED_USERS --add
+# LINE: LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET (LINE Developers console > the channel's Messaging API), LINE_ALLOWED_USERS (the owner's LINE user id, U...).
+# Add one more person without retyping the others:  ./assistant/set-secret.sh TELEGRAM_ALLOWED_USERS --add   (or LINE_ALLOWED_USERS --add)
 # (the new id is merged into the existing list; duplicates are dropped).
 set -eu
 NAME="${1:?name required: OPENROUTER_API_KEY | AIBCC_TOKEN | API_SERVER_KEY | TELEGRAM_BOT_TOKEN | TELEGRAM_ALLOWED_USERS | WEB_SEARCH_API_KEY | WEB_SEARCH_FALLBACK_KEY}"
-case "$NAME" in OPENROUTER_API_KEY|AIBCC_TOKEN|API_SERVER_KEY|TELEGRAM_BOT_TOKEN|TELEGRAM_ALLOWED_USERS|WEB_SEARCH_API_KEY|WEB_SEARCH_FALLBACK_KEY) ;; *) echo "unknown name: $NAME" >&2; exit 2;; esac
+case "$NAME" in OPENROUTER_API_KEY|AIBCC_TOKEN|API_SERVER_KEY|TELEGRAM_BOT_TOKEN|TELEGRAM_ALLOWED_USERS|WEB_SEARCH_API_KEY|WEB_SEARCH_FALLBACK_KEY|LINE_CHANNEL_ACCESS_TOKEN|LINE_CHANNEL_SECRET|LINE_ALLOWED_USERS) ;; *) echo "unknown name: $NAME" >&2; exit 2;; esac
 MODE="${2:-}"
 case "$MODE" in ""|--add) ;; *) echo "unknown option: $MODE" >&2; exit 2;; esac
-[ "$MODE" != "--add" ] || [ "$NAME" = "TELEGRAM_ALLOWED_USERS" ] || { echo "--add works for TELEGRAM_ALLOWED_USERS only" >&2; exit 2; }
+[ "$MODE" != "--add" ] || [ "$NAME" = "TELEGRAM_ALLOWED_USERS" ] || [ "$NAME" = "LINE_ALLOWED_USERS" ] || { echo "--add works for the allowed-users lists only" >&2; exit 2; }
 cd "$(dirname "$0")/.."
 umask 077
 mkdir -p secrets/assistant
@@ -24,6 +25,9 @@ case "$VALUE" in *[!A-Za-z0-9._~+/=:,-]*) echo "value has characters that do not
 if [ "$MODE" = "--add" ]; then
   OLD=$(grep "^$NAME=" "$FILE" | cut -d= -f2- || true)
   VALUE=$(printf '%s,%s' "$OLD" "$VALUE" | tr ',' '\n' | grep -v '^$' | awk '!seen[$0]++' | paste -sd, -)
+fi
+if [ "$NAME" = "LINE_ALLOWED_USERS" ]; then
+  case "$VALUE" in *[!UA-Za-z0-9,]*) echo "LINE user ids are letters and digits starting with U (comma separated); nothing saved" >&2; exit 1;; esac
 fi
 if [ "$NAME" = "TELEGRAM_ALLOWED_USERS" ]; then
   case "$VALUE" in *[!0-9,]*) echo "Telegram ids are digits only (comma separated); nothing saved" >&2; exit 1;; esac

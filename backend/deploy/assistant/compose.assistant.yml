@@ -56,6 +56,31 @@ services:
     logging: *assistant-logging
     networks: [agent, egress]
 
+  # LINE's webhook door. Only started with the `line` profile (docker compose --profile line up -d assistant-ingress). It listens on
+  # 127.0.0.1:8646 of the host, where the tunnel points, and forwards one thing (POST /line/webhook) to the assistant over the
+  # internal agent network; the assistant itself never leaves that network. See ingress_proxy.py.
+  assistant-ingress:
+    <<: *assistant-lock
+    profiles: [line]
+    image: *assistant-image
+    user: "10000:10000"
+    entrypoint: ["/opt/hermes/.venv/bin/python", "/assistant/ingress_proxy.py", "8646"]
+    environment:
+      INGRESS_UPSTREAM: http://assistant:8646
+    ports:
+      - "127.0.0.1:8646:8646"
+    volumes:
+      - ./assistant:/assistant:ro
+    mem_limit: 128m
+    pids_limit: 64
+    init: true
+    restart: unless-stopped
+    logging: *assistant-logging
+    networks: [agent, ingress]
+    depends_on:
+      assistant:
+        condition: service_started
+
   assistant:
     <<: *assistant-lock
     image: *assistant-image
@@ -70,6 +95,12 @@ services:
       WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-serper}
       WEB_SEARCH_FALLBACK_PROVIDER: ${WEB_SEARCH_FALLBACK_PROVIDER:-serpapi}
       WEB_SEARCH_DAILY_CAP: ${WEB_SEARCH_DAILY_CAP:-80}
+      # LINE's texts in Thai: a slow answer (a file takes a minute) turns the reply into a button the owner taps to fetch it.
+      LINE_PENDING_TEXT: "กำลังเตรียมคำตอบอยู่ครับ แตะปุ่มด้านล่างเมื่อพร้อมรับ"
+      LINE_BUTTON_LABEL: "รับคำตอบ"
+      LINE_DELIVERED_TEXT: "ส่งคำตอบให้แล้วครับ ✅"
+      LINE_INTERRUPTED_TEXT: "งานถูกหยุดก่อนเสร็จ ลองถามใหม่อีกครั้งครับ"
+      LINE_EXPIRED_TEXT: "คำขอนี้หมดอายุแล้ว ถามใหม่อีกครั้งครับ"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: "8642"
       HTTPS_PROXY: http://assistant-egress:3128
@@ -112,6 +143,9 @@ networks:
     driver: bridge
     internal: true
   egress:
+    driver: bridge
+  # Only the LINE door sits here (published on the host's loopback); the assistant is not on it.
+  ingress:
     driver: bridge
 
 volumes:

@@ -10,6 +10,14 @@ if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -z "${TELEGRAM_ALLOWED_USERS:-}" ]; the
   echo '{"telegram":"not started: TELEGRAM_BOT_TOKEN is set but TELEGRAM_ALLOWED_USERS is empty"}'
   unset TELEGRAM_BOT_TOKEN
 fi
+# The same for LINE: a channel without a list of allowed people would let anyone who adds the account ask for the shop's numbers.
+if [ -n "${LINE_CHANNEL_ACCESS_TOKEN:-}" ] && [ -z "${LINE_ALLOWED_USERS:-}" ]; then
+  echo '{"line":"not started: LINE_CHANNEL_ACCESS_TOKEN is set but LINE_ALLOWED_USERS is empty"}'
+  unset LINE_CHANNEL_ACCESS_TOKEN LINE_CHANNEL_SECRET
+fi
+if [ -n "${LINE_ALLOWED_USERS:-}" ] && [ -z "${LINE_HOME_CHANNEL:-}" ]; then
+  export LINE_HOME_CHANNEL="${LINE_ALLOWED_USERS%%,*}"
+fi
 # Hermes nags with "no home channel is set, type /sethome" until one exists; /sethome is not allowed to users, so the
 # first allowed person's private chat (the chat id of a private chat is the user id) is the home channel.
 if [ -n "${TELEGRAM_ALLOWED_USERS:-}" ] && [ -z "${TELEGRAM_HOME_CHANNEL:-}" ]; then

@@ -52,6 +52,11 @@ platforms:
         max_commands: 3
         priority_mode: replace
         priority: [new, help, whoami]
+  line:
+    group_policy: disabled
+    gateway_restart_notification: false
+    allow_admin_from: ["0"]
+    user_allowed_commands: [new]
 
 # /new asks "approve once / always / cancel" before it resets a conversation. An owner should not see that.
 approvals:

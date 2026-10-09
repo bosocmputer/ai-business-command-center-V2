@@ -281,3 +281,30 @@ no live fetch is needed.
   15:42:21 (about 1 min 50 s after the stop) and sent the Telegram alert at 15:42:52. After `start` at 15:45:03 the
   incident was resolved at 15:45:51 (the probe counts "starting" as healthy) and the recovery message went out at 15:45:52.
   The alert text says "บริการระบบ AI-BCC" and shows the technical code, not that it is the owner assistant.
+
+## LINE (a second channel for the same assistant)
+
+Hermes ships a LINE adapter. Here it is added without opening the assistant to the internet:
+
+```
+LINE  ->  https tunnel  ->  127.0.0.1:8646 (host)  ->  assistant-ingress  ->  assistant:8646 (internal agent network)
+```
+
+- `assistant-ingress` (compose profile `line`, `ingress_proxy.py`) forwards exactly one request type, `POST /line/webhook`, with only the
+  `Content-Type` and `X-Line-Signature` headers; anything else is 404, a body over 1 MiB 413, more than 120 a minute 429. The assistant itself
+  verifies the signature with the channel secret. It logs one JSON line per request (decision and status, never a body).
+- Use a **separate LINE Official Account / Messaging API channel** for the assistant. The channel that already sends the report cards has its
+  webhook pointed at AI-BCC (recipient verification), and a channel has one webhook only.
+- Needed on the server, none of it in the repo: `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_CHANNEL_SECRET` and `LINE_ALLOWED_USERS` (the owner's LINE user id,
+  `U...`), each entered with `./assistant/set-secret.sh NAME`. Without the allowed-users list the channel does not start (entrypoint.sh), and groups
+  are ignored (`group_policy: disabled`).
+- Egress: add `api.line.me` and `api-data.line.me` to `ASSISTANT_EGRESS_ALLOW` in `.env.production`.
+- Start the door: `docker compose --profile line up -d assistant-ingress`, then point a tunnel at `http://127.0.0.1:8646`
+  (`cloudflared tunnel --url http://127.0.0.1:8646`) and set the channel's webhook URL to `https://<tunnel host>/line/webhook` (Verify in the console).
+- **A free quick tunnel changes its address every time it restarts**, and then the webhook URL in the LINE console must be changed by hand. Fine
+  for a pilot, not for a shop that is paying: move to a named tunnel or a real domain first.
+- Differences from Telegram: a reply made after about 50 seconds (a file export) is sent with LINE's push API, which the account's plan counts and
+  limits, and the owner sees a "tap to get the answer" button for answers slower than 45 seconds (texts are Thai, set in compose). LINE bots cannot send
+  a document as an attachment, only a link, so file delivery on LINE needs the media path (`/line/media/...`) opened on the door too: not done yet.
+- Find the owner's user id: with `LINE_ALLOWED_USERS` unset the channel does not start; read it from the LINE console (Basic settings > Your user ID)
+  of the owner's own account, or from the webhook event the first message produces.
