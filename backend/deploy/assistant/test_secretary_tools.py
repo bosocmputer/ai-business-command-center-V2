@@ -213,7 +213,9 @@ class ExportFileTests(unittest.TestCase):
         self.assertEqual([name for name, _ in sheets], ["sheet1.xml", "sheet2.xml"])
         data = sheets[0][1]
         self.assertEqual(data[0], ["วันที่", "เลขที่เอกสาร", "ลูกค้า", "จำนวน", "มูลค่ารายการ"])
-        self.assertEqual(len(data), 4)
+        self.assertEqual(len(data), 6)  # the header, three rows, a blank row and the totals row
+        self.assertEqual(data[5][0], "รวม (เฉพาะแถวที่เลือกกรอง)")
+        self.assertEqual(data[5][4], "1150.75")
         self.assertEqual(data[2][1], "IV-0002")
         self.assertEqual(data[2][4], "1000.25")  # a number with a thousands comma becomes a number
 
@@ -225,7 +227,10 @@ class ExportFileTests(unittest.TestCase):
         self.assertIn('<c r="D2" s="2"><v>2</v></c>', xml)  # a column of whole numbers is shown without decimals
         self.assertIn('<c r="E2" s="3"><v>250.5</v></c>', xml)
         self.assertIn('<pane ySplit="1"', xml)
-        self.assertIn("<autoFilter", xml)
+        self.assertIn('<autoFilter ref="A1:E4"/>', xml)  # the filter covers the table, not the totals row
+        self.assertIn('<f>SUBTOTAL(109,E2:E4)</f><v>1150.75</v>', xml)
+        with zipfile.ZipFile(result["path"]) as archive:
+            self.assertIn('<name val="Tahoma"/>', archive.read("xl/styles.xml").decode("utf-8"))
 
     def test_totals_are_worked_out_by_the_tool_for_money_columns_only(self):
         sums = {item["column"]: item["sum"] for item in self.make()["column_sums"]}

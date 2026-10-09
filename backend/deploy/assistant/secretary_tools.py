@@ -143,7 +143,7 @@ def number_text(value):
     return "0" if text in ("-0", "") else text
 
 
-def sheet_xml(rows, styles=None, widths=None, header=False):
+def sheet_xml(rows, styles=None, widths=None, header=False, filter_rows=None):
     """One worksheet. rows hold ready cells: ("n", text) number, ("d", serial) date, ("s", text) text. styles maps a column to a style id."""
     styles = styles or {}
     cells = []
@@ -154,8 +154,13 @@ def sheet_xml(rows, styles=None, widths=None, header=False):
             style = STYLE_HEADER if header and row_number == 1 else styles.get(column, STYLE_DEFAULT) if kind != "s" else STYLE_DEFAULT
             if kind == "w":
                 style, kind = STYLE_WRAP, "s"
+            elif kind == "b":
+                style, kind = STYLE_HEADER, "s"
             attribute = f' s="{style}"' if style else ""
-            if kind in ("n", "d"):
+            if kind == "f":  # (formula, cached value): the cached value shows even where the file is only previewed
+                formula, cached = value
+                parts.append(f'<c r="{reference}"{attribute}><f>{escape(formula)}</f><v>{cached}</v></c>')
+            elif kind in ("n", "d"):
                 parts.append(f'<c r="{reference}"{attribute}><v>{value}</v></c>')
             else:
                 parts.append(f'<c r="{reference}"{attribute} t="inlineStr"><is><t xml:space="preserve">{escape(str(value))}</t></is></c>')
@@ -166,7 +171,7 @@ def sheet_xml(rows, styles=None, widths=None, header=False):
     columns = ""
     if widths:
         columns = "<cols>" + "".join(f'<col min="{i + 1}" max="{i + 1}" width="{w}" customWidth="1"/>' for i, w in enumerate(widths)) + "</cols>"
-    last = f"{column_letters(max(len(r) for r in rows) - 1)}{len(rows)}" if rows else "A1"
+    last = f"{column_letters(max(len(r) for r in rows) - 1)}{filter_rows or len(rows)}" if rows else "A1"
     filter_xml = f'<autoFilter ref="A1:{last}"/>' if header and rows else ""
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -179,7 +184,7 @@ STYLES_XML = (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
     '<numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/></numFmts>'
-    '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+    '<fonts count="2"><font><sz val="11"/><name val="Tahoma"/></font><font><b/><sz val="11"/><name val="Tahoma"/></font></fonts>'
     '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'
     '<fill><patternFill patternType="solid"><fgColor rgb="FFE8EEF4"/></patternFill></fill></fills>'
     '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
@@ -284,11 +289,23 @@ def data_sheet(columns, rows):
             else:
                 cells.append(("s", text))
         sheet.append(cells)
+    last = len(sheet)
+    money = [i for i, column in enumerate(columns) if column.get("type") == "number" and column.get("total")]
+    if money and rows:
+        # Two rows below the table so a filter does not swallow it. SUBTOTAL(109) adds only the rows the filter leaves visible.
+        sheet.append([("s", "")] * len(columns))
+        total_row = [("s", "")] * len(columns)
+        total_row[0] = ("b", "รวม (เฉพาะแถวที่เลือกกรอง)")
+        for index in money:
+            letter = column_letters(index)
+            cached = sum((as_number(row[index]) or Decimal(0)) for row in rows)
+            total_row[index] = ("f", (f"SUBTOTAL(109,{letter}2:{letter}{last})", str(cached.quantize(Decimal("0.01")))))
+        sheet.append(total_row)
     widths = []
     for index, column in enumerate(columns):
         longest = max([len(str(column["label"]))] + [len(str(row[index])) for row in rows[:200]])
         widths.append(min(max(10, longest + 2), 48))
-    return sheet_xml(sheet, styles, widths, header=True)
+    return sheet_xml(sheet, styles, widths, header=True, filter_rows=last)
 
 
 def export_file(kind, name, label, period, collected_at, columns, rows, notes=None, split=None, outbox=None):

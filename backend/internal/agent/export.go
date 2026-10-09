@@ -204,6 +204,11 @@ func (service *Service) exportPage(ctx context.Context, principal Principal, def
 				if nameColumns[column.Key] && strings.TrimSpace(value) != "" {
 					value = service.alias(principal.TenantID, value)
 				}
+				if labels, ok := exportValueLabels[column.Key]; ok {
+					if label, found := labels[strings.TrimSpace(value)]; found {
+						value = label
+					}
+				}
 				cells[index] = value
 			}
 			response.Rows = append(response.Rows, cells)

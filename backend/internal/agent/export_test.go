@@ -66,6 +66,18 @@ func (exports *fakeExports) ListRows(_ context.Context, _, _ uuid.UUID, _ report
 	return page, nil
 }
 
+// columnIndex finds a column by its key, so the tests do not break when the report page gains a column.
+func columnIndex(t *testing.T, columns []ExportColumn, key string) int {
+	t.Helper()
+	for index, column := range columns {
+		if column.Key == key {
+			return index
+		}
+	}
+	t.Fatalf("no column %s", key)
+	return -1
+}
+
 func salesRows(count int) []map[string]string {
 	rows := make([]map[string]string, count)
 	for index := range rows {
@@ -93,8 +105,9 @@ func TestAnExportGivesEveryRowOfTheFreshRunInThePagesAskedFor(t *testing.T) {
 	if len(exports.created) != 0 {
 		t.Errorf("a fresh run of the person's own must not be fetched again: %v", exports.created)
 	}
-	if first.Columns[1].Key != "doc_no" || first.Rows[0][1] != "IV-00000" || first.Rows[0][3] != "บริษัท ตัวอย่าง จำกัด" {
-		t.Errorf("rows follow the columns the page shows: %v / %+v", first.Rows[0], first.Columns[:4])
+	docNo, customer := columnIndex(t, first.Columns, "doc_no"), columnIndex(t, first.Columns, "cust_name")
+	if first.Rows[0][docNo] != "IV-00000" || first.Rows[0][customer] != "บริษัท ตัวอย่าง จำกัด" {
+		t.Errorf("rows follow the columns the page shows: %v", first.Rows[0])
 	}
 	if len(first.Rows[0]) != len(first.Columns) {
 		t.Errorf("one cell per column: %v", first.Rows[0])
@@ -148,8 +161,9 @@ func TestAnExportHidesNamesWhenTheTokenMustNotSeeThem(t *testing.T) {
 	if err != nil || len(got.Rows) != 3 {
 		t.Fatalf("got = %+v %v", got, err)
 	}
+	customer := columnIndex(t, got.Columns, "cust_name")
 	for _, row := range got.Rows {
-		if strings.Contains(strings.Join(row, "|"), "ตัวอย่าง") || !strings.HasPrefix(row[3], "ลูกค้า-") {
+		if strings.Contains(strings.Join(row, "|"), "ตัวอย่าง") || !strings.HasPrefix(row[customer], "ลูกค้า-") {
 			t.Errorf("a customer name leaked into the file: %v", row)
 		}
 	}
@@ -157,7 +171,7 @@ func TestAnExportHidesNamesWhenTheTokenMustNotSeeThem(t *testing.T) {
 		t.Errorf("notes = %v", got.Notes)
 	}
 	named, _ := service.Export(context.Background(), namedPrincipal, "sales_goods_services", "2026-09-01", "2026-09-30", "")
-	if named.Rows[0][3] != "บริษัท ตัวอย่าง จำกัด" {
+	if named.Rows[0][customer] != "บริษัท ตัวอย่าง จำกัด" {
 		t.Errorf("a token that may see names keeps them: %v", named.Rows[0])
 	}
 }
@@ -277,5 +291,20 @@ func TestOnlyAmountsOfMoneyAreMarkedToBeAddedUp(t *testing.T) {
 		if !found {
 			t.Errorf("money column %s belongs to no report", key)
 		}
+	}
+}
+
+func TestACodeTheRowsCarryIsShownInWords(t *testing.T) {
+	rows := salesRows(2)
+	rows[0]["vat_type"], rows[1]["vat_type"] = "I", "C"
+	exports := &fakeExports{rows: rows, own: freshOwn()}
+	service, _ := exportService(exports, report.SalesGoodsServices)
+	got, err := service.Export(context.Background(), namedPrincipal, "sales_goods_services", "2026-09-01", "2026-09-30", "")
+	if err != nil || len(got.Rows) != 2 {
+		t.Fatalf("got = %+v %v", got, err)
+	}
+	vat := columnIndex(t, got.Columns, "vat_type")
+	if got.Rows[0][vat] != "VAT รวมใน" || got.Rows[1][vat] != "VAT 0%" {
+		t.Errorf("vat types = %q %q", got.Rows[0][vat], got.Rows[1][vat])
 	}
 }

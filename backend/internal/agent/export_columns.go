@@ -34,7 +34,13 @@ var moneyColumns = map[string]bool{
 	"sum_amount": true, "total_amount": true, "amount_sale": true, "cost_sale": true, "amount_sale_return": true, "cost_sale_return": true,
 	"balance_amount": true, "amount_in": true, "amount_out": true, "monetary": true, "sales_amount": true, "amount": true, "paid_amount": true,
 	"balance": true, "total_net_value": true, "cash_amount": true, "transfer_amount": true, "card_amount": true, "chq_amount": true,
-	"coupon_amount": true, "petty_cash_amount": true,
+	"coupon_amount": true, "petty_cash_amount": true, "total_value": true, "total_discount": true, "total_except_vat": true,
+	"total_vat_value": true, "total_except_discount": true,
+}
+
+// exportValueLabels turn a code the rows carry into the words the owner reads.
+var exportValueLabels = map[string]map[string]string{
+	"vat_type": {"E": "VAT แยกนอก", "I": "VAT รวมใน", "C": "VAT 0%", "3": "ไม่มีผลต่อภาษี"},
 }
 
 // exportColumns are the columns of each report's detail rows, in the order and with the headings the web page uses. The
@@ -42,16 +48,24 @@ var moneyColumns = map[string]bool{
 // carry is simply empty, and the assistant's file drops it.
 var exportColumns = map[report.Key][]ExportColumn{
 	report.SalesGoodsServices: {
-		dateColumn("doc_date", "วันที่"), textColumn("doc_no", "เลขที่เอกสาร"), textColumn("cust_code", "รหัสลูกค้า"), textColumn("cust_name", "ลูกค้า"),
+		dateColumn("doc_date", "วันที่"), textColumn("doc_time", "เวลา"), textColumn("doc_no", "เลขที่เอกสาร"), textColumn("doc_type", "ประเภทเอกสาร"),
+		textColumn("doc_ref", "เอกสารอ้างอิง"), textColumn("cust_code", "รหัสลูกค้า"), textColumn("cust_name", "ลูกค้า"),
 		textColumn("item_code", "รหัสสินค้า"), textColumn("item_name", "สินค้า"), numberColumn("qty", "จำนวน"), textColumn("unit_code", "หน่วย"),
-		numberColumn("price", "ราคา"), textColumn("discount", "ส่วนลด"), numberColumn("sum_amount", "มูลค่ารายการ"), numberColumn("total_amount", "ยอดขาย"),
-		textColumn("branch_code", "สาขา"), textColumn("wh_code", "คลัง"), textColumn("shelf_code", "ที่เก็บ"), textColumn("vat_type", "ประเภทภาษี"),
+		numberColumn("price", "ราคา"), textColumn("discount", "ส่วนลด"), numberColumn("sum_amount", "มูลค่ารายการ"),
+		numberColumn("total_value", "ยอดก่อนส่วนลด"), numberColumn("total_discount", "ส่วนลดท้ายบิล"), numberColumn("total_except_discount", "ยอดหลังส่วนลด"), numberColumn("total_except_vat", "ยอดก่อน VAT"),
+		numberColumn("vat_rate", "อัตรา VAT (%)"), numberColumn("total_vat_value", "VAT"), numberColumn("total_amount", "ยอดขายสุทธิ (รวม VAT)"),
+		textColumn("vat_type", "ประเภทภาษี"), textColumn("cashier_code", "ผู้ทำรายการ"),
+		textColumn("branch_code", "สาขา"), textColumn("wh_code", "คลัง"), textColumn("shelf_code", "ที่เก็บ"),
 	},
 	report.PurchaseGoodsPayables: {
-		dateColumn("doc_date", "วันที่"), textColumn("doc_no", "เลขที่เอกสาร"), textColumn("cust_code", "รหัสผู้จำหน่าย"), textColumn("cust_name", "ผู้จำหน่าย"),
+		dateColumn("doc_date", "วันที่"), textColumn("doc_time", "เวลา"), textColumn("doc_no", "เลขที่เอกสาร"), textColumn("doc_ref", "เอกสารอ้างอิง"),
+		dateColumn("doc_ref_date", "วันที่เอกสารอ้างอิง"), textColumn("cust_code", "รหัสผู้จำหน่าย"), textColumn("cust_name", "ผู้จำหน่าย"),
 		textColumn("item_code", "รหัสสินค้า"), textColumn("item_name", "สินค้า"), numberColumn("qty", "จำนวน"), textColumn("unit_code", "หน่วย"),
-		numberColumn("price", "ราคา"), textColumn("discount", "ส่วนลด"), numberColumn("sum_amount", "มูลค่ารายการ"), numberColumn("total_amount", "ยอดซื้อ"),
-		textColumn("branch_code", "สาขา"), textColumn("wh_code", "คลัง"), textColumn("shelf_code", "ที่เก็บ"), textColumn("vat_type", "ประเภทภาษี"),
+		numberColumn("price", "ราคา"), textColumn("discount", "ส่วนลด"), numberColumn("sum_amount", "มูลค่ารายการ"),
+		numberColumn("total_value", "ยอดก่อนส่วนลด"), numberColumn("total_discount", "ส่วนลดท้ายบิล"), numberColumn("total_except_discount", "ยอดหลังส่วนลด"), numberColumn("total_except_vat", "ยอดก่อน VAT"),
+		numberColumn("vat_rate", "อัตรา VAT (%)"), numberColumn("total_vat_value", "VAT"), numberColumn("total_amount", "ยอดซื้อสุทธิ (รวม VAT)"),
+		textColumn("vat_type", "ประเภทภาษี"), textColumn("cashier_code", "ผู้ทำรายการ"),
+		textColumn("branch_code", "สาขา"), textColumn("wh_code", "คลัง"), textColumn("shelf_code", "ที่เก็บ"),
 	},
 	report.GrossProfitByProduct: {
 		textColumn("code", "รหัสสินค้า"), textColumn("name_1", "ชื่อสินค้า"), textColumn("unit_name", "หน่วย"), numberColumn("qty_sale", "จำนวนขาย"),
