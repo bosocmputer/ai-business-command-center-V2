@@ -296,6 +296,9 @@ LINE -> the existing webhook (AI-BCC api, signature checked) -> passed on untouc
   its signature, never delaying or changing the answer to LINE and never logging a body (`internal/httpapi/line_webhook_handler.go`).
   The assistant checks the same signature again with the same channel secret. The LINE console keeps its webhook URL: nothing is opened to
   the internet for the assistant.
+- Front gate (10 Oct 2026): with `LINE_FRONT_GATE=true` on the api, the plain pass-on above is replaced by AI-BCC choosing the shop's assistant per
+  person (`<assistant_host>:8646`, set per shop in the admin tab "เลขา AI"), a chooser for people with several shops, and a Thai notice for people
+  with none. Each forwarded event is signed again with the channel secret. See `backend/docs/knowledge/04-security-operations.md` (LINE front gate).
 - Needed on the server, none of it in the repo: `LINE_CHANNEL_ACCESS_TOKEN` (the channel's long-lived token, the same value as
   `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN`), `LINE_CHANNEL_SECRET` (same as `LINE_MESSAGING_CHANNEL_SECRET`) and `LINE_ALLOWED_USERS` (the owner's LINE
   user id, `U...`), each entered with `./assistant/set-secret.sh NAME`. Without the allowed-users list the channel does not start

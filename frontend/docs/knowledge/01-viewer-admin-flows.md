@@ -18,7 +18,7 @@ This block is generated from `src/router/index.ts`. Do not edit it manually.
 | `/admin/login` | `admin-login` | Admin | — |
 | `/admin` | `—` | Admin | — |
 | `/admin` | `admin-dashboard` | Admin | ภาพรวมระบบ |
-| `/admin/password` | `admin-password` | Admin | ตั้งรหัสผ่านใหม่ |
+| `/admin/password` | `admin-password` | Admin | เปลี่ยนรหัสผ่าน |
 | `/admin/tenants` | `admin-tenants` | Admin | ร้านค้า |
 | `/admin/tenants/:tenantId/recipients/:recipientId/permissions` | `admin-recipient-permissions` | Admin | กำหนดสิทธิ์รายงาน |
 | `/admin/tenants/:tenantId/schedules/new` | `admin-schedule-new` | Admin | เพิ่มตารางส่งรายงาน |
@@ -26,6 +26,7 @@ This block is generated from `src/router/index.ts`. Do not edit it manually.
 | `/admin/tenants/:tenantId` | `admin-tenant-detail` | Admin | รายละเอียดร้าน |
 | `/admin/report-runs` | `admin-report-runs` | Admin | การสร้างรายงาน |
 | `/admin/deliveries` | `admin-deliveries` | Admin | การส่ง LINE |
+| `/admin/monitor` | `admin-monitor` | Admin | สถานะเครื่อง |
 | `/admin/audit` | `admin-audit` | Admin | ประวัติการใช้งาน |
 | `/admin/operational-incidents` | `admin-operational-incidents` | Admin | เหตุสำคัญ |
 | `/admin/operational-incidents/:incidentId` | `admin-operational-incident` | Admin | รายละเอียดเหตุสำคัญ |

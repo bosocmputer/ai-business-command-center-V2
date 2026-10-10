@@ -106,3 +106,7 @@ that an old or test occurrence was a scheduled customer delivery.
 - The tenant-wide exact snapshot lookup matches only SUMMARY runs (by query plan fingerprint), so a viewer's own DETAIL run was never found again and every reopen needed a fetch from SML.
 - `ReportService.ExactSnapshot` now also looks for the viewer's own finished DETAIL run of the same period (`ReportStore.GetOwnDetailSnapshotForPeriod`, restricted to `source = DASHBOARD` and the requester, because its rows are readable by that viewer only) and returns whichever was collected more recently, the own run on a tie. Freshness is still judged by the refresh policy, so an old run shows as stale and the viewer can refresh.
 - A drill-down needs rows. When the snapshot found is a summary, the page starts a detail run itself.
+
+## Inbound messages on the shared channel (10 Oct 2026)
+
+The report card path above only pushes. Messages people send to the same LINE channel arrive at `POST /api/v1/line/webhook` (signature checked). Follow and unfollow update the recipient's follow state. With `LINE_FRONT_GATE=true`, `internal/linegate` routes messages and postbacks to the right shop's assistant and can answer through `line.MessagingClient.Reply`; details and rollback are in `04-security-operations.md` (LINE front gate).
