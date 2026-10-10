@@ -19,6 +19,7 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/executionmode"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/httpapi"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/line"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/linegate"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/lookup"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/monitor"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/operations"
@@ -89,6 +90,20 @@ func main() {
 	scheduleService := schedule.NewService(database.NewScheduleStore(pool).ConfigureSmartPeriods(cfg.SmartSchedulePeriodsEnabled, cfg.SmartSchedulePeriodTenantIDs, periodObserver), cfg.LineMessagingAccessToken != "", time.Now)
 	scheduleTestService := schedule.NewTestSendService(database.NewScheduleStore(pool).ConfigureSmartPeriods(cfg.SmartSchedulePeriodsEnabled, cfg.SmartSchedulePeriodTenantIDs, periodObserver), cfg.LineMessagingAccessToken != "", time.Now)
 	lineWebhookService := recipient.NewWebhookService(cfg.LineMessagingChannelSecret, database.NewRecipientStore(pool), sessionManager, time.Now)
+	var lineFrontGate httpapi.LineFrontGate
+	if cfg.LineFrontGate {
+		gateForwarder, forwarderErr := linegate.NewHTTPForwarder("http://{host}:8646/line/webhook")
+		if forwarderErr != nil {
+			logger.Error("create LINE front gate", "error", forwarderErr.Error())
+			os.Exit(1)
+		}
+		// Replies need the channel access token; without it the gate still routes, it just cannot answer for itself.
+		var gateReplier linegate.Replier
+		if cfg.LineMessagingAccessToken != "" {
+			gateReplier = line.NewMessagingClient(cfg.LineMessagingAccessToken, line.DefaultPushEndpoint, 10*time.Second)
+		}
+		lineFrontGate = linegate.New(cfg.LineMessagingChannelSecret, database.NewLineGateStore(pool), sessionManager, gateReplier, gateForwarder, logger, time.Now)
+	}
 	flexPreviewService := line.NewFlexPreviewService(tenantService, cfg.PublicBaseURL, time.Now).
 		ConfigureSmartPeriods(cfg.SmartSchedulePeriodsEnabled, cfg.SmartSchedulePeriodTenantIDs, periodObserver)
 
@@ -122,6 +137,7 @@ func main() {
 			RefreshPolicies:       refreshPolicyService,
 			LineWebhook:           lineWebhookService,
 			LineWebhookForwardURL: cfg.LineWebhookForwardURL,
+			LineFrontGate:         lineFrontGate,
 			AssistantSettings:     assistantSettings,
 			Schedules:             scheduleService,
 			FlexPreviews:          flexPreviewService,

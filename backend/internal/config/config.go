@@ -32,7 +32,9 @@ type Config struct {
 	LineMessagingAccessToken   string
 	LineMessagingChannelSecret string
 	// LineWebhookForwardURL, when set, is where a LINE webhook that passed the signature check is passed on to (the assistant).
-	LineWebhookForwardURL        string
+	LineWebhookForwardURL string
+	// LineFrontGate routes each message on the shared LINE channel to the assistant of the shop the sender chose.
+	LineFrontGate                bool
 	SMLAllowedPrefixes           []netip.Prefix
 	SMLAllowedHosts              []string
 	SMLAllowPublicEndpoints      bool
@@ -160,6 +162,17 @@ func Load(lookup LookupFunc) (Config, error) {
 		if parseErr != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
 			return Config{}, errors.New("LINE_WEBHOOK_FORWARD_URL must be an http or https URL with a host and no credentials")
 		}
+	}
+	lineFrontGate := false
+	if raw, _ := lookup("LINE_FRONT_GATE"); strings.TrimSpace(raw) != "" {
+		parsedGate, parseErr := strconv.ParseBool(strings.TrimSpace(raw))
+		if parseErr != nil {
+			return Config{}, errors.New("LINE_FRONT_GATE must be true or false")
+		}
+		lineFrontGate = parsedGate
+	}
+	if lineFrontGate && lineMessagingChannelSecret == "" {
+		return Config{}, errors.New("LINE_FRONT_GATE needs LINE_MESSAGING_CHANNEL_SECRET")
 	}
 	allowedPrefixes, err := parseAllowedPrefixes(values["SML_ALLOWED_CIDRS"])
 	if err != nil {
@@ -358,6 +371,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		LineMessagingAccessToken:     lineMessagingAccessToken,
 		LineMessagingChannelSecret:   lineMessagingChannelSecret,
 		LineWebhookForwardURL:        lineWebhookForwardURL,
+		LineFrontGate:                lineFrontGate,
 		SMLAllowedPrefixes:           allowedPrefixes,
 		SMLAllowedHosts:              allowedHosts,
 		SMLAllowPublicEndpoints:      allowPublicEndpoints,

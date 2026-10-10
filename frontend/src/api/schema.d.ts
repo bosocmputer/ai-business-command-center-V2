@@ -1732,6 +1732,8 @@ export interface components {
             modelKey: string;
             /** @enum {string} */
             lineMode: "NONE" | "CENTRAL" | "OWN";
+            /** @description Internal service name of the shop's assistant, which the LINE front gate passes messages on to. Empty means the gate does not pass messages to this shop. */
+            assistantHost: string;
             secrets: {
                 openrouterKey: components["schemas"]["AssistantSecretState"];
                 telegramBotToken: components["schemas"]["AssistantSecretState"];
@@ -1751,6 +1753,8 @@ export interface components {
             modelKey?: string;
             /** @enum {string} */
             lineMode?: "NONE" | "CENTRAL" | "OWN";
+            /** @description One lowercase service name on the internal network; empty clears it. */
+            assistantHost?: string;
             /** @description The version of the settings as loaded; 0 when the shop has none yet. */
             version: number;
         };
@@ -4118,6 +4122,13 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            /** @description AI_CHAT_PERMISSIONS_NARROWER: the person may read fewer reports than the person whose token the assistant uses, so the chat is refused. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             422: components["responses"]["ValidationFailed"];
         };
     };

@@ -3,8 +3,10 @@ package line
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,3 +70,30 @@ func TestMessagingClientTreatsNetworkFailureAsUncertain(t *testing.T) {
 }
 
 func testAccessToken() string { return "test-access-token-value-that-is-long-enough" }
+
+func TestReplySendsTheTokenAndMessageAndRefusesBadInput(t *testing.T) {
+	var gotAuth, gotBody string
+	status := http.StatusOK
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		gotAuth, gotBody = request.Header.Get("Authorization"), string(body)
+		response.WriteHeader(status)
+	}))
+	defer server.Close()
+	client := NewMessagingClient(strings.Repeat("t", 40), DefaultPushEndpoint, time.Second)
+	client.replyEndpoint = server.URL
+	message := json.RawMessage(`{"type":"text","text":"hi"}`)
+	if err := client.Reply(context.Background(), "reply-token-1", message); err != nil || gotAuth != "Bearer "+strings.Repeat("t", 40) || !strings.Contains(gotBody, `"replyToken":"reply-token-1"`) {
+		t.Fatalf("err=%v auth ok=%v body=%s", err, gotAuth != "", gotBody)
+	}
+	status = http.StatusBadRequest
+	if err := client.Reply(context.Background(), "reply-token-1", message); err == nil {
+		t.Fatal("a refused reply must be an error")
+	}
+	if err := client.Reply(context.Background(), "", message); err == nil {
+		t.Fatal("an empty reply token must be refused")
+	}
+	if err := client.Reply(context.Background(), "reply-token-1", json.RawMessage(`{broken`)); err == nil {
+		t.Fatal("invalid JSON must be refused")
+	}
+}

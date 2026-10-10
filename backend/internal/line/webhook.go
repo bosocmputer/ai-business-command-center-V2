@@ -13,6 +13,8 @@ import (
 const (
 	WebhookEventFollow   = "follow"
 	WebhookEventUnfollow = "unfollow"
+	WebhookEventMessage  = "message"
+	WebhookEventPostback = "postback"
 )
 
 var ErrWebhookPayloadInvalid = errors.New("LINE webhook payload is invalid")
@@ -22,11 +24,23 @@ type WebhookSource struct {
 	UserID string `json:"userId"`
 }
 
+type WebhookMessage struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type WebhookPostback struct {
+	Data string `json:"data"`
+}
+
 type WebhookEvent struct {
-	Type           string        `json:"type"`
-	Timestamp      int64         `json:"timestamp"`
-	WebhookEventID string        `json:"webhookEventId"`
-	Source         WebhookSource `json:"source"`
+	Type           string           `json:"type"`
+	Timestamp      int64            `json:"timestamp"`
+	WebhookEventID string           `json:"webhookEventId"`
+	ReplyToken     string           `json:"replyToken"`
+	Source         WebhookSource    `json:"source"`
+	Message        *WebhookMessage  `json:"message,omitempty"`
+	Postback       *WebhookPostback `json:"postback,omitempty"`
 }
 
 type Webhook struct {

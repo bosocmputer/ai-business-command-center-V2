@@ -74,18 +74,19 @@ func registerAssistantSettingsRoutes(router chi.Router, adminAuth AdminAuthentic
 			return
 		}
 		var input struct {
-			Enabled  *bool   `json:"enabled"`
-			IsTest   *bool   `json:"isTest"`
-			ModelKey *string `json:"modelKey"`
-			LineMode *string `json:"lineMode"`
-			Version  int     `json:"version"`
+			Enabled       *bool   `json:"enabled"`
+			IsTest        *bool   `json:"isTest"`
+			ModelKey      *string `json:"modelKey"`
+			LineMode      *string `json:"lineMode"`
+			AssistantHost *string `json:"assistantHost"`
+			Version       int     `json:"version"`
 		}
 		if err := decodeJSON(response, request, &input); err != nil {
 			writeProblem(response, request, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "Assistant settings input is invalid.", false)
 			return
 		}
 		view, err := settings.Update(request.Context(), admin.TokenHash, requestID(request), tenantID, assistantcfg.UpdateInput{
-			Enabled: input.Enabled, IsTest: input.IsTest, ModelKey: input.ModelKey, LineMode: input.LineMode, Version: input.Version,
+			Enabled: input.Enabled, IsTest: input.IsTest, ModelKey: input.ModelKey, LineMode: input.LineMode, AssistantHost: input.AssistantHost, Version: input.Version,
 		})
 		if handleAssistantSettingsError(response, request, err) {
 			return

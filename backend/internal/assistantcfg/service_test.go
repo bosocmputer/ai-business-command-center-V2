@@ -52,7 +52,7 @@ func (store *fakeStore) Patch(_ context.Context, _ []byte, _ string, id uuid.UUI
 		row.Version++
 		row.ConfigVersion++
 	}
-	row.Enabled, row.IsTest, row.ModelKey, row.LineMode = *patch.Enabled, *patch.IsTest, *patch.ModelKey, *patch.LineMode
+	row.Enabled, row.IsTest, row.ModelKey, row.LineMode, row.AssistantHost = *patch.Enabled, *patch.IsTest, *patch.ModelKey, *patch.LineMode, *patch.AssistantHost
 	return *row, nil
 }
 
@@ -393,5 +393,22 @@ func TestAShopThatDoesNotExistIsNotFoundEverywhere(t *testing.T) {
 	}
 	if len(store.rows) != 0 {
 		t.Error("nothing may be written for a shop that does not exist")
+	}
+}
+
+func TestTheAssistantHostIsOneInternalNameAndNothingElse(t *testing.T) {
+	service, store := newService(t)
+	shop := uuid.New()
+	for _, bad := range []string{"assistant.example.com", "http://assistant", "assistant:8646", "Assistant", "-assistant", "a/b", "10.0.0.1/x", "ass istant"} {
+		_, err := service.Update(context.Background(), actor, "r", shop, UpdateInput{AssistantHost: ptr(bad), Version: versionOf(store, shop)})
+		assertCode(t, err, "INVALID_HOST")
+	}
+	view, err := service.Update(context.Background(), actor, "r", shop, UpdateInput{AssistantHost: ptr(" assistant-shop2 "), Version: versionOf(store, shop)})
+	if err != nil || view.AssistantHost != "assistant-shop2" {
+		t.Fatalf("a plain service name must be kept: %+v %v", view, err)
+	}
+	view, err = service.Update(context.Background(), actor, "r", shop, UpdateInput{AssistantHost: ptr(""), Version: versionOf(store, shop)})
+	if err != nil || view.AssistantHost != "" {
+		t.Fatalf("the host may be cleared: %+v %v", view, err)
 	}
 }

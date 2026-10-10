@@ -308,6 +308,30 @@ func TestLoadValidatesOptionalLineChannelSecret(t *testing.T) {
 			t.Fatalf("pass-on address %q must be refused", bad)
 		}
 	}
+	gate := func(value, secret string) (Config, error) {
+		return Load(func(key string) (string, bool) {
+			switch key {
+			case "LINE_FRONT_GATE":
+				return value, value != ""
+			case "LINE_MESSAGING_CHANNEL_SECRET":
+				return secret, secret != ""
+			}
+			result, ok := base[key]
+			return result, ok
+		})
+	}
+	if cfg, err := gate("", ""); err != nil || cfg.LineFrontGate {
+		t.Fatalf("the front gate is off by default: %v %v", cfg.LineFrontGate, err)
+	}
+	if cfg, err := gate("true", "0123456789abcdef0123456789abcdef"); err != nil || !cfg.LineFrontGate {
+		t.Fatalf("the front gate must turn on with a channel secret: %v %v", cfg.LineFrontGate, err)
+	}
+	if _, err := gate("true", ""); err == nil {
+		t.Fatal("the front gate cannot run without the channel secret")
+	}
+	if _, err := gate("maybe", "0123456789abcdef0123456789abcdef"); err == nil {
+		t.Fatal("an unreadable gate switch must be refused")
+	}
 	cfg, err = load("0123456789abcdef0123456789abcdef")
 	if err != nil || cfg.LineMessagingChannelSecret != "0123456789abcdef0123456789abcdef" {
 		t.Fatalf("valid secret rejected: %v", err)

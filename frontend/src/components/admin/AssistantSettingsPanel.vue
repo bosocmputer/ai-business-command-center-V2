@@ -13,7 +13,7 @@ const shared = ref<AssistantGlobalSettings>();
 const loading = ref(true);
 const loadError = ref('');
 const saving = ref(false);
-const form = reactive({ enabled: false, isTest: false, modelKey: '', lineMode: 'NONE' as 'NONE' | 'CENTRAL' | 'OWN' });
+const form = reactive({ enabled: false, isTest: false, modelKey: '', lineMode: 'NONE' as 'NONE' | 'CENTRAL' | 'OWN', assistantHost: '' });
 
 type SecretTarget = { kind: 'tenant' | 'global'; field: AssistantSecretField; clear: boolean };
 const dialog = reactive({ open: false, kind: 'tenant' as SecretTarget['kind'], field: 'openrouter-key' as AssistantSecretField, clear: false, value: '', password: '', busy: false, error: '' });
@@ -33,13 +33,13 @@ const secretRows: { field: AssistantSecretField; key: 'openrouterKey' | 'telegra
 
 const modelOptions = computed(() => (settings.value?.models ?? []).map((model) => ({ ...model, disabled: !model.selectable })));
 const selectedModel = computed<AssistantModel | undefined>(() => settings.value?.models.find((model) => model.key === form.modelKey));
-const dirty = computed(() => Boolean(settings.value) && (form.enabled !== settings.value!.enabled || form.isTest !== settings.value!.isTest || form.modelKey !== settings.value!.modelKey || form.lineMode !== settings.value!.lineMode));
+const dirty = computed(() => Boolean(settings.value) && (form.enabled !== settings.value!.enabled || form.isTest !== settings.value!.isTest || form.modelKey !== settings.value!.modelKey || form.lineMode !== settings.value!.lineMode || form.assistantHost !== settings.value!.assistantHost));
 const status = computed(() => settings.value?.status);
 const dialogTitle = computed(() => `${dialog.clear ? 'ลบ' : 'ตั้ง'} ${secretLabel(dialog.field)}${dialog.kind === 'global' ? ' (ช่อง LINE กลาง)' : ''}`);
 
 function adopt(next: AssistantSettings) {
   settings.value = next;
-  Object.assign(form, { enabled: next.enabled, isTest: next.isTest, modelKey: next.modelKey, lineMode: next.lineMode });
+  Object.assign(form, { enabled: next.enabled, isTest: next.isTest, modelKey: next.modelKey, lineMode: next.lineMode, assistantHost: next.assistantHost });
 }
 
 async function load() {
@@ -60,7 +60,7 @@ async function save() {
   if (!settings.value) return;
   saving.value = true;
   try {
-    adopt(await adminApi.updateAssistant(props.tenantId, { enabled: form.enabled, isTest: form.isTest, modelKey: form.modelKey, lineMode: form.lineMode, version: settings.value.version }));
+    adopt(await adminApi.updateAssistant(props.tenantId, { enabled: form.enabled, isTest: form.isTest, modelKey: form.modelKey, lineMode: form.lineMode, assistantHost: form.assistantHost.trim(), version: settings.value.version }));
     toast.add({ severity: 'success', summary: 'บันทึกแล้ว', detail: 'ผู้ช่วยของร้านจะใช้ค่าใหม่เมื่อรีสตาร์ต (ราว 1 นาที เมื่อไม่มีคนคุยค้างอยู่)', life: 5000 });
   } catch (error) {
     toast.add({ severity: 'error', summary: 'บันทึกไม่สำเร็จ', detail: assistantProblemMessage(error), life: 7000 });
@@ -144,6 +144,11 @@ onMounted(load);
         <h3 id="assistant-line" class="text-lg font-semibold m-0">ช่องทาง LINE</h3>
         <SelectButton v-model="form.lineMode" :options="lineModes" option-label="label" option-value="value" aria-label="โหมด LINE" :allow-empty="false" />
         <small v-if="form.lineMode === 'CENTRAL'" class="text-muted-color">ใช้ช่อง LINE กลางของผู้ดูแล <Tag :severity="settings.centralLineConfigured ? 'success' : 'warn'" :value="settings.centralLineConfigured ? 'ตั้งค่าช่องกลางแล้ว' : 'ยังไม่ได้ตั้งค่าช่องกลาง'" /></small>
+        <div v-if="form.lineMode === 'CENTRAL'" class="grid gap-1">
+          <label for="assistant-host" class="font-medium">ชื่อบริการผู้ช่วยของร้าน (ในเครือข่ายภายใน)</label>
+          <InputText id="assistant-host" v-model="form.assistantHost" maxlength="62" autocomplete="off" placeholder="เช่น assistant" aria-describedby="assistant-host-help" />
+          <small id="assistant-host-help" class="text-muted-color">ด่านหน้า LINE ใช้ชื่อนี้ส่งข้อความต่อให้ผู้ช่วยของร้าน เว้นว่างไว้ = ข้อความจากช่อง LINE กลางจะไม่ถูกส่งมาที่ร้านนี้ ใช้ตัวอักษรเล็ก a-z ตัวเลข และขีดกลางเท่านั้น</small>
+        </div>
         <small v-else-if="form.lineMode === 'OWN'" class="text-muted-color">ใช้ช่อง LINE ของร้านเอง ต้องตั้ง Channel secret และ Channel access token ด้านล่าง</small>
         <small v-else class="text-muted-color">ร้านนี้คุยผ่าน Telegram เท่านั้น</small>
       </section>

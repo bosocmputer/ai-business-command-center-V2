@@ -52,6 +52,7 @@ type Stored struct {
 	Enabled, IsTest bool
 	ModelKey        string
 	LineMode        string
+	AssistantHost   string
 	OpenRouterKey   *secret.Sealed
 	OpenRouterLast4 string
 	TelegramToken   *secret.Sealed
@@ -71,6 +72,7 @@ type StoredGlobal struct {
 type Patch struct {
 	Enabled, IsTest    *bool
 	ModelKey, LineMode *string
+	AssistantHost      *string
 }
 
 // TenantGate says whether the shop may use the assistant today: switched on and not past its end date.
@@ -136,6 +138,7 @@ type AdminView struct {
 	IsTest                bool                   `json:"isTest"`
 	ModelKey              string                 `json:"modelKey"`
 	LineMode              string                 `json:"lineMode"`
+	AssistantHost         string                 `json:"assistantHost"`
 	Secrets               map[string]SecretState `json:"secrets"`
 	CentralLineConfigured bool                   `json:"centralLineConfigured"`
 	Version               int                    `json:"version"`
@@ -191,7 +194,7 @@ func (service *Service) view(ctx context.Context, stored Stored) (AdminView, err
 		return AdminView{}, err
 	}
 	view := AdminView{
-		Enabled: stored.Enabled, IsTest: stored.IsTest, ModelKey: stored.ModelKey, LineMode: stored.LineMode,
+		Enabled: stored.Enabled, IsTest: stored.IsTest, ModelKey: stored.ModelKey, LineMode: stored.LineMode, AssistantHost: stored.AssistantHost,
 		Secrets: map[string]SecretState{
 			"openrouterKey":     {IsSet: stored.OpenRouterKey != nil, Last4: stored.OpenRouterLast4},
 			"telegramBotToken":  {IsSet: stored.TelegramToken != nil},
@@ -223,6 +226,7 @@ func (service *Service) view(ctx context.Context, stored Stored) (AdminView, err
 type UpdateInput struct {
 	Enabled, IsTest    *bool
 	ModelKey, LineMode *string
+	AssistantHost      *string
 	Version            int
 }
 
@@ -246,6 +250,12 @@ func (service *Service) Update(ctx context.Context, actorHash []byte, requestID 
 	}
 	if input.LineMode != nil {
 		next.LineMode = strings.TrimSpace(*input.LineMode)
+	}
+	if input.AssistantHost != nil {
+		next.AssistantHost = strings.TrimSpace(*input.AssistantHost)
+		if next.AssistantHost != "" && !hostPattern.MatchString(next.AssistantHost) {
+			return AdminView{}, &ValidationError{Field: "assistantHost", Code: "INVALID_HOST"}
+		}
 	}
 	model, ok := ModelFor(next.ModelKey)
 	if !ok {
@@ -271,12 +281,15 @@ func (service *Service) Update(ctx context.Context, actorHash []byte, requestID 
 			return AdminView{}, &ValidationError{Field: "lineMode", Code: "LINE_CENTRAL_NOT_CONFIGURED"}
 		}
 	}
-	stored, err := service.store.Patch(ctx, actorHash, requestID, tenantID, Patch{Enabled: &next.Enabled, IsTest: &next.IsTest, ModelKey: &next.ModelKey, LineMode: &next.LineMode}, input.Version, service.now().UTC())
+	stored, err := service.store.Patch(ctx, actorHash, requestID, tenantID, Patch{Enabled: &next.Enabled, IsTest: &next.IsTest, ModelKey: &next.ModelKey, LineMode: &next.LineMode, AssistantHost: &next.AssistantHost}, input.Version, service.now().UTC())
 	if err != nil {
 		return AdminView{}, err
 	}
 	return service.view(ctx, stored)
 }
+
+// hostPattern is one DNS label: it can only name a service on the internal network, never another site.
+var hostPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?$`)
 
 var (
 	telegramTokenPattern = regexp.MustCompile(`^\d{6,12}:[A-Za-z0-9_-]{30,50}$`)

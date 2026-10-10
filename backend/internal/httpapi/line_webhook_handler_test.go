@@ -124,3 +124,36 @@ func TestLineWebhookPassOnNeverChangesTheAnswerToLine(t *testing.T) {
 		t.Fatalf("a dead assistant must not make LINE see a failure: %d", recorder.Code)
 	}
 }
+
+type fakeLineGate struct{ bodies []string }
+
+func (gate *fakeLineGate) Dispatch(body []byte) { gate.bodies = append(gate.bodies, string(body)) }
+
+func TestLineWebhookGoesToTheFrontGateInsteadOfThePlainPassOn(t *testing.T) {
+	passedOn := make(chan struct{}, 1)
+	assistant := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { passedOn <- struct{}{} }))
+	defer assistant.Close()
+	gate := &fakeLineGate{}
+	handler := NewHandler(Dependencies{LineWebhook: &fakeLineWebhook{}, LineWebhookForwardURL: assistant.URL, LineFrontGate: gate})
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/line/webhook", strings.NewReader(`{"events":[]}`))
+	request.Header.Set("X-Line-Signature", "sig")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || len(gate.bodies) != 1 || gate.bodies[0] != `{"events":[]}` {
+		t.Fatalf("status=%d gate=%v", recorder.Code, gate.bodies)
+	}
+	select {
+	case <-passedOn:
+		t.Fatal("the plain pass-on must not run when the gate is on")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	// A webhook that failed the signature check never reaches the gate.
+	gate.bodies = nil
+	handler = NewHandler(Dependencies{LineWebhook: &fakeLineWebhook{err: recipient.ErrWebhookSignatureInvalid}, LineFrontGate: gate})
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/line/webhook", strings.NewReader(`{"events":[]}`)))
+	if recorder.Code != http.StatusUnauthorized || len(gate.bodies) != 0 {
+		t.Fatalf("status=%d gate=%v", recorder.Code, gate.bodies)
+	}
+}

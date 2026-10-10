@@ -23,7 +23,7 @@ func NewAssistantSettingsStore(pool *pgxpool.Pool) *AssistantSettingsStore {
 }
 
 const assistantSelect = `
-	select tenant_id, enabled, is_test, model_key, line_mode,
+	select tenant_id, enabled, is_test, model_key, line_mode, assistant_host,
 	       openrouter_key_ciphertext, openrouter_key_nonce, coalesce(openrouter_key_last4, ''),
 	       telegram_token_ciphertext, telegram_token_nonce,
 	       line_secret_ciphertext, line_secret_nonce, line_token_ciphertext, line_token_nonce,
@@ -41,7 +41,7 @@ func scanAssistant(row pgx.Row) (assistantcfg.Stored, error) {
 	var stored assistantcfg.Stored
 	var keyID string
 	var orC, orN, tgC, tgN, lsC, lsN, ltC, ltN []byte
-	err := row.Scan(&stored.TenantID, &stored.Enabled, &stored.IsTest, &stored.ModelKey, &stored.LineMode,
+	err := row.Scan(&stored.TenantID, &stored.Enabled, &stored.IsTest, &stored.ModelKey, &stored.LineMode, &stored.AssistantHost,
 		&orC, &orN, &stored.OpenRouterLast4, &tgC, &tgN, &lsC, &lsN, &ltC, &ltN, &keyID, &stored.Version, &stored.ConfigVersion, &stored.UpdatedAt)
 	if err != nil {
 		return assistantcfg.Stored{}, err
@@ -78,8 +78,8 @@ func (store *AssistantSettingsStore) Patch(ctx context.Context, actorHash []byte
 			return assistantcfg.Stored{}, assistantcfg.ErrVersionConflict
 		}
 		_, err = tx.Exec(ctx, `
-			insert into tenant_assistant_settings (tenant_id, enabled, is_test, model_key, line_mode, created_at, updated_at)
-			values ($1, $2, $3, $4, $5, $6, $6)`, tenantID, *patch.Enabled, *patch.IsTest, *patch.ModelKey, *patch.LineMode, now)
+			insert into tenant_assistant_settings (tenant_id, enabled, is_test, model_key, line_mode, assistant_host, created_at, updated_at)
+			values ($1, $2, $3, $4, $5, $7, $6, $6)`, tenantID, *patch.Enabled, *patch.IsTest, *patch.ModelKey, *patch.LineMode, now, *patch.AssistantHost)
 	case err != nil:
 		return assistantcfg.Stored{}, fmt.Errorf("lock assistant settings: %w", err)
 	default:
@@ -88,8 +88,8 @@ func (store *AssistantSettingsStore) Patch(ctx context.Context, actorHash []byte
 		}
 		_, err = tx.Exec(ctx, `
 			update tenant_assistant_settings
-			set enabled = $2, is_test = $3, model_key = $4, line_mode = $5, version = version + 1, config_version = config_version + 1, updated_at = $6
-			where tenant_id = $1`, tenantID, *patch.Enabled, *patch.IsTest, *patch.ModelKey, *patch.LineMode, now)
+			set enabled = $2, is_test = $3, model_key = $4, line_mode = $5, assistant_host = $7, version = version + 1, config_version = config_version + 1, updated_at = $6
+			where tenant_id = $1`, tenantID, *patch.Enabled, *patch.IsTest, *patch.ModelKey, *patch.LineMode, now, *patch.AssistantHost)
 	}
 	if err != nil {
 		return assistantcfg.Stored{}, fmt.Errorf("write assistant settings: %w", err)
@@ -98,7 +98,7 @@ func (store *AssistantSettingsStore) Patch(ctx context.Context, actorHash []byte
 	if err != nil {
 		return assistantcfg.Stored{}, fmt.Errorf("read assistant settings: %w", err)
 	}
-	audit, _ := json.Marshal(map[string]any{"enabled": stored.Enabled, "isTest": stored.IsTest, "modelKey": stored.ModelKey, "lineMode": stored.LineMode, "version": stored.Version})
+	audit, _ := json.Marshal(map[string]any{"enabled": stored.Enabled, "isTest": stored.IsTest, "modelKey": stored.ModelKey, "lineMode": stored.LineMode, "assistantHost": stored.AssistantHost, "version": stored.Version})
 	if err := insertAudit(ctx, tx, tenantID, actorHash, "ASSISTANT_SETTINGS_CHANGED", "ASSISTANT_SETTINGS", tenantID.String(), requestID, nil, audit, now); err != nil {
 		return assistantcfg.Stored{}, err
 	}

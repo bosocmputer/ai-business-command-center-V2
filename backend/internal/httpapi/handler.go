@@ -59,8 +59,10 @@ type Dependencies struct {
 	LineWebhook       LineWebhookAPI
 	// LineWebhookForwardURL passes a verified LINE webhook on (to the assistant); empty means not.
 	LineWebhookForwardURL string
-	SecureCookies         bool
-	Logger                *slog.Logger
+	// LineFrontGate, when set, routes each message on the shared channel to the right shop's assistant instead of the plain pass-on.
+	LineFrontGate LineFrontGate
+	SecureCookies bool
+	Logger        *slog.Logger
 }
 
 type problemEnvelope struct {
@@ -121,7 +123,7 @@ func NewHandler(dependencies Dependencies) http.Handler {
 		})
 	}
 	if dependencies.LineWebhook != nil {
-		registerLineWebhookRoutes(router, dependencies.LineWebhook, dependencies.LineWebhookForwardURL, dependencies.Logger)
+		registerLineWebhookRoutes(router, dependencies.LineWebhook, dependencies.LineWebhookForwardURL, dependencies.LineFrontGate, dependencies.Logger)
 	}
 	if dependencies.AdminAuth != nil {
 		registerAdminAuthRoutes(router, dependencies.AdminAuth, dependencies.SecureCookies)

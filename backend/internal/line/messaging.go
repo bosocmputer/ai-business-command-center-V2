@@ -15,7 +15,10 @@ import (
 	"github.com/google/uuid"
 )
 
-const DefaultPushEndpoint = "https://api.line.me/v2/bot/message/push"
+const (
+	DefaultPushEndpoint  = "https://api.line.me/v2/bot/message/push"
+	DefaultReplyEndpoint = "https://api.line.me/v2/bot/message/reply"
+)
 
 type PushOutcome string
 
@@ -34,17 +37,19 @@ type PushResult struct {
 }
 
 type MessagingClient struct {
-	accessToken string
-	endpoint    string
-	client      *http.Client
+	accessToken   string
+	endpoint      string
+	replyEndpoint string
+	client        *http.Client
 }
 
 func NewMessagingClient(accessToken, endpoint string, timeout time.Duration) *MessagingClient {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	return &MessagingClient{
-		accessToken: accessToken,
-		endpoint:    endpoint,
+		accessToken:   accessToken,
+		endpoint:      endpoint,
+		replyEndpoint: DefaultReplyEndpoint,
 		client: &http.Client{
 			Transport: transport,
 			Timeout:   timeout,
@@ -108,4 +113,40 @@ func retryAfter(value string) time.Duration {
 		seconds = 3600
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+// Reply answers an incoming event with its reply token (valid for about a minute, usable once). It costs nothing against the
+// push quota. The error says only that it failed, never what was in the message.
+func (client *MessagingClient) Reply(ctx context.Context, replyToken string, messages ...json.RawMessage) error {
+	if len(client.accessToken) < 32 || len(replyToken) < 8 || len(replyToken) > 128 || len(messages) == 0 || len(messages) > 5 {
+		return errors.New("LINE reply input is invalid")
+	}
+	for _, message := range messages {
+		if len(message) == 0 || len(message) > maximumFlexPayloadBytes || !json.Valid(message) {
+			return errors.New("LINE reply input is invalid")
+		}
+	}
+	body, err := json.Marshal(struct {
+		ReplyToken string            `json:"replyToken"`
+		Messages   []json.RawMessage `json:"messages"`
+	}{ReplyToken: replyToken, Messages: messages})
+	if err != nil {
+		return errors.New("LINE reply input is invalid")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.replyEndpoint, bytes.NewReader(body))
+	if err != nil {
+		return errors.New("LINE reply request is invalid")
+	}
+	request.Header.Set("Authorization", "Bearer "+client.accessToken)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := client.client.Do(request)
+	if err != nil {
+		return errors.New("LINE reply failed to send")
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return errors.New("LINE reply was refused: status " + strconv.Itoa(response.StatusCode))
+	}
+	return nil
 }

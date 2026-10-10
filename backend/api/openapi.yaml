@@ -1967,12 +1967,13 @@ components:
         upToDate: {type: boolean}
     AssistantSettings:
       type: object
-      required: [enabled, isTest, modelKey, lineMode, secrets, centralLineConfigured, version, configVersion, models]
+      required: [enabled, isTest, modelKey, lineMode, assistantHost, secrets, centralLineConfigured, version, configVersion, models]
       properties:
         enabled: {type: boolean}
         isTest: {type: boolean}
         modelKey: {type: string}
         lineMode: {type: string, enum: [NONE, CENTRAL, OWN]}
+        assistantHost: {type: string, description: "Internal service name of the shop's assistant, which the LINE front gate passes messages on to. Empty means the gate does not pass messages to this shop."}
         secrets:
           type: object
           required: [openrouterKey, telegramBotToken, lineChannelSecret, lineChannelToken]
@@ -1995,6 +1996,7 @@ components:
         isTest: {type: boolean}
         modelKey: {type: string}
         lineMode: {type: string, enum: [NONE, CENTRAL, OWN]}
+        assistantHost: {type: string, pattern: '^([a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?)?$', description: "One lowercase service name on the internal network; empty clears it."}
         version: {type: integer, description: "The version of the settings as loaded; 0 when the shop has none yet."}
     AssistantSecretInput:
       type: object
