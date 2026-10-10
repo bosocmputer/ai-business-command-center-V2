@@ -274,7 +274,9 @@ func finalizeSnapshot(snapshot *viewer.DashboardSnapshot, resultKind report.Resu
 	}
 	location, _ := time.LoadLocation("Asia/Bangkok")
 	today := now.In(location).Format("2006-01-02")
-	closedPeriod := period.DateTo < today
+	// A closed period is final only if it was read after the period ended. Numbers read during the last day (a snapshot of "yesterday" taken
+	// at 17:43 yesterday) are missing whatever happened after that, so they keep the normal refresh interval and are fetched again.
+	closedPeriod := period.DateTo < today && period.DateTo < snapshot.SourceFinishedAt.In(location).Format("2006-01-02")
 	refreshInterval, _ := policy.IntervalFor(definition)
 	if closedPeriod {
 		refreshInterval = historicalSnapshotTTL
