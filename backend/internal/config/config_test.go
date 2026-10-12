@@ -332,6 +332,24 @@ func TestLoadValidatesOptionalLineChannelSecret(t *testing.T) {
 	if _, err := gate("maybe", "0123456789abcdef0123456789abcdef"); err == nil {
 		t.Fatal("an unreadable gate switch must be refused")
 	}
+	push := func(value string) (Config, error) {
+		return Load(func(key string) (string, bool) {
+			if key == "LINE_SLOW_PUSH" {
+				return value, value != ""
+			}
+			result, ok := base[key]
+			return result, ok
+		})
+	}
+	if cfg, err := push(""); err != nil || !cfg.LineSlowPush {
+		t.Fatalf("slow answers are sent on their own by default: %v %v", cfg.LineSlowPush, err)
+	}
+	if cfg, err := push("false"); err != nil || cfg.LineSlowPush {
+		t.Fatalf("it can be switched off: %v %v", cfg.LineSlowPush, err)
+	}
+	if _, err := push("sometimes"); err == nil {
+		t.Fatal("an unreadable switch must be refused")
+	}
 	cfg, err = load("0123456789abcdef0123456789abcdef")
 	if err != nil || cfg.LineMessagingChannelSecret != "0123456789abcdef0123456789abcdef" {
 		t.Fatalf("valid secret rejected: %v", err)

@@ -34,7 +34,9 @@ type Config struct {
 	// LineWebhookForwardURL, when set, is where a LINE webhook that passed the signature check is passed on to (the assistant).
 	LineWebhookForwardURL string
 	// LineFrontGate routes each message on the shared LINE channel to the assistant of the shop the sender chose.
-	LineFrontGate                bool
+	LineFrontGate bool
+	// LineSlowPush lets the assistants send a slow answer on their own (one channel message each) while the shared channel has quota to spare.
+	LineSlowPush                 bool
 	SMLAllowedPrefixes           []netip.Prefix
 	SMLAllowedHosts              []string
 	SMLAllowPublicEndpoints      bool
@@ -172,6 +174,14 @@ func Load(lookup LookupFunc) (Config, error) {
 			return Config{}, errors.New("LINE_FRONT_GATE must be true or false")
 		}
 		lineFrontGate = parsedGate
+	}
+	lineSlowPush := true
+	if raw, _ := lookup("LINE_SLOW_PUSH"); strings.TrimSpace(raw) != "" {
+		parsedPush, parseErr := strconv.ParseBool(strings.TrimSpace(raw))
+		if parseErr != nil {
+			return Config{}, errors.New("LINE_SLOW_PUSH must be true or false")
+		}
+		lineSlowPush = parsedPush
 	}
 	if lineFrontGate && lineMessagingChannelSecret == "" {
 		return Config{}, errors.New("LINE_FRONT_GATE needs LINE_MESSAGING_CHANNEL_SECRET")
@@ -378,6 +388,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		LineMessagingChannelSecret:   lineMessagingChannelSecret,
 		LineWebhookForwardURL:        lineWebhookForwardURL,
 		LineFrontGate:                lineFrontGate,
+		LineSlowPush:                 lineSlowPush,
 		SMLAllowedPrefixes:           allowedPrefixes,
 		SMLAllowedHosts:              allowedHosts,
 		SMLAllowPublicEndpoints:      allowPublicEndpoints,

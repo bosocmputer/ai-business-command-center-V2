@@ -494,3 +494,64 @@ func TestTwoShopsCannotShareAnAssistantHost(t *testing.T) {
 		t.Fatalf("saving its own host again: %v", err)
 	}
 }
+
+func TestSlowAnswersAreSentOnTheirOwnOnlyWhileTheSharedChannelHasQuotaToSpare(t *testing.T) {
+	service, store := newService(t)
+	ctx := context.Background()
+	if _, err := service.SetGlobalSecret(ctx, actor, "r", FieldLineSecret, goodLineSecret); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetGlobalSecret(ctx, actor, "r", FieldLineToken, "central-token-0123456789-abcdefghijklmnopqrstuv"); err != nil {
+		t.Fatal(err)
+	}
+	shop := readyShop(t, service)
+	if _, err := service.Update(ctx, actor, "r", shop, UpdateInput{LineMode: ptr(LineCentral), Version: versionOf(store, shop)}); err != nil {
+		t.Fatal(err)
+	}
+	left, known := 200, true
+	quota := func(context.Context, time.Time) (int, bool) { return left, known }
+	ask := func() AgentConfig {
+		config, err := service.AgentConfig(ctx, shop)
+		if err != nil || !config.Enabled {
+			t.Fatalf("config = %+v err = %v", config, err)
+		}
+		return config
+	}
+	if ask().LineSlowPush {
+		t.Fatal("off until it is configured")
+	}
+	service.ConfigureSlowPush(true, quota)
+	on := ask()
+	if !on.LineSlowPush || on.ETag() != fmt.Sprintf(`"v%d-true-push"`, on.ConfigVersion) {
+		t.Fatalf("quota to spare: %v %s", on.LineSlowPush, on.ETag())
+	}
+	left = slowPushReserve // nothing to spare
+	low := ask()
+	if low.LineSlowPush || low.ETag() == on.ETag() {
+		t.Fatal("at the reserve the assistant goes back to the button, and the tag changes so it restarts")
+	}
+	left, known = 500, false
+	if ask().LineSlowPush {
+		t.Fatal("an unknown quota is not trusted")
+	}
+	known = true
+	service.ConfigureSlowPush(false, quota)
+	if ask().LineSlowPush {
+		t.Fatal("switched off")
+	}
+	// A shop on its own channel is never sent by this decision: its quota is not the shared one.
+	service.ConfigureSlowPush(true, quota)
+	own := readyShop(t, service)
+	if _, err := service.SetSecret(ctx, actor, "r", own, FieldLineSecret, "fedcba9876543210fedcba9876543210"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetSecret(ctx, actor, "r", own, FieldLineToken, "own-token-0123456789-abcdefghijklmnopqrstuvwxyz-0123"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Update(ctx, actor, "r", own, UpdateInput{LineMode: ptr(LineOwn), Version: versionOf(store, own)}); err != nil {
+		t.Fatal(err)
+	}
+	if config, _ := service.AgentConfig(ctx, own); config.LineSlowPush {
+		t.Fatal("not for a shop's own channel")
+	}
+}

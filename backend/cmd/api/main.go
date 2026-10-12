@@ -23,6 +23,7 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/lookup"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/monitor"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/operations"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/quota"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/recipient"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/schedule"
@@ -75,7 +76,7 @@ func main() {
 	viewerReportService := viewer.NewReportService(viewerService, database.NewReportStore(pool).ConfigureGenerationCache(cfg.GenerationCacheEnabled), time.Now).
 		ConfigureSnapshotFirst(cfg.SnapshotFirstEnabled, cfg.SnapshotFirstTenantIDs).
 		ConfigureStaleRevalidation(cfg.StaleRevalidationEnabled)
-	assistantSettings := assistantcfg.NewService(database.NewAssistantSettingsStore(pool), secretBox, time.Now).ConfigureLineFrontGate(cfg.LineFrontGate)
+	assistantSettings := assistantcfg.NewService(database.NewAssistantSettingsStore(pool), secretBox, time.Now).ConfigureLineFrontGate(cfg.LineFrontGate).ConfigureSlowPush(cfg.LineSlowPush, lineQuotaLeft(database.NewQuotaStore(pool)))
 	agentStore := database.NewAgentStore(pool)
 	agentService := agent.NewService(agentStore, database.NewReportStore(pool), sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{CallsPerHour: cfg.AgentCallsPerHour, RefreshesPerHour: cfg.AgentRefreshesPerHour, StaleWait: time.Duration(cfg.AgentStaleWaitSeconds) * time.Second, MonthlyCallBudget: cfg.AgentMonthlyCallBudget}).ConfigureAlerts(agentStore).ConfigureMaster(database.NewMasterStore(pool)).ConfigureExports(viewerReportService).ConfigureAssistantConfig(assistantSettings)
 	if cfg.AgentLiveLookupsEnabled {
@@ -178,5 +179,24 @@ func main() {
 			logger.Error("API stopped unexpectedly", "error", err)
 			os.Exit(1)
 		}
+	}
+}
+
+// lineQuotaLeft gives how many messages the shared channel may still send this month, from the figures the worker keeps in step with LINE.
+func lineQuotaLeft(store *database.QuotaStore) assistantcfg.LineQuota {
+	return func(ctx context.Context, now time.Time) (int, bool) {
+		status, err := store.Get(ctx, now)
+		if err != nil {
+			return 0, false
+		}
+		switch status.State {
+		case quota.StateUnlimited:
+			return 1 << 30, true
+		case quota.StateReady:
+			if status.ProviderLimit != nil && status.ProviderConsumed != nil {
+				return *status.ProviderLimit - *status.ProviderConsumed, true
+			}
+		}
+		return 0, false
 	}
 }

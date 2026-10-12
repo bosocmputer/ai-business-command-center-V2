@@ -63,7 +63,7 @@ class PullTests(unittest.TestCase):
         code, out, post = self.run_start((200, '"v8-false"', off))
         self.assertEqual(code, 0)
         self.assertNotIn("export", out)
-        self.assertEqual(out.count("unset"), 5)
+        self.assertEqual(out.count("unset"), 6)
         self.assertIn("unset LINE_ALLOW_ALL_USERS", out)
         self.assertEqual(open(os.path.join(self.dir, "config.yaml")).read(), TEMPLATE)
         post.assert_called_once()
@@ -78,6 +78,14 @@ class PullTests(unittest.TestCase):
         self.assertIn("unset LINE_ALLOW_ALL_USERS", self.run_start((200, '"v7-true-gate"', dict(ENABLED, lineGate=True)))[1])
         # a shop that must not run never trusts anything
         self.assertIn("unset LINE_ALLOW_ALL_USERS", self.run_start((200, '"v8-false"', {"configVersion": 8, "enabled": False, "lineGate": True}))[1])
+
+    def test_a_slow_answer_is_sent_on_its_own_only_when_ai_bcc_says_there_is_quota(self):
+        line = {"lineChannelSecret": "0123456789abcdef0123456789abcdef", "lineChannelAccessToken": "t" * 40}
+        base = dict(ENABLED, lineMode="CENTRAL", secrets=dict(ENABLED["secrets"], **line))
+        self.assertIn("export LINE_SLOW_RESPONSE_THRESHOLD=0", self.run_start((200, '"v7-true-push"', dict(base, lineSlowPush=True)))[1])
+        self.assertIn("unset LINE_SLOW_RESPONSE_THRESHOLD", self.run_start((200, '"v7-true"', base))[1])
+        self.assertIn("unset LINE_SLOW_RESPONSE_THRESHOLD", self.run_start((200, '"v7-true-push"', dict(ENABLED, lineSlowPush=True)))[1])
+        self.assertIn("unset LINE_SLOW_RESPONSE_THRESHOLD", self.run_start((200, '"v8-false"', {"configVersion": 8, "enabled": False, "lineSlowPush": True}))[1])
 
     def test_a_test_model_has_no_provider_pin_and_allows_collection(self):
         free = dict(ENABLED, model={"key": "openrouter-free", "modelId": "openrouter/free", "providers": [], "dataCollectionDeny": False})

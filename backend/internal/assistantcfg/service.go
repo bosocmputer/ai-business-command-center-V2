@@ -102,15 +102,37 @@ type Store interface {
 	GetStatus(ctx context.Context, tenantID uuid.UUID) (Status, error)
 }
 
+// LineQuota says how many messages the shared channel may still send this month; known is false when that is not known (not synced lately).
+type LineQuota func(ctx context.Context, now time.Time) (remaining int, known bool)
+
+// slowPushReserve is what is kept for the morning cards: slow answers are sent on their own only while more than this is left.
+const slowPushReserve = 40
+
 type Service struct {
 	store     Store
 	box       *secret.Box
 	now       func() time.Time
 	frontGate bool
+	slowPush  bool
+	quota     LineQuota
 }
 
 func NewService(store Store, box *secret.Box, now func() time.Time) *Service {
 	return &Service{store: store, box: box, now: now}
+}
+
+// ConfigureSlowPush turns on sending a slow answer on its own when the shared channel has quota to spare (quota says how much is left).
+func (service *Service) ConfigureSlowPush(enabled bool, quota LineQuota) *Service {
+	service.slowPush, service.quota = enabled, quota
+	return service
+}
+
+func (service *Service) slowPushAllowed(ctx context.Context) bool {
+	if !service.slowPush || service.quota == nil {
+		return false
+	}
+	remaining, known := service.quota(ctx, service.now().UTC())
+	return known && remaining > slowPushReserve
 }
 
 // ConfigureLineFrontGate tells the service the LINE front gate is on, so a shop on the shared channel with an assistant host is told so.
@@ -438,17 +460,25 @@ type AgentConfig struct {
 	LineMode      string      `json:"lineMode,omitempty"`
 	// LineGate says AI-BCC's LINE front gate decides who may write to this assistant on the shared channel. Only then may the
 	// assistant accept every LINE sender it is passed; without it the assistant keeps its own list of allowed people.
-	LineGate bool          `json:"lineGate,omitempty"`
-	Secrets  *AgentSecrets `json:"secrets,omitempty"`
+	LineGate bool `json:"lineGate,omitempty"`
+	// LineSlowPush says an answer that takes longer than a reply allows may be sent on its own when it is ready (it costs one message of the
+	// channel's monthly quota). Without it the assistant leaves a button the owner taps to fetch the answer. It is on only while the shared channel
+	// still has quota to spare.
+	LineSlowPush bool          `json:"lineSlowPush,omitempty"`
+	Secrets      *AgentSecrets `json:"secrets,omitempty"`
 }
 
 // ETag changes when the version changes, when the shop turns from usable to unusable by the passing of its end date, and when the front
 // gate is switched on or off (the assistant then restarts and stops, or starts, trusting the gate).
 func (config AgentConfig) ETag() string {
+	tag := fmt.Sprintf("v%d-%t", config.ConfigVersion, config.Enabled)
 	if config.LineGate {
-		return fmt.Sprintf(`"v%d-%t-gate"`, config.ConfigVersion, config.Enabled)
+		tag += "-gate"
 	}
-	return fmt.Sprintf(`"v%d-%t"`, config.ConfigVersion, config.Enabled)
+	if config.LineSlowPush {
+		tag += "-push"
+	}
+	return `"` + tag + `"`
 }
 
 func (service *Service) open(sealed *secret.Sealed, scope string, field Field) (string, error) {
@@ -520,6 +550,7 @@ func (service *Service) AgentConfig(ctx context.Context, tenantID uuid.UUID) (Ag
 	}
 	config.Enabled, config.ShopName, config.LineMode, config.Secrets = true, gate.Name, stored.LineMode, secrets
 	config.LineGate = service.frontGate && stored.LineMode == LineCentral && stored.AssistantHost != ""
+	config.LineSlowPush = stored.LineMode == LineCentral && service.slowPushAllowed(ctx)
 	config.Model = &AgentModel{Key: model.Key, ModelID: model.ModelID, Providers: append([]string(nil), model.Providers...), DataCollectionDeny: model.DataCollectionDeny}
 	return config, nil
 }
