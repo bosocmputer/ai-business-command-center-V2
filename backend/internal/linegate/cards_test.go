@@ -21,7 +21,7 @@ type fakeCards struct {
 	err      error
 }
 
-func (cards *fakeCards) Card(_ context.Context, _ uuid.UUID, _ Shop, _ bool, kind agent.QuickKind) ([]json.RawMessage, error) {
+func (cards *fakeCards) Card(_ context.Context, _ uuid.UUID, _ Shop, kind agent.QuickKind) ([]json.RawMessage, error) {
 	cards.calls = append(cards.calls, kind)
 	return cards.messages, cards.err
 }
@@ -140,30 +140,29 @@ func salesDashboard() report.Dashboard {
 	}
 }
 
-func TestCardMakerBuildsOneCardWithFollowUpButtons(t *testing.T) {
+func TestCardMakerBuildsTheMorningCardWithOnlyTheDetailsButton(t *testing.T) {
 	base, _ := url.Parse("https://dashboard.example.com")
 	dashboard := salesDashboard()
-	source := &fakeSource{result: agent.QuickResult{Status: agent.QuickReady, Key: report.SalesGoodsServices, Period: dashboard.Period, Dashboard: dashboard, FinishedAt: time.Date(2026, 10, 12, 7, 39, 0, 0, time.UTC)}}
-	maker := NewCardMaker(source, base)
+	run := uuid.New()
+	source := &fakeSource{result: agent.QuickResult{Status: agent.QuickReady, Key: report.SalesGoodsServices, Period: dashboard.Period, Dashboard: dashboard, RunID: run, FinishedAt: time.Date(2026, 10, 12, 7, 39, 0, 0, time.UTC)}}
 	shop := Shop{TenantID: uuid.New(), Name: "ร้านทดสอบ"}
 
-	one, err := maker.Card(context.Background(), uuid.New(), shop, false, agent.QuickToday)
-	if err != nil || len(one) != 1 {
-		t.Fatalf("messages=%d err=%v", len(one), err)
+	messages, err := NewCardMaker(source, base).Card(context.Background(), uuid.New(), shop, agent.QuickToday)
+	if err != nil || len(messages) != 1 {
+		t.Fatalf("messages=%d err=%v", len(messages), err)
 	}
-	card := string(one[0])
-	for _, want := range []string{`"type":"flex"`, "1,154,929", "ถามเลขา AI ต่อ", "ยอดขายวันนี้เทียบกับวันเดียวกันของสัปดาห์ก่อนเป็นยังไง", "/app/tenant/" + shop.TenantID.String()} {
+	card := string(messages[0])
+	link := "https://dashboard.example.com/app/tenant/" + shop.TenantID.String() + "/report/sales_goods_services?snapshotRunId=" + run.String()
+	for _, want := range []string{`"type":"flex"`, "1,154,929", "เปิดรายละเอียด", link} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card lacks %q: %s", want, card)
 		}
 	}
-	if strings.Contains(card, "เปลี่ยนร้าน") {
-		t.Fatal("a person with one shop is not offered a switch")
-	}
-
-	many, err := maker.Card(context.Background(), uuid.New(), shop, true, agent.QuickToday)
-	if err != nil || !strings.Contains(string(many[0]), "เปลี่ยนร้าน") {
-		t.Fatalf("a person with several shops should be offered a switch: %v", err)
+	// One button only: a person with one shop must never see a switch, and nothing else is added under the card.
+	for _, unwanted := range []string{"เปลี่ยนร้าน", "ถามเลขา AI", "ร่างใบสั่งซื้อ", `"type":"message"`} {
+		if strings.Contains(card, unwanted) {
+			t.Fatalf("the card must not carry %q: %s", unwanted, card)
+		}
 	}
 }
 
@@ -171,7 +170,7 @@ func TestCardMakerAnswersWithTextWhenTheFiguresAreNotReadyOrNotAllowed(t *testin
 	base, _ := url.Parse("https://dashboard.example.com")
 	for status, message := range map[string]string{agent.QuickPreparing: agent.MessageQuickPreparing, agent.QuickNotAllowed: agent.MessageQuickNotAllowed, agent.QuickUnavailable: ""} {
 		maker := NewCardMaker(&fakeSource{result: agent.QuickResult{Status: status, Message: message}}, base)
-		messages, err := maker.Card(context.Background(), uuid.New(), Shop{TenantID: uuid.New(), Name: "A"}, false, agent.QuickYesterday)
+		messages, err := maker.Card(context.Background(), uuid.New(), Shop{TenantID: uuid.New(), Name: "A"}, agent.QuickYesterday)
 		if err != nil || len(messages) != 1 || strings.Contains(string(messages[0]), `"flex"`) {
 			t.Fatalf("%s: %v %s", status, err, messages)
 		}
@@ -182,7 +181,7 @@ func TestCardMakerTellsWhenTheFiguresAreOlderThanAsked(t *testing.T) {
 	base, _ := url.Parse("https://dashboard.example.com")
 	dashboard := salesDashboard()
 	source := &fakeSource{result: agent.QuickResult{Status: agent.QuickReady, Stale: true, Key: report.SalesGoodsServices, Period: dashboard.Period, Dashboard: dashboard, FinishedAt: time.Now()}}
-	messages, err := NewCardMaker(source, base).Card(context.Background(), uuid.New(), Shop{TenantID: uuid.New(), Name: "A"}, false, agent.QuickToday)
+	messages, err := NewCardMaker(source, base).Card(context.Background(), uuid.New(), Shop{TenantID: uuid.New(), Name: "A"}, agent.QuickToday)
 	if err != nil || len(messages) != 2 || replyText(t, messages[1]) != MessageCardStale {
 		t.Fatalf("messages=%d err=%v", len(messages), err)
 	}
@@ -198,5 +197,12 @@ func TestEveryMenuButtonTextIsAnsweredByTheGate(t *testing.T) {
 		if _, ok := quickActions[button.Text]; !ok {
 			t.Fatalf("the gate does not answer the button text %q", button.Text)
 		}
+	}
+}
+
+func TestTheChatButtonOffersASwitchOnlyToAPersonWithSeveralShops(t *testing.T) {
+	one, many := string(chatInvitation(Shop{Name: "A"}, false)), string(chatInvitation(Shop{Name: "A"}, true))
+	if strings.Contains(one, "เปลี่ยนร้าน") || !strings.Contains(many, "เปลี่ยนร้าน") {
+		t.Fatalf("one shop: %s\nseveral: %s", one, many)
 	}
 }

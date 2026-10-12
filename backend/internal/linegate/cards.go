@@ -27,21 +27,20 @@ const (
 )
 
 type quickAction struct {
-	kind     agent.QuickKind
-	chat     bool
-	followUp line.FooterButton
+	kind agent.QuickKind
+	chat bool
 }
 
 var quickActions = map[string]quickAction{
-	TextYesterday: {kind: agent.QuickYesterday, followUp: line.FooterButton{Label: "ถามเลขา AI ต่อ", Text: "ยอดขายเมื่อวานต่างจากวันก่อนหน้าเพราะอะไร"}},
-	TextToday:     {kind: agent.QuickToday, followUp: line.FooterButton{Label: "ถามเลขา AI ต่อ", Text: "ยอดขายวันนี้เทียบกับวันเดียวกันของสัปดาห์ก่อนเป็นยังไง"}},
-	TextReorder:   {kind: agent.QuickReorder, followUp: line.FooterButton{Label: "ร่างใบสั่งซื้อ", Text: "ร่างใบสั่งซื้อสินค้าใกล้หมดให้หน่อย"}},
+	TextYesterday: {kind: agent.QuickYesterday},
+	TextToday:     {kind: agent.QuickToday},
+	TextReorder:   {kind: agent.QuickReorder},
 	TextChat:      {chat: true},
 }
 
 // Cards makes the answer to a report button: the messages to reply with.
 type Cards interface {
-	Card(ctx context.Context, recipientID uuid.UUID, shop Shop, severalShops bool, kind agent.QuickKind) ([]json.RawMessage, error)
+	Card(ctx context.Context, recipientID uuid.UUID, shop Shop, kind agent.QuickKind) ([]json.RawMessage, error)
 }
 
 // ReportSource is the part of the agent service the cards need.
@@ -59,7 +58,7 @@ func NewCardMaker(source ReportSource, publicBaseURL *url.URL) *CardMaker {
 	return &CardMaker{source: source, baseURL: publicBaseURL}
 }
 
-func (maker *CardMaker) Card(ctx context.Context, recipientID uuid.UUID, shop Shop, severalShops bool, kind agent.QuickKind) ([]json.RawMessage, error) {
+func (maker *CardMaker) Card(ctx context.Context, recipientID uuid.UUID, shop Shop, kind agent.QuickKind) ([]json.RawMessage, error) {
 	result, err := maker.source.QuickReport(ctx, shop.TenantID, recipientID, kind)
 	if err != nil {
 		return nil, err
@@ -76,23 +75,16 @@ func (maker *CardMaker) Card(ctx context.Context, recipientID uuid.UUID, shop Sh
 	}
 	overview := *maker.baseURL
 	overview.Path = "/app/tenant/" + shop.TenantID.String()
+	// The card is the same as the one sent with the morning report, and its one button opens the report page on exactly these figures.
+	reportURL := *maker.baseURL
+	reportURL.Path = "/app/tenant/" + shop.TenantID.String() + "/report/" + string(result.Key)
+	if result.RunID != uuid.Nil {
+		reportURL.RawQuery = url.Values{"snapshotRunId": {result.RunID.String()}}.Encode()
+	}
 	card, err := line.RenderFlex(line.FlexInput{
 		TenantName: strings.TrimSpace(shop.Name), Timezone: "Asia/Bangkok", Period: result.Period, GeneratedAt: result.FinishedAt, ActionURL: overview.String(),
-		Reports: []line.FlexReport{{Key: result.Key, Dashboard: &result.Dashboard, Period: result.Period, FinishedAt: result.FinishedAt}},
+		Reports: []line.FlexReport{{Key: result.Key, Dashboard: &result.Dashboard, Period: result.Period, FinishedAt: result.FinishedAt, ActionURL: reportURL.String()}},
 	})
-	if err != nil {
-		return nil, err
-	}
-	buttons := []line.FooterButton{}
-	for _, action := range quickActions {
-		if action.kind == kind {
-			buttons = append(buttons, action.followUp)
-		}
-	}
-	if severalShops {
-		buttons = append(buttons, line.FooterButton{Label: "เปลี่ยนร้าน", Text: "เปลี่ยนร้าน"})
-	}
-	card, err = line.WithFooterButtons(card, buttons)
 	if err != nil {
 		return nil, err
 	}

@@ -433,7 +433,7 @@ func (gate *Gate) quick(ctx context.Context, event line.WebhookEvent, recipientI
 	started := gate.now()
 	done := gate.showLoading(ctx, event)
 	cardCtx, cancel := context.WithTimeout(ctx, cardTimeout)
-	messages, err := gate.cards.Card(cardCtx, recipientID, shop, severalShops, action.kind)
+	messages, err := gate.cards.Card(cardCtx, recipientID, shop, action.kind)
 	cancel()
 	done()
 	outcome := "ok"

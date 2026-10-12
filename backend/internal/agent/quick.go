@@ -39,6 +39,8 @@ type QuickResult struct {
 	Dashboard  report.Dashboard
 	FinishedAt time.Time
 	Stale      bool
+	// RunID is the stored run the figures come from, so the card's button can open exactly those figures.
+	RunID uuid.UUID
 }
 
 func quickReport(kind QuickKind) (report.Key, bool) {
@@ -89,6 +91,7 @@ func (service *Service) QuickReport(ctx context.Context, tenantID, recipientID u
 	case stateReady:
 		result.Status, result.Stale = QuickReady, snapshot.stale
 		result.Dashboard = snapshot.snapshot.Dashboard
+		result.RunID = snapshot.snapshot.RunID
 		result.FinishedAt = now
 		if finished := snapshot.snapshot.SourceFinishedAt; finished != nil {
 			result.FinishedAt = *finished
