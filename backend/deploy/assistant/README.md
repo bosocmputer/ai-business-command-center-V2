@@ -375,3 +375,18 @@ an instance recreates `api` once (it joins the new network), so the API restarts
 includes every generated overlay; use it (`. ./assistant/compose-files.sh`) before any `docker compose up`. An assistant set up by hand is recorded with
 `docker compose exec worker /app/provision adopt <instance> <shop-id>` so the page shows it; one that is not recorded is shown as "ตั้งไว้ด้วยมือ" and cannot be created again
 from the page (a new token would replace the running one's). Tests: `test_provision.py` runs the script against a fake `docker`.
+
+### Owner menu in LINE (12 Oct 2026)
+
+The shared channel shows every owner a four-button menu (picture `backend/deploy/line/richmenu.png`, 2500x843). Three buttons are answered by the front gate with a report card made from the shop's figures, without the assistant: "ยอดขายเมื่อวาน", "ยอดขายล่าสุด" (reads again from SML; stored figures younger than a minute count as the latest) and "สินค้าใกล้หมด". The fourth, "คุยกับเลขา AI", answers with example questions; "เปลี่ยนร้าน" appears there only for a person with several shops. The cards use the same report permission check as the assistant and no model call.
+
+Set, show or remove the menu from the server (the worker holds the channel's access token; only menus named "AI-BCC owner menu" are touched):
+
+```bash
+cd backend/deploy && . ./assistant/compose-files.sh
+docker compose --env-file .env.production exec -T worker /app/richmenu status
+docker compose --env-file .env.production exec -T worker /app/richmenu apply < line/richmenu.png
+docker compose --env-file .env.production exec -T worker /app/richmenu remove
+```
+
+The picture was made outside the repository; to change the labels or colours make a new 2500x843 picture (PNG or JPEG, at most 1 MB) and apply it. The button words are in `internal/line/richmenu.go` and must stay equal to the gate's (`internal/linegate/cards.go`); a test checks that.

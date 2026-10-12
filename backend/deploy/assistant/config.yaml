@@ -83,7 +83,7 @@ platform_toolsets:
   cli: [memory]
   api_server: [memory]
   telegram: [memory]
-  # LINE and the alert webhook were left out until 13 Oct 2026, so LINE got Hermes' defaults (terminal, file, browser, code, vision, image,
+  # LINE and the alert webhook were left out until 12 Oct 2026, so LINE got Hermes' defaults (terminal, file, browser, code, vision, image,
   # skills, cronjob ...) and every turn tried to install their packages (denied by the egress proxy, which cost 13-25 seconds).
   line: [memory]
   webhook: [memory]

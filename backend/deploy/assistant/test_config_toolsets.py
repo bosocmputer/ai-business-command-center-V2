@@ -21,7 +21,7 @@ class ToolsetTests(unittest.TestCase):
         platforms = set(re.findall(r"(?m)^  ([a-z_]+):\s*$", block(self.text, "platforms")))
         listed = dict(re.findall(r"(?m)^  ([a-z_]+): (\[[^\]]*\])", block(self.text, "platform_toolsets")))
         self.assertTrue({"telegram", "line"} <= platforms, platforms)
-        # A platform that is not listed gets Hermes' defaults: terminal, file, browser, code execution... (this happened to LINE until 13 Oct 2026).
+        # A platform that is not listed gets Hermes' defaults: terminal, file, browser, code execution... (this happened to LINE until 12 Oct 2026).
         self.assertEqual(sorted(platforms - set(listed)), [], "a platform in `platforms:` has no entry in `platform_toolsets:`")
         for name, tools in listed.items():
             self.assertEqual(tools, "[memory]", name)
