@@ -496,6 +496,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tenants/{tenantId}/assistant/instance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+            };
+            cookie?: never;
+        };
+        /** @description The machine (containers) of the shop's assistant, as created from this page and as the server reports it. When there is none, manualHost names an assistant that was set up by hand, if any. The assistant token is never returned. */
+        get: operations["getAssistantInstance"];
+        put?: never;
+        /** @description Asks the server to create and start the shop's assistant. AI-BCC issues the assistant token for the chosen recipient (who must have the assistant switched on), keeps it sealed until the server has taken it, and sets the assistant host. Needs the admin password again. The answer is 202; the status changes as the server works. */
+        post: operations["createAssistantInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants/{tenantId}/assistant/instance/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Asks the server to stop the shop's assistant. Its settings and stored data stay. Needs the admin password again. */
+        post: operations["stopAssistantInstance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tenants/{tenantId}/assistant/secrets/{field}": {
         parameters: {
             query?: never;
@@ -1757,6 +1796,37 @@ export interface components {
             assistantHost?: string;
             /** @description The version of the settings as loaded; 0 when the shop has none yet. */
             version: number;
+        };
+        AssistantInstance: {
+            /** Format: uuid */
+            tenantId: string;
+            name: string;
+            /** @description The assistant host the LINE front gate passes messages to. */
+            host: string;
+            /** @enum {string} */
+            desired: "RUNNING" | "STOPPED";
+            /** @enum {string} */
+            status: "PENDING" | "CREATING" | "RUNNING" | "STOPPING" | "STOPPED" | "ERROR";
+            /** @description A short code from the server when status is ERROR. */
+            statusCode?: string;
+            /** Format: uuid */
+            recipientId?: string | null;
+            tokenWaiting: boolean;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            reportedAt?: string | null;
+        };
+        AssistantInstanceOverview: {
+            instance: components["schemas"]["AssistantInstance"] | null;
+            manualHost: string;
+        };
+        AssistantInstanceCreateInput: {
+            /** Format: uuid */
+            recipientId: string;
+            /** @description Whether the assistant may show real customer and supplier names (otherwise stable aliases). */
+            namesVisible: boolean;
+            adminPassword: string;
         };
         AssistantSecretInput: {
             value: string;
@@ -4523,6 +4593,106 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getAssistantInstance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Overview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantInstanceOverview"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createAssistantInstance: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantInstanceCreateInput"];
+            };
+        };
+        responses: {
+            /** @description Requested */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantInstanceOverview"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many wrong passwords; try again later */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    stopAssistantInstance: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantPasswordInput"];
+            };
+        };
+        responses: {
+            /** @description Requested */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantInstanceOverview"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            /** @description Too many wrong passwords; try again later */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     setAssistantSecret: {

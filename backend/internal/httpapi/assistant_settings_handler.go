@@ -25,21 +25,7 @@ type AssistantSettingsAPI interface {
 // clearing one needs the admin's password again, on top of the session and the CSRF token.
 func registerAssistantSettingsRoutes(router chi.Router, adminAuth AdminAuthenticator, settings AssistantSettingsAPI) {
 	confirm := func(response http.ResponseWriter, request *http.Request, admin auth.AuthenticatedAdmin, password string) bool {
-		if len(password) < 1 || len(password) > auth.MaximumAdminPasswordBytes {
-			writeProblem(response, request, http.StatusUnprocessableEntity, "VALIDATION_ERROR", "Admin password is required.", false)
-			return false
-		}
-		switch err := adminAuth.ConfirmPassword(request.Context(), admin, password); {
-		case err == nil:
-			return true
-		case errors.Is(err, auth.ErrLoginLocked):
-			writeProblem(response, request, http.StatusTooManyRequests, "PASSWORD_CONFIRMATION_LOCKED", "Too many wrong passwords. Try again later.", true)
-		case errors.Is(err, auth.ErrInvalidCredentials):
-			writeProblem(response, request, http.StatusForbidden, "PASSWORD_CONFIRMATION_FAILED", "The admin password is not correct.", false)
-		default:
-			writeProblem(response, request, http.StatusInternalServerError, "INTERNAL_ERROR", "Unable to confirm the password.", true)
-		}
-		return false
+		return confirmAdminPassword(response, request, adminAuth, admin, password)
 	}
 	field := func(response http.ResponseWriter, request *http.Request) (assistantcfg.Field, bool) {
 		parsed, ok := assistantcfg.ParseField(chi.URLParam(request, "field"))

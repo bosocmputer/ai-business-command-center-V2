@@ -354,3 +354,21 @@ LINE allowed people: when AI-BCC runs the front gate and the shop is on the shar
 the gate (recipients with the assistant switched on) instead of a list typed on the server. The assistant only accepts webhooks signed with
 the channel secret, which only AI-BCC passes on. The config tag becomes `"v<N>-true-gate"`; turning the gate off changes it again and the assistant restarts without the trust.
 Telegram has no gate, so `TELEGRAM_ALLOWED_USERS` is still a list kept by hand.
+
+### Creating a shop's assistant from the admin page (no ssh) (12 Oct 2026)
+
+Admin page > the shop > tab "เลขา AI" > "เครื่องของเลขา AI" > "สร้างเลขา AI": pick who holds the assistant's token (a verified recipient with the assistant
+switched on; the assistant answers with that person's report permissions) and whether it may see real names, confirm the admin password. AI-BCC then
+issues the token, keeps it sealed (`assistant_instances`, migration 51), sets the shop's assistant host to `assistant-s<first 8 characters of the shop id>`
+and shows the status PENDING. A script on the server does the rest: `deploy/provision.sh`, run every minute by cron, asks AI-BCC what to start or stop
+(`docker compose exec worker /app/provision list`, no network port is opened), then for a start runs `assistant/add-shop.sh <instance>`, writes the token into
+`secrets/assistant/hermes-<instance>.env` through a pipe (mode 0600, never printed), starts the containers, waits for healthy, reports RUNNING and has AI-BCC
+forget the token. A failure shows as ERROR with a short code (ADD_SHOP_FAILED, NO_TOKEN, COMPOSE_UP_FAILED, START_TIMEOUT, STOP_FAILED); "เริ่มอีกครั้ง" tries again with a
+new token. "หยุดเลขา AI" removes the containers (volume and settings stay). Afterwards the admin enters the OpenRouter key and switches the assistant on in the
+same tab, as for any shop.
+
+Install once on the server (from `backend/deploy`): `./provision-install.sh` (adds the cron line for the deploy user; `crontab -e` to remove it). The first start of
+an instance recreates `api` once (it joins the new network), so the API restarts for a few seconds. `assistant/compose-files.sh` builds the `COMPOSE_FILE` value that
+includes every generated overlay; use it (`. ./assistant/compose-files.sh`) before any `docker compose up`. An assistant set up by hand is recorded with
+`docker compose exec worker /app/provision adopt <instance> <shop-id>` so the page shows it; one that is not recorded is shown as "ตั้งไว้ด้วยมือ" and cannot be created again
+from the page (a new token would replace the running one's). Tests: `test_provision.py` runs the script against a fake `docker`.

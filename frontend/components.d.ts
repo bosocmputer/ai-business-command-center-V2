@@ -16,6 +16,7 @@ declare module 'vue' {
     AccordionHeader: typeof import('primevue/accordionheader')['default']
     AccordionPanel: typeof import('primevue/accordionpanel')['default']
     AppPageHeader: typeof import('./src/components/AppPageHeader.vue')['default']
+    AssistantInstanceCard: typeof import('./src/components/admin/AssistantInstanceCard.vue')['default']
     AssistantSettingsPanel: typeof import('./src/components/admin/AssistantSettingsPanel.vue')['default']
     AutoComplete: typeof import('primevue/autocomplete')['default']
     Badge: typeof import('primevue/badge')['default']

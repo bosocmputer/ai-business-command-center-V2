@@ -4,6 +4,7 @@ import { useToast } from 'primevue/usetoast';
 import { adminApi, ApiError, type AssistantGlobalSettings, type AssistantModel, type AssistantSecretField, type AssistantSettings } from '@/api';
 import { errorMessage, formatDateTime } from '@/utils/format';
 import { assistantProblemMessage, modelStatusLabel, modelStatusSeverity, secretLabel } from '@/utils/assistantPresentation';
+import AssistantInstanceCard from '@/components/admin/AssistantInstanceCard.vue';
 
 const props = defineProps<{ tenantId: string }>();
 const toast = useToast();
@@ -109,6 +110,8 @@ onMounted(load);
     <div v-if="loading" class="flex items-center gap-3"><ProgressSpinner style="width: 1.5rem; height: 1.5rem" /> กำลังโหลด</div>
     <Message v-else-if="loadError" severity="error" :closable="false">{{ loadError }} <Button label="ลองใหม่" text @click="load" /></Message>
     <template v-else-if="settings">
+      <AssistantInstanceCard :tenant-id="tenantId" @changed="load" />
+
       <section class="grid gap-3" aria-labelledby="assistant-state">
         <h3 id="assistant-state" class="text-lg font-semibold m-0">สถานะเลขา AI</h3>
         <div class="flex flex-wrap items-center gap-3">

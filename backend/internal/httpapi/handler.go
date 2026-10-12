@@ -40,23 +40,25 @@ type Dependencies struct {
 	Tenants           TenantAPI
 	SMLConnections    SMLAPI
 	AssistantSettings AssistantSettingsAPI
-	Recipients        RecipientAPI
-	Schedules         ScheduleAPI
-	FlexPreviews      SchedulePreviewAPI
-	ScheduleTests     ScheduleTestSendAPI
-	Operations        OperationsAPI
-	Monitor           MonitorAPI
-	ViewEvents        viewevent.Recorder
-	ExecutionModes    ExecutionModeAPI
-	TableQueries      any
-	Incidents         IncidentAPI
-	Watchdog          WatchdogAPI
-	ViewerAuth        ViewerAPI
-	ViewerReports     ViewerReportAPI
-	Agent             AgentAPI
-	AgentEnabled      bool
-	RefreshPolicies   RefreshPolicyAPI
-	LineWebhook       LineWebhookAPI
+	// AssistantInstances creates, shows and stops the machine of a shop's assistant from the admin page.
+	AssistantInstances AssistantInstanceAPI
+	Recipients         RecipientAPI
+	Schedules          ScheduleAPI
+	FlexPreviews       SchedulePreviewAPI
+	ScheduleTests      ScheduleTestSendAPI
+	Operations         OperationsAPI
+	Monitor            MonitorAPI
+	ViewEvents         viewevent.Recorder
+	ExecutionModes     ExecutionModeAPI
+	TableQueries       any
+	Incidents          IncidentAPI
+	Watchdog           WatchdogAPI
+	ViewerAuth         ViewerAPI
+	ViewerReports      ViewerReportAPI
+	Agent              AgentAPI
+	AgentEnabled       bool
+	RefreshPolicies    RefreshPolicyAPI
+	LineWebhook        LineWebhookAPI
 	// LineWebhookForwardURL passes a verified LINE webhook on (to the assistant); empty means not.
 	LineWebhookForwardURL string
 	// LineFrontGate, when set, routes each message on the shared channel to the right shop's assistant instead of the plain pass-on.
@@ -139,6 +141,9 @@ func NewHandler(dependencies Dependencies) http.Handler {
 		}
 		if dependencies.AssistantSettings != nil {
 			registerAssistantSettingsRoutes(router, dependencies.AdminAuth, dependencies.AssistantSettings)
+		}
+		if dependencies.AssistantInstances != nil {
+			registerAssistantInstanceRoutes(router, dependencies.AdminAuth, dependencies.AssistantInstances)
 		}
 		if dependencies.Recipients != nil {
 			registerRecipientRoutes(router, dependencies.AdminAuth, dependencies.Recipients)

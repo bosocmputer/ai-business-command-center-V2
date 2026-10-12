@@ -23,6 +23,7 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/lookup"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/monitor"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/operations"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/provision"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/quota"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/recipient"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
@@ -88,6 +89,7 @@ func main() {
 	periodObserver := func(preset report.Preset, mode report.ParameterKind, result string) {
 		logger.Info("schedule period resolved", "event", "schedule_period_resolution", "preset", preset, "mode", mode, "result", result, "schedulePeriodResolutionTotal", 1)
 	}
+	provisionService := provision.NewService(database.NewProvisionStore(pool), secretBox, agentService, assistantSettings, time.Now)
 	scheduleService := schedule.NewService(database.NewScheduleStore(pool).ConfigureSmartPeriods(cfg.SmartSchedulePeriodsEnabled, cfg.SmartSchedulePeriodTenantIDs, periodObserver), cfg.LineMessagingAccessToken != "", time.Now)
 	scheduleTestService := schedule.NewTestSendService(database.NewScheduleStore(pool).ConfigureSmartPeriods(cfg.SmartSchedulePeriodsEnabled, cfg.SmartSchedulePeriodTenantIDs, periodObserver), cfg.LineMessagingAccessToken != "", time.Now)
 	lineWebhookService := recipient.NewWebhookService(cfg.LineMessagingChannelSecret, database.NewRecipientStore(pool), sessionManager, time.Now)
@@ -142,6 +144,7 @@ func main() {
 			LineWebhookForwardURL: cfg.LineWebhookForwardURL,
 			LineFrontGate:         lineFrontGate,
 			AssistantSettings:     assistantSettings,
+			AssistantInstances:    provisionService,
 			Schedules:             scheduleService,
 			FlexPreviews:          flexPreviewService,
 			ScheduleTests:         scheduleTestService,

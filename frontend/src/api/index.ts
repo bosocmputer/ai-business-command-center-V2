@@ -1,6 +1,6 @@
 import { apiRequest, newIdempotencyKey, queryString } from './client';
 import type {
-  AssistantGlobalSettings, AssistantSecretField, AssistantSettings, AssistantSettingsInput,
+  AssistantGlobalSettings, AssistantInstanceOverview, AssistantSecretField, AssistantSettings, AssistantSettingsInput,
   AdminReportCatalog, AdminSession, AgentIssuedToken, AgentTokenStatus, AuditPage, CreateReportRunInput, DataPage, DeliveryPage, Recipient, RecipientPage, ReportDefinition,
   FlexPreview, FlexPreviewInput, LineQuotaStatus, MonitorHistory, MonitorSample, ReportMode, ReportModeItem, ReportModeMeasurement, NotificationExecution, ReportKey, ReportRowPage, ReportRowQueryInput, ReportRowQueryPage, ReportRun, ReportRunDetail, ReportRunPage, Schedule, ScheduleInput, SchedulePage, SchedulePatch,
   SMLConnectionInput, SMLConnectionStatus, SMLConnectionTestResult, Tenant, TenantInput, TenantPage, TenantPatch,
@@ -60,6 +60,9 @@ export const adminApi = {
   updateAssistant: (tenantId: string, input: AssistantSettingsInput) => apiRequest<AssistantSettings>(`${api}/admin/tenants/${tenantId}/assistant`, { method: 'PUT', scope: 'admin', body: input }),
   setAssistantSecret: (tenantId: string, field: AssistantSecretField, value: string, adminPassword: string) => apiRequest<AssistantSettings>(`${api}/admin/tenants/${tenantId}/assistant/secrets/${field}`, { method: 'PUT', scope: 'admin', body: { value, adminPassword } }),
   clearAssistantSecret: (tenantId: string, field: AssistantSecretField, adminPassword: string) => apiRequest<AssistantSettings>(`${api}/admin/tenants/${tenantId}/assistant/secrets/${field}/clear`, { method: 'POST', scope: 'admin', body: { adminPassword } }),
+  getAssistantInstance: (tenantId: string, signal?: AbortSignal) => apiRequest<AssistantInstanceOverview>(`${api}/admin/tenants/${tenantId}/assistant/instance`, { signal }),
+  createAssistantInstance: (tenantId: string, recipientId: string, namesVisible: boolean, adminPassword: string) => apiRequest<AssistantInstanceOverview>(`${api}/admin/tenants/${tenantId}/assistant/instance`, { method: 'POST', scope: 'admin', body: { recipientId, namesVisible, adminPassword } }),
+  stopAssistantInstance: (tenantId: string, adminPassword: string) => apiRequest<AssistantInstanceOverview>(`${api}/admin/tenants/${tenantId}/assistant/instance/stop`, { method: 'POST', scope: 'admin', body: { adminPassword } }),
   getAssistantGlobal: (signal?: AbortSignal) => apiRequest<AssistantGlobalSettings>(`${api}/admin/assistant/global`, { signal }),
   setAssistantGlobalSecret: (field: 'line-channel-secret' | 'line-channel-token', value: string, adminPassword: string) => apiRequest<AssistantGlobalSettings>(`${api}/admin/assistant/global/secrets/${field}`, { method: 'PUT', scope: 'admin', body: { value, adminPassword } }),
   listReportModes: (tenantId: string, signal?: AbortSignal) => apiRequest<{ data: ReportModeItem[] }>(`${api}/admin/tenants/${tenantId}/report-modes`, { signal }),

@@ -614,6 +614,49 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /api/v1/admin/tenants/{tenantId}/assistant/instance:
+    parameters: [{$ref: '#/components/parameters/TenantID'}]
+    get:
+      tags: [Admin configuration]
+      operationId: getAssistantInstance
+      description: The machine (containers) of the shop's assistant, as created from this page and as the server reports it. When there is none, manualHost names an assistant that was set up by hand, if any. The assistant token is never returned.
+      security: [{AdminSession: []}]
+      responses:
+        '200': {description: Overview, content: {application/json: {schema: {$ref: '#/components/schemas/AssistantInstanceOverview'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [Admin configuration]
+      operationId: createAssistantInstance
+      description: Asks the server to create and start the shop's assistant. AI-BCC issues the assistant token for the chosen recipient (who must have the assistant switched on), keeps it sealed until the server has taken it, and sets the assistant host. Needs the admin password again. The answer is 202; the status changes as the server works.
+      security: [{AdminSession: []}]
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AssistantInstanceCreateInput'}}}
+      responses:
+        '202': {description: Requested, content: {application/json: {schema: {$ref: '#/components/schemas/AssistantInstanceOverview'}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {description: Too many wrong passwords; try again later}
+  /api/v1/admin/tenants/{tenantId}/assistant/instance/stop:
+    parameters: [{$ref: '#/components/parameters/TenantID'}]
+    post:
+      tags: [Admin configuration]
+      operationId: stopAssistantInstance
+      description: Asks the server to stop the shop's assistant. Its settings and stored data stay. Needs the admin password again.
+      security: [{AdminSession: []}]
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AssistantPasswordInput'}}}
+      responses:
+        '202': {description: Requested, content: {application/json: {schema: {$ref: '#/components/schemas/AssistantInstanceOverview'}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {description: Too many wrong passwords; try again later}
   /api/v1/admin/tenants/{tenantId}/assistant/secrets/{field}:
     parameters:
       - {$ref: '#/components/parameters/TenantID'}
@@ -1998,6 +2041,34 @@ components:
         lineMode: {type: string, enum: [NONE, CENTRAL, OWN]}
         assistantHost: {type: string, pattern: '^([a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?)?$', description: "One lowercase service name on the internal network; empty clears it."}
         version: {type: integer, description: "The version of the settings as loaded; 0 when the shop has none yet."}
+    AssistantInstance:
+      type: object
+      required: [tenantId, name, host, desired, status, tokenWaiting, updatedAt]
+      properties:
+        tenantId: {type: string, format: uuid}
+        name: {type: string}
+        host: {type: string, description: "The assistant host the LINE front gate passes messages to."}
+        desired: {type: string, enum: [RUNNING, STOPPED]}
+        status: {type: string, enum: [PENDING, CREATING, RUNNING, STOPPING, STOPPED, ERROR]}
+        statusCode: {type: string, description: "A short code from the server when status is ERROR."}
+        recipientId: {type: string, format: uuid, nullable: true}
+        tokenWaiting: {type: boolean}
+        updatedAt: {type: string, format: date-time}
+        reportedAt: {type: string, format: date-time, nullable: true}
+    AssistantInstanceOverview:
+      type: object
+      required: [instance, manualHost]
+      properties:
+        instance: {allOf: [{$ref: '#/components/schemas/AssistantInstance'}], nullable: true}
+        manualHost: {type: string}
+    AssistantInstanceCreateInput:
+      type: object
+      additionalProperties: false
+      required: [recipientId, namesVisible, adminPassword]
+      properties:
+        recipientId: {type: string, format: uuid}
+        namesVisible: {type: boolean, description: "Whether the assistant may show real customer and supplier names (otherwise stable aliases)."}
+        adminPassword: {type: string}
     AssistantSecretInput:
       type: object
       additionalProperties: false
