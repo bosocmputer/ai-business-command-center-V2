@@ -30,6 +30,12 @@ fi
 if [ -n "${LINE_ALLOWED_USERS:-}" ] && [ -z "${LINE_HOME_CHANNEL:-}" ]; then
   export LINE_HOME_CHANNEL="${LINE_ALLOWED_USERS%%,*}"
 fi
+# Behind the front gate there is no list of people to take a home channel from, and Hermes would send "no home channel is set" to the first person
+# who writes. Nothing here uses the home channel (cron is off and alerts name their Telegram chat), so a placeholder that is not a real LINE user
+# only silences the notice.
+if [ "${LINE_ALLOW_ALL_USERS:-}" = true ] && [ -z "${LINE_HOME_CHANNEL:-}" ]; then
+  export LINE_HOME_CHANNEL=U00000000000000000000000000000000
+fi
 # Hermes nags with "no home channel is set, type /sethome" until one exists; /sethome is not allowed to users, so the
 # first allowed person's private chat (the chat id of a private chat is the user id) is the home channel.
 if [ -n "${TELEGRAM_ALLOWED_USERS:-}" ] && [ -z "${TELEGRAM_HOME_CHANNEL:-}" ]; then
