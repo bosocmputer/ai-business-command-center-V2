@@ -64,6 +64,14 @@ type Forwarder interface {
 	Forward(ctx context.Context, host string, body []byte, signature string) error
 }
 
+// Loader shows the animated dots in a person's chat while their answer is prepared.
+type Loader interface {
+	ShowLoading(ctx context.Context, lineUserID string, seconds int) error
+}
+
+// loadingSeconds is the longest LINE allows. An answer that takes longer is turned into a button by the assistant after about 45 seconds.
+const loadingSeconds = 60
+
 type hasher interface{ HashToken(string) []byte }
 
 type Gate struct {
@@ -72,6 +80,7 @@ type Gate struct {
 	tokens    hasher
 	replier   Replier
 	forwarder Forwarder
+	loader    Loader
 	logger    *slog.Logger
 	now       func() time.Time
 	slots     chan struct{}
@@ -79,6 +88,12 @@ type Gate struct {
 
 func New(channelSecret string, store Store, tokens hasher, replier Replier, forwarder Forwarder, logger *slog.Logger, now func() time.Time) *Gate {
 	return &Gate{secret: channelSecret, store: store, tokens: tokens, replier: replier, forwarder: forwarder, logger: logger, now: now, slots: make(chan struct{}, 16)}
+}
+
+// WithLoader makes the gate show the loading animation while a message is on its way to the assistant.
+func (gate *Gate) WithLoader(loader Loader) *Gate {
+	gate.loader = loader
+	return gate
 }
 
 // Dispatch handles a webhook that already passed the signature check, in the background so LINE gets its answer at once.
@@ -159,7 +174,32 @@ func (gate *Gate) handle(ctx context.Context, destination string, raw json.RawMe
 	if isMessage && event.Message.Type == "text" && len(shops) > 1 {
 		forwarded = withShopPrefix(raw, target.Name)
 	}
+	done := gate.showLoading(ctx, event)
 	gate.forward(ctx, destination, forwarded, event, target)
+	done()
+}
+
+// showLoading starts the animation beside the forwarding, for the kinds of message that get an answer (not stickers or locations). The
+// returned function waits for it, so nothing outlives the handling of the event.
+func (gate *Gate) showLoading(ctx context.Context, event line.WebhookEvent) func() {
+	if gate.loader == nil || event.Type != line.WebhookEventMessage || event.Message == nil {
+		return func() {}
+	}
+	switch event.Message.Type {
+	case "text", "image", "file":
+	default:
+		return func() {}
+	}
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		loadCtx, cancel := context.WithTimeout(ctx, replyTimeout)
+		defer cancel()
+		if err := gate.loader.ShowLoading(loadCtx, event.Source.UserID, loadingSeconds); err != nil {
+			gate.warn("LINE gate could not show the loading animation", "reason", "loading failed")
+		}
+	}()
+	return func() { <-finished }
 }
 
 func (gate *Gate) selected(ctx context.Context, recipientID uuid.UUID, shops []Shop) (Shop, bool) {
@@ -193,7 +233,7 @@ func (gate *Gate) choose(ctx context.Context, event line.WebhookEvent, recipient
 			gate.reply(ctx, event, text(MessageSelectFail))
 			return
 		}
-		gate.reply(ctx, event, text(fmt.Sprintf("ตอนนี้ถามร้าน %s ได้เลย พิมพ์ \"เปลี่ยนร้าน\" เมื่อต้องการสลับร้าน", shop.Name)))
+		gate.reply(ctx, event, text(fmt.Sprintf("ตอนนี้ถาม %s ได้เลย พิมพ์ \"เปลี่ยนร้าน\" เมื่อต้องการสลับร้าน", shopLabel(shop.Name))))
 		return
 	}
 	gate.reply(ctx, event, text(MessageSelectFail))
@@ -280,11 +320,19 @@ func chooser(shops []Shop) json.RawMessage {
 			break
 		}
 		items = append(items, item{Type: "action", Action: action{
-			Type: "postback", Label: truncate(shop.Name, maxLabelRunes), Data: selectPrefix + shop.TenantID.String(), DisplayText: truncate("ร้าน "+shop.Name, maxShopRunes),
+			Type: "postback", Label: truncate(shop.Name, maxLabelRunes), Data: selectPrefix + shop.TenantID.String(), DisplayText: truncate(shopLabel(shop.Name), maxShopRunes),
 		}})
 	}
 	encoded, _ := json.Marshal(map[string]any{"type": "text", "text": MessageChoose, "quickReply": map[string]any{"items": items}})
 	return encoded
+}
+
+// shopLabel puts the word "ร้าน" before a shop's name unless the name already starts with it ("ร้านกระบี่", not "ร้าน ร้านกระบี่").
+func shopLabel(name string) string {
+	if strings.HasPrefix(name, "ร้าน") {
+		return name
+	}
+	return "ร้าน " + name
 }
 
 func truncate(value string, limit int) string {

@@ -99,10 +99,12 @@ func main() {
 		}
 		// Replies need the channel access token; without it the gate still routes, it just cannot answer for itself.
 		var gateReplier linegate.Replier
+		var gateLoader linegate.Loader
 		if cfg.LineMessagingAccessToken != "" {
-			gateReplier = line.NewMessagingClient(cfg.LineMessagingAccessToken, line.DefaultPushEndpoint, 10*time.Second)
+			client := line.NewMessagingClient(cfg.LineMessagingAccessToken, line.DefaultPushEndpoint, 10*time.Second)
+			gateReplier, gateLoader = client, client
 		}
-		lineFrontGate = linegate.New(cfg.LineMessagingChannelSecret, database.NewLineGateStore(pool), sessionManager, gateReplier, gateForwarder, logger, time.Now)
+		lineFrontGate = linegate.New(cfg.LineMessagingChannelSecret, database.NewLineGateStore(pool), sessionManager, gateReplier, gateForwarder, logger, time.Now).WithLoader(gateLoader)
 	}
 	flexPreviewService := line.NewFlexPreviewService(tenantService, cfg.PublicBaseURL, time.Now).
 		ConfigureSmartPeriods(cfg.SmartSchedulePeriodsEnabled, cfg.SmartSchedulePeriodTenantIDs, periodObserver)

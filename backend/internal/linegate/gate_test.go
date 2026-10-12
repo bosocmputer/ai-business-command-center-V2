@@ -64,6 +64,22 @@ func (forwarder *fakeForwarder) Forward(_ context.Context, host string, body []b
 	return forwarder.err
 }
 
+type fakeLoader struct {
+	mu    sync.Mutex
+	users []string
+	err   error
+}
+
+func (loader *fakeLoader) ShowLoading(_ context.Context, userID string, seconds int) error {
+	loader.mu.Lock()
+	defer loader.mu.Unlock()
+	if seconds != 60 {
+		return errors.New("unexpected seconds")
+	}
+	loader.users = append(loader.users, userID)
+	return loader.err
+}
+
 type fakeHasher struct{}
 
 func (fakeHasher) HashToken(value string) []byte { return []byte(value) }
@@ -303,5 +319,51 @@ func TestHTTPForwarderPostsTheSignedBodyAndReportsRefusals(t *testing.T) {
 		if _, err := NewHTTPForwarder(bad); err == nil {
 			t.Fatalf("template %q must be refused", bad)
 		}
+	}
+}
+
+func TestTheLoadingAnimationShowsOnlyWhileAMessageIsOnItsWayToAnAssistant(t *testing.T) {
+	shops := shopsOf("A", "B")
+	store := &fakeStore{recipient: uuid.New(), shops: shops, selected: map[uuid.UUID]uuid.UUID{}}
+	forwarder := &fakeForwarder{}
+	loader := &fakeLoader{}
+	gate, _ := newGate(store, forwarder)
+	gate.WithLoader(loader)
+	ctx := context.Background()
+	// Nothing is passed on yet (the person has not chosen), so nothing is being prepared.
+	gate.Process(ctx, []byte(textEvent("Umany", "ยอดขาย")))
+	gate.Process(ctx, []byte(postbackEvent("Umany", selectPrefix+shops[0].TenantID.String())))
+	gate.Process(ctx, []byte(textEvent("Umany", "เปลี่ยนร้าน")))
+	if len(loader.users) != 0 {
+		t.Fatalf("no animation for the chooser, the choice or the switch word: %v", loader.users)
+	}
+	store.selected[store.recipient] = shops[0].TenantID
+	gate.Process(ctx, []byte(textEvent("Umany", "ยอดขาย")))
+	gate.Process(ctx, []byte(`{"destination":"U","events":[{"type":"message","replyToken":"reply-token-3","source":{"type":"user","userId":"Umany"},"message":{"type":"image","id":"9"}}]}`))
+	gate.Process(ctx, []byte(`{"destination":"U","events":[{"type":"message","replyToken":"reply-token-4","source":{"type":"user","userId":"Umany"},"message":{"type":"sticker","id":"9"}}]}`))
+	gate.Process(ctx, []byte(postbackEvent("Umany", "assistant-answer=abc")))
+	if len(loader.users) != 2 || loader.users[0] != "Umany" || len(forwarder.sent) != 4 {
+		t.Fatalf("animation for the text and the image only: users=%v forwarded=%d", loader.users, len(forwarder.sent))
+	}
+	// A failure of the animation changes nothing for the message.
+	loader.err = errors.New("LINE down")
+	before := len(forwarder.sent)
+	gate.Process(ctx, []byte(textEvent("Umany", "ยอดขาย")))
+	if len(forwarder.sent) != before+1 {
+		t.Fatal("the message must go on even when the animation fails")
+	}
+	// A shop with nobody to answer shows no animation either.
+	none, _ := newGate(&fakeStore{selected: map[uuid.UUID]uuid.UUID{}}, &fakeForwarder{})
+	empty := &fakeLoader{}
+	none.WithLoader(empty)
+	none.Process(ctx, []byte(textEvent("Ustranger", "hello")))
+	if len(empty.users) != 0 {
+		t.Fatal("no animation for a sender with no shop")
+	}
+}
+
+func TestAShopNameThatStartsWithRanIsNotGivenASecondOne(t *testing.T) {
+	if shopLabel("ร้านกระบี่ demo") != "ร้านกระบี่ demo" || shopLabel("สินทวีคอนกรีต") != "ร้าน สินทวีคอนกรีต" {
+		t.Fatalf("labels: %q %q", shopLabel("ร้านกระบี่ demo"), shopLabel("สินทวีคอนกรีต"))
 	}
 }

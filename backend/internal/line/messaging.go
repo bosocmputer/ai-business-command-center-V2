@@ -18,6 +18,8 @@ import (
 const (
 	DefaultPushEndpoint  = "https://api.line.me/v2/bot/message/push"
 	DefaultReplyEndpoint = "https://api.line.me/v2/bot/message/reply"
+	// DefaultLoadingEndpoint shows the animated dots in a person's chat while an answer is prepared. It costs nothing against the message quota.
+	DefaultLoadingEndpoint = "https://api.line.me/v2/bot/chat/loading/start"
 )
 
 type PushOutcome string
@@ -37,19 +39,21 @@ type PushResult struct {
 }
 
 type MessagingClient struct {
-	accessToken   string
-	endpoint      string
-	replyEndpoint string
-	client        *http.Client
+	accessToken     string
+	endpoint        string
+	replyEndpoint   string
+	loadingEndpoint string
+	client          *http.Client
 }
 
 func NewMessagingClient(accessToken, endpoint string, timeout time.Duration) *MessagingClient {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	return &MessagingClient{
-		accessToken:   accessToken,
-		endpoint:      endpoint,
-		replyEndpoint: DefaultReplyEndpoint,
+		accessToken:     accessToken,
+		endpoint:        endpoint,
+		replyEndpoint:   DefaultReplyEndpoint,
+		loadingEndpoint: DefaultLoadingEndpoint,
 		client: &http.Client{
 			Transport: transport,
 			Timeout:   timeout,
@@ -147,6 +151,37 @@ func (client *MessagingClient) Reply(ctx context.Context, replyToken string, mes
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return errors.New("LINE reply was refused: status " + strconv.Itoa(response.StatusCode))
+	}
+	return nil
+}
+
+// ShowLoading starts the loading animation in a one-to-one chat for up to seconds (5 to 60, in steps of 5). LINE ends it by itself when a
+// message arrives in that chat or the time is up. It is a courtesy: the caller never waits on it for anything that matters.
+func (client *MessagingClient) ShowLoading(ctx context.Context, lineUserID string, seconds int) error {
+	if len(client.accessToken) < 32 || len(lineUserID) < 2 || len(lineUserID) > 128 || seconds < 5 || seconds > 60 || seconds%5 != 0 {
+		return errors.New("LINE loading input is invalid")
+	}
+	body, err := json.Marshal(struct {
+		ChatID         string `json:"chatId"`
+		LoadingSeconds int    `json:"loadingSeconds"`
+	}{ChatID: lineUserID, LoadingSeconds: seconds})
+	if err != nil {
+		return errors.New("LINE loading input is invalid")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.loadingEndpoint, bytes.NewReader(body))
+	if err != nil {
+		return errors.New("LINE loading request is invalid")
+	}
+	request.Header.Set("Authorization", "Bearer "+client.accessToken)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := client.client.Do(request)
+	if err != nil {
+		return errors.New("LINE loading failed to send")
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64*1024))
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return errors.New("LINE loading was refused: status " + strconv.Itoa(response.StatusCode))
 	}
 	return nil
 }

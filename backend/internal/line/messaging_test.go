@@ -97,3 +97,31 @@ func TestReplySendsTheTokenAndMessageAndRefusesBadInput(t *testing.T) {
 		t.Fatal("invalid JSON must be refused")
 	}
 }
+
+func TestShowLoadingSendsTheChatAndSecondsAndRefusesBadInput(t *testing.T) {
+	var gotBody string
+	status := http.StatusAccepted
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		gotBody = string(body)
+		response.WriteHeader(status)
+	}))
+	defer server.Close()
+	client := NewMessagingClient(strings.Repeat("t", 40), DefaultPushEndpoint, time.Second)
+	client.loadingEndpoint = server.URL
+	if err := client.ShowLoading(context.Background(), "U123", 60); err != nil || !strings.Contains(gotBody, `"chatId":"U123"`) || !strings.Contains(gotBody, `"loadingSeconds":60`) {
+		t.Fatalf("err=%v body=%s", err, gotBody)
+	}
+	status = http.StatusBadRequest
+	if err := client.ShowLoading(context.Background(), "U123", 60); err == nil {
+		t.Fatal("a refusal must be an error")
+	}
+	for _, seconds := range []int{0, 4, 7, 65} {
+		if err := client.ShowLoading(context.Background(), "U123", seconds); err == nil {
+			t.Fatalf("%d seconds must be refused", seconds)
+		}
+	}
+	if err := client.ShowLoading(context.Background(), "", 60); err == nil {
+		t.Fatal("an empty chat id must be refused")
+	}
+}
