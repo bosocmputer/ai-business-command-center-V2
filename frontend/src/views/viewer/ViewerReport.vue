@@ -17,6 +17,7 @@ import { periodModeForReport, selectionForMode, selectionFromReportPeriod, selec
 import { formatReportCell, presentationFor, reportColumnClass, visibleReportColumns, type ReportColumnDefinition } from '@/utils/reportPresentation';
 import { cleanViewerQuery, validSnapshotRunId, validViewerRunId } from '@/utils/viewerSnapshot';
 import { freshnessPresentation, progressPresentation, typicalDurationText } from '@/utils/freshness';
+import { autoRefreshNotice, AUTO_REFRESH_LIMIT_MS, nextAutoRefreshStep, type AutoRefreshState } from '@/utils/reportAutoRefresh';
 import { drillAnchors, drillPeriodFor, drillQuery, drillRequestFromQuery, drillValueOf, withoutDrillQuery, type DrillRequest } from '@/utils/reportDrill';
 
 const route = useRoute();
@@ -28,7 +29,6 @@ const tenantId = computed(() => String(route.params.tenantId));
 const reportKey = computed(() => String(route.params.reportKey) as ReportKey);
 const definition = computed(() => state.reportsByTenant[tenantId.value]?.find((item) => item.reportKey === reportKey.value) ?? reportDefinitionByKey.get(reportKey.value));
 const periodMode = computed(() => definition.value?.periodMode ?? periodModeForReport(reportKey.value));
-const tenant = computed(() => state.tenants.find((item) => item.id === tenantId.value));
 const selectedPeriod = ref<ReportPeriodSelection>({ periodPreset: 'MONTH_TO_DATE' });
 const run = ref<ReportRun>();
 const dashboard = ref<ReportDashboard>();
@@ -69,6 +69,10 @@ const loading = ref(false);
 const cacheLoading = ref(false);
 const backgroundRefreshing = ref(false);
 const forceConfirmOpen = ref(false);
+// Old or missing figures are read again by themselves when the page opens (see autoRevalidate); this is where that stands.
+const autoRefresh = ref<AutoRefreshState>('idle');
+let autoTimer: number | undefined;
+let autoController: AbortController | undefined;
 const loadingRows = ref(false);
 const error = ref('');
 let pollTimer: number | undefined;
@@ -92,7 +96,8 @@ const statusLabel = computed(() => {
 const showRunStatus = computed(() => !!run.value && run.value.status !== 'SUCCEEDED' && !(snapshotMode.value && !!dashboard.value));
 const statusSeverity = computed(() => run.value?.status === 'FAILED' ? 'danger' : active.value ? 'info' : 'secondary');
 const detailRowsUnavailable = computed(() => rowsUnavailable.value || run.value?.status === 'EXPIRED' || cachedSnapshot.value?.detailsAvailable === false);
-const freshness = computed(() => freshnessPresentation(cachedSnapshot.value?.freshnessStatus));
+const freshness = computed(() => freshnessPresentation(autoRefresh.value === 'updating' ? 'REFRESHING' : cachedSnapshot.value?.freshnessStatus));
+const autoNotice = computed(() => autoRefreshNotice(autoRefresh.value, !!cachedSnapshot.value && !!dashboard.value, cachedSnapshot.value?.sourceFinishedAt ? formatDateTime(cachedSnapshot.value.sourceFinishedAt) : ''));
 const progressLabel = computed(() => progressPresentation(run.value?.progress?.phase));
 const typicalDuration = computed(() => typicalDurationText(run.value?.progress));
 const elapsedSeconds = computed(() => {
@@ -170,12 +175,13 @@ async function resolveSnapshot(selection: ReportPeriodSelection) {
   const context = ++generation;
   const selectedTenantId = tenantId.value;
   const selectedReportKey = reportKey.value;
-  initializeController?.abort('new-period'); initializeController = new AbortController(); stopPolling(); resetRows();
+  initializeController?.abort('new-period'); initializeController = new AbortController(); stopPolling(); stopAutoRefresh(); resetRows();
   loading.value = !dashboard.value; cacheLoading.value = true; backgroundRefreshing.value = false; error.value = '';
   // A drill-down is an explicit request for one customer, item or document, so
   // when the target has no usable snapshot for the period it is fetched at once
   // instead of asking the viewer to press the refresh button.
   let fetchFresh = false;
+  let wantsAutoRefresh = false;
   try {
     const snapshot = await viewerApi.exactSnapshot(selectedTenantId, selectedReportKey, payload, initializeController.signal);
     if (!isCurrent(context, selectedTenantId, selectedReportKey)) return;
@@ -186,8 +192,10 @@ async function resolveSnapshot(selection: ReportPeriodSelection) {
       expiredSnapshot.value = snapshot;
       dashboard.value = undefined; cachedSnapshot.value = undefined; run.value = undefined;
       fetchFresh = true;
+      wantsAutoRefresh = true;
     } else {
       applyCachedSnapshot(snapshot);
+      wantsAutoRefresh = snapshot.freshnessStatus !== 'FRESH';
       // A summary snapshot has no rows to filter, so a drill needs a run of its own.
       if (!snapshot.detailsAvailable) fetchFresh = true;
       try { run.value = await viewerApi.run(selectedTenantId, selectedReportKey, snapshot.runId, initializeController.signal); }
@@ -198,8 +206,9 @@ async function resolveSnapshot(selection: ReportPeriodSelection) {
     if (!isCancelled(cause) && isCurrent(context, selectedTenantId, selectedReportKey)) {
       selectedPeriod.value = { ...selection }; setPeriodSelection(selectedTenantId, selection);
       if (cause instanceof ApiError && cause.status === 404) {
+        // Nothing stored for this period yet: the figures are read now, without asking the viewer to press anything.
         fetchFresh = true;
-        error.value = 'ยังไม่มี Snapshot สำหรับช่วงนี้ หากต้องการข้อมูลใหม่ให้กด “ดึงใหม่จาก SML”';
+        wantsAutoRefresh = true;
       } else error.value = errorMessage(cause);
     }
     loading.value = false; backgroundRefreshing.value = false;
@@ -207,6 +216,52 @@ async function resolveSnapshot(selection: ReportPeriodSelection) {
     if (isCurrent(context, selectedTenantId, selectedReportKey)) cacheLoading.value = false;
   }
   if (fetchFresh && drillRequest.value && isCurrent(context, selectedTenantId, selectedReportKey)) void startRun(selection);
+  else if (wantsAutoRefresh && isCurrent(context, selectedTenantId, selectedReportKey)) void autoRevalidate(selection, context, selectedTenantId, selectedReportKey);
+}
+
+function stopAutoRefresh() {
+  if (autoTimer) window.clearTimeout(autoTimer);
+  autoTimer = undefined; autoController?.abort('auto-refresh-stopped'); autoController = undefined;
+  autoRefresh.value = 'idle';
+}
+
+// The figures on the page are old or missing: ask the server to read them again and follow it. The server shares one read between everyone
+// asking, keeps to the shop's refresh policy and stops when the shop's system is struggling, so asking is always safe; what it says decides
+// what the viewer sees (see nextAutoRefreshStep).
+async function autoRevalidate(selection: ReportPeriodSelection, context: number, selectedTenantId: string, selectedReportKey: ReportKey) {
+  let payload: CreateReportRunInput;
+  try { payload = selectionToRunInput(periodMode.value, selection); } catch { return; }
+  if (autoTimer) window.clearTimeout(autoTimer);
+  autoController?.abort('auto-refresh-restarted'); autoController = new AbortController();
+  const signal = autoController.signal;
+  const deadline = Date.now() + AUTO_REFRESH_LIMIT_MS;
+  autoRefresh.value = 'updating';
+  const follow = async () => {
+    if (signal.aborted || !isCurrent(context, selectedTenantId, selectedReportKey)) return;
+    if (Date.now() >= deadline) { autoRefresh.value = 'failed'; return; }
+    try {
+      const result = await viewerApi.revalidateReport(selectedTenantId, selectedReportKey, payload, signal);
+      if (signal.aborted || !isCurrent(context, selectedTenantId, selectedReportKey)) return;
+      const step = nextAutoRefreshStep(result, document.visibilityState === 'hidden');
+      if (step.kind === 'fresh') {
+        expiredSnapshot.value = undefined; error.value = '';
+        applyCachedSnapshot(step.snapshot);
+        try { run.value = await viewerApi.run(selectedTenantId, selectedReportKey, step.snapshot.runId, signal); }
+        catch (cause) { if (!(cause instanceof ApiError) || cause.status !== 404) throw cause; }
+        autoRefresh.value = 'idle';
+      } else if (step.kind === 'wait') {
+        autoTimer = window.setTimeout(() => void follow(), step.waitMs);
+      } else autoRefresh.value = step.kind === 'blocked' ? 'blocked' : 'failed';
+    } catch (cause) {
+      if (!isCancelled(cause) && isCurrent(context, selectedTenantId, selectedReportKey)) autoRefresh.value = 'failed';
+    }
+  };
+  await follow();
+}
+
+function retryAutoRefresh() {
+  if (autoRefresh.value === 'updating') return;
+  void autoRevalidate(selectedPeriod.value, generation, tenantId.value, reportKey.value);
 }
 
 function applyCachedSnapshot(snapshot: DashboardSnapshot) {
@@ -257,27 +312,8 @@ async function startRun(selection: ReportPeriodSelection) {
 }
 
 function requestForceRefresh(selection: ReportPeriodSelection) {
-  if (forceConfirmOpen.value || cacheLoading.value || active.value) return;
-  const expectedTenantId = tenantId.value;
-  const expectedReportKey = reportKey.value;
-  const expectedGeneration = generation;
-  forceConfirmOpen.value = true;
-  confirm.require({
-    header: `ดึงข้อมูลใหม่จาก ${tenant.value?.name ?? 'ร้านนี้'}`,
-    message: `ระบบจะ Query SML ใหม่สำหรับ “${definition.value?.label ?? expectedReportKey}” และอาจใช้เวลานาน โดยเฉพาะรายงานสต็อก`,
-    icon: 'pi pi-database', defaultFocus: 'reject', rejectLabel: 'ยกเลิก', acceptLabel: 'ดึงใหม่จาก SML',
-    rejectProps: { severity: 'secondary', text: true },
-    accept: () => {
-      forceConfirmOpen.value = false;
-      if (expectedGeneration !== generation || expectedTenantId !== tenantId.value || expectedReportKey !== reportKey.value) {
-        toast.add({ severity: 'warn', summary: 'หน้ารายงานเปลี่ยนแล้ว', detail: 'กรุณาตรวจสอบช่วงข้อมูลและลองใหม่', life: 3500 });
-        return;
-      }
-      void startRun(selection);
-    },
-    reject: () => { forceConfirmOpen.value = false; },
-    onHide: () => { forceConfirmOpen.value = false; }
-  });
+  if (cacheLoading.value || active.value) return;
+  void startRun(selection);
 }
 
 function applyRunPeriod(item: ReportRun) {
@@ -532,11 +568,11 @@ async function cancel() {
 
 function stopFollowing() {
   stopPolling(); loading.value = false; backgroundRefreshing.value = false;
-  toast.add({ severity: 'info', summary: 'หยุดติดตามแล้ว', detail: 'Query ที่เริ่มทำงานอาจยังทำต่อใน SML คุณกลับมาตรวจสอบภายหลังได้', life: 4500 });
+  toast.add({ severity: 'info', summary: 'หยุดติดตามแล้ว', detail: 'การอ่านข้อมูลที่เริ่มแล้วอาจยังทำต่ออยู่ในระบบบัญชีของร้าน คุณกลับมาตรวจสอบภายหลังได้', life: 4500 });
 }
 
 function stopPolling() { if (pollTimer) window.clearTimeout(pollTimer); pollTimer = undefined; pollController?.abort('poll-stopped'); pollController = undefined; }
-function stopLifecycle() { generation++; stopPolling(); initializeController?.abort('route-changed'); rowsController?.abort('route-changed'); initializeController = undefined; rowsController = undefined; pollInFlight = false; backgroundRefreshing.value = false; }
+function stopLifecycle() { generation++; stopPolling(); stopAutoRefresh(); initializeController?.abort('route-changed'); rowsController?.abort('route-changed'); initializeController = undefined; rowsController = undefined; pollInFlight = false; backgroundRefreshing.value = false; }
 function isCancelled(cause: unknown) { return cause instanceof ApiError && cause.code === 'CANCELLED'; }
 function isCurrent(context: number, selectedTenantId: string, selectedReportKey: ReportKey) { return context === generation && tenantId.value === selectedTenantId && reportKey.value === selectedReportKey; }
 function handleVisibilityChange() {
@@ -582,7 +618,7 @@ async function initialize() {
       : undefined;
     if (drillSelection && periodMode.value !== 'CURRENT_ONLY' && validatePeriodSelection(drillSelection).valid) selectedPeriod.value = drillSelection;
     if (route.query.snapshotRunId !== undefined && !snapshotRunId.value) {
-      error.value = 'ลิงก์ Snapshot ไม่ถูกต้อง กรุณาเปิดจากข้อความ LINE อีกครั้ง'; loading.value = false; return;
+      error.value = 'ลิงก์ไม่ถูกต้อง กรุณาเปิดจากข้อความ LINE อีกครั้ง'; loading.value = false; return;
     }
     if (route.query.runId !== undefined && !viewerRunId.value) {
       error.value = 'ลิงก์รายงานไม่ถูกต้อง กรุณาเลือกช่วงข้อมูลแล้วลองใหม่'; loading.value = false; return;
@@ -617,15 +653,16 @@ onBeforeUnmount(() => { document.removeEventListener('visibilitychange', handleV
 <template>
   <AppPageHeader :title="definition?.label ?? 'รายงาน'" desktop-mode="viewerCompact"><template #back><Button label="ภาพรวมร้าน" icon="pi pi-arrow-left" text class="report-back-action touch-action" @click="router.push(`/app/tenant/${tenantId}`)" /></template><template #actions><div class="report-heading-actions"><div class="flex flex-wrap gap-2"><Tag v-if="snapshotMode" severity="info" value="ข้อมูลจาก LINE" /><Tag v-if="cachedSnapshot" :severity="freshness.severity" :icon="freshness.icon" :value="freshness.label" /><Tag v-if="showRunStatus" :severity="statusSeverity" :value="statusLabel" /></div><Button v-if="run?.status === 'QUEUED'" icon="pi pi-times" severity="danger" outlined rounded aria-label="ยกเลิกงานที่รอคิว" @click="cancel" /><Button v-else-if="active" icon="pi pi-eye-slash" severity="secondary" outlined rounded aria-label="หยุดติดตามความคืบหน้า" @click="stopFollowing" /></div></template></AppPageHeader>
 
-  <ReportPeriodToolbar desktop-mode="compact" :mode="periodMode" :selection="selectedPeriod" :displayed-label="displayedPeriodLabel" :source-label="sourceLabel" :action-label="periodMode === 'CURRENT_ONLY' ? 'ดูสถานะล่าสุด' : 'ดูช่วงนี้'" force-action-label="ดึงใหม่จาก SML" :loading="loading || cacheLoading" :disabled="forceConfirmOpen" @apply="resolveSnapshot" @force="requestForceRefresh" />
+  <ReportPeriodToolbar desktop-mode="compact" :mode="periodMode" :selection="selectedPeriod" :displayed-label="displayedPeriodLabel" :source-label="sourceLabel" :action-label="periodMode === 'CURRENT_ONLY' ? 'ดูสถานะล่าสุด' : 'ดูช่วงนี้'" force-action-label="อัปเดตตอนนี้" :loading="loading || cacheLoading" :disabled="forceConfirmOpen" @apply="resolveSnapshot" @force="requestForceRefresh" />
 
-  <Message v-if="cachedSnapshot?.sourceConsistency === 'CHUNK_WINDOW'" severity="info" :closable="false" class="mb-4">รายงานนี้รวบรวมจาก SML หลายช่วงย่อยและไม่ใช่ Snapshot ณ วินาทีเดียว · {{ formatSourceCollection(cachedSnapshot.sourceStartedAt, cachedSnapshot.sourceFinishedAt, cachedSnapshot.sourceConsistency) }}</Message>
+  <Message v-if="cachedSnapshot?.sourceConsistency === 'CHUNK_WINDOW'" severity="info" :closable="false" class="mb-4">รายงานนี้รวบรวมจากระบบบัญชีของร้านหลายช่วงย่อย จึงไม่ใช่ภาพ ณ วินาทีเดียว · {{ formatSourceCollection(cachedSnapshot.sourceStartedAt, cachedSnapshot.sourceFinishedAt, cachedSnapshot.sourceConsistency) }}</Message>
 
   <Message v-if="error" severity="error" :closable="false" class="mb-4">{{ error }}</Message>
-  <Message v-if="expiredSnapshot && !cachedSnapshot" severity="warn" :closable="false" class="mb-4"><div class="flex flex-wrap items-center justify-between gap-3"><span>ข้อมูลล่าสุดไม่พร้อมใช้งาน Snapshot เดิมดึงจาก SML เมื่อ {{ formatDateTime(expiredSnapshot.sourceFinishedAt) }} และจะไม่แสดงเป็น KPI หลักโดยอัตโนมัติ</span><Button label="เปิดดู Snapshot เดิม" icon="pi pi-history" size="small" severity="secondary" @click="showExpiredSnapshot" /></div></Message>
-  <Message v-if="cachedSnapshot?.freshnessStatus === 'STALE' || cachedSnapshot?.freshnessStatus === 'REFRESHING'" severity="warn" :closable="false" class="mb-4">กำลังแสดง Snapshot ที่ดึงจาก SML เมื่อ {{ formatDateTime(cachedSnapshot.sourceFinishedAt) }}<template v-if="backgroundRefreshing"> ระหว่างดึงข้อมูลใหม่</template><template v-else> หากต้องการข้อมูลล่าสุดให้กด “ดึงใหม่จาก SML”</template></Message>
-  <Message v-if="snapshotMissing && run" severity="warn" :closable="false" class="mb-4"><div class="flex flex-wrap items-center justify-between gap-3"><span>ข้อมูลสรุปชุดนี้หมดอายุแล้ว กรุณาดึงข้อมูลใหม่จากฐานร้าน</span><Button :label="reportKey === 'stock_reorder' ? 'ดูสถานะปัจจุบัน' : 'ดึงข้อมูลช่วงเดิมใหม่'" icon="pi pi-refresh" size="small" @click="replaySnapshot" /></div></Message>
-  <section v-if="loading || backgroundRefreshing" class="card report-panel" aria-live="polite"><div class="flex flex-col items-center text-center gap-3 py-3"><ProgressSpinner style="width: 2.5rem; height: 2.5rem" stroke-width="6" /><div><h2 class="text-lg m-0">{{ snapshotMode ? 'กำลังเปิดข้อมูลจาก LINE' : cacheLoading ? 'กำลังค้นหา Snapshot' : progressLabel }}</h2><p class="text-muted-color mt-1 mb-0">{{ snapshotMode ? 'กำลังโหลด Snapshot ที่ใช้สร้างข้อความ โดยไม่ดึง SQL ใหม่' : cacheLoading ? 'กำลังอ่าน Cache โดยไม่ดึง SQL ใหม่' : `ใช้เวลาแล้ว ${elapsedSeconds.toLocaleString('th-TH')} วินาที` }}<span v-if="!cacheLoading && typicalDuration"> · {{ typicalDuration }}</span><span v-if="!snapshotMode && !cacheLoading && run?.queuePosition"> · ลำดับคิว {{ run.queuePosition }}</span></p><p v-if="!cacheLoading && run?.progress?.expectedP90Ms && elapsedSeconds * 1000 > run.progress.expectedP90Ms" class="text-orange-600 mt-2 mb-0">ใช้เวลานานกว่าปกติ แต่ระบบยังทำงานอยู่</p></div></div><ProgressBar mode="indeterminate" style="height: .35rem" class="mt-4" /></section>
+  <Message v-if="expiredSnapshot && !cachedSnapshot && autoRefresh !== 'updating'" severity="info" :closable="false" class="mb-4"><div class="flex flex-wrap items-center justify-between gap-3"><span>ตัวเลขชุดล่าสุดยังไม่พร้อม ข้อมูลเดิมดึงไว้เมื่อ {{ formatDateTime(expiredSnapshot.sourceFinishedAt) }}</span><span class="flex gap-2"><Button label="ลองอีกครั้ง" icon="pi pi-refresh" size="small" @click="retryAutoRefresh" /><Button label="ดูข้อมูลเดิม" icon="pi pi-history" size="small" severity="secondary" @click="showExpiredSnapshot" /></span></div></Message>
+  <Message v-if="autoNotice" severity="info" :closable="false" class="mb-4"><div class="flex flex-wrap items-center justify-between gap-3"><span><i v-if="autoRefresh === 'updating'" class="pi pi-sync pi-spin mr-2" />{{ autoNotice }}</span><Button v-if="autoRefresh === 'blocked' || autoRefresh === 'failed'" label="ลองอีกครั้ง" icon="pi pi-refresh" size="small" @click="retryAutoRefresh" /></div></Message>
+  <Message v-else-if="autoRefresh === 'idle' && (cachedSnapshot?.freshnessStatus === 'STALE' || cachedSnapshot?.freshnessStatus === 'REFRESHING')" severity="info" :closable="false" class="mb-4">กำลังแสดงข้อมูลที่ดึงเมื่อ {{ formatDateTime(cachedSnapshot.sourceFinishedAt) }}<template v-if="backgroundRefreshing"> ระหว่างดึงข้อมูลใหม่</template><template v-else> กด “อัปเดตตอนนี้” เพื่อดึงข้อมูลล่าสุด</template></Message>
+  <Message v-if="snapshotMissing && run" severity="warn" :closable="false" class="mb-4"><div class="flex flex-wrap items-center justify-between gap-3"><span>ข้อมูลสรุปชุดนี้หมดอายุแล้ว กรุณาอัปเดตข้อมูลใหม่</span><Button :label="reportKey === 'stock_reorder' ? 'ดูสถานะปัจจุบัน' : 'ดึงข้อมูลช่วงเดิมใหม่'" icon="pi pi-refresh" size="small" @click="replaySnapshot" /></div></Message>
+  <section v-if="loading || backgroundRefreshing || (autoRefresh === 'updating' && !dashboard)" class="card report-panel" aria-live="polite"><div class="flex flex-col items-center text-center gap-3 py-3"><ProgressSpinner style="width: 2.5rem; height: 2.5rem" stroke-width="6" /><div><h2 class="text-lg m-0">{{ snapshotMode ? 'กำลังเปิดข้อมูลจาก LINE' : cacheLoading ? 'กำลังเปิดข้อมูลล่าสุด' : autoRefresh === 'updating' && !dashboard ? 'กำลังดึงข้อมูลล่าสุด' : progressLabel }}</h2><p class="text-muted-color mt-1 mb-0">{{ snapshotMode ? 'กำลังเปิดตัวเลขชุดเดียวกับที่ส่งในข้อความ' : cacheLoading ? 'กำลังตรวจข้อมูลที่เก็บไว้' : autoRefresh === 'updating' && !dashboard ? 'หน้านี้จะแสดงตัวเลขให้เองเมื่อพร้อม ไม่ต้องกดอะไร' : `ใช้เวลาแล้ว ${elapsedSeconds.toLocaleString('th-TH')} วินาที` }}<span v-if="!cacheLoading && typicalDuration"> · {{ typicalDuration }}</span><span v-if="!snapshotMode && !cacheLoading && run?.queuePosition"> · ลำดับคิว {{ run.queuePosition }}</span></p><p v-if="!cacheLoading && run?.progress?.expectedP90Ms && elapsedSeconds * 1000 > run.progress.expectedP90Ms" class="text-orange-600 mt-2 mb-0">ใช้เวลานานกว่าปกติ แต่ระบบยังทำงานอยู่</p></div></div><ProgressBar mode="indeterminate" style="height: .35rem" class="mt-4" /></section>
 
   <Tabs v-if="dashboard && run" v-model:value="activeTab" class="report-tabs">
     <TabList><Tab value="overview"><i class="pi pi-chart-bar mr-2" />ภาพรวมและกราฟ</Tab><Tab value="detail"><i class="pi pi-table mr-2" />ข้อมูลรายละเอียด</Tab></TabList>
@@ -639,15 +676,15 @@ onBeforeUnmount(() => { document.removeEventListener('visibilitychange', handleV
         <div v-if="!peopleVisualizations(dashboard.visualizations).length" class="card report-panel text-center text-muted-color"><i class="pi pi-chart-bar text-3xl" /><p class="mb-0">ช่วงนี้ไม่มีข้อมูลเพียงพอสำหรับสร้างกราฟ</p></div>
       </TabPanel>
       <TabPanel value="detail">
-        <Message v-if="detailRowsUnavailable" severity="info" :closable="false"><div class="flex flex-wrap items-center justify-between gap-3"><span>ข้อมูลแถวรายละเอียดเป็นข้อมูลชั่วคราวและหมดอายุแล้ว แต่ภาพรวมยังเปิดดูได้ กรุณาดึง SQL ใหม่เมื่อต้องการตรวจรายการ</span><Button :label="reportKey === 'stock_reorder' ? 'ดูสถานะปัจจุบัน' : 'ดึงข้อมูลช่วงเดิมใหม่'" icon="pi pi-refresh" size="small" @click="replaySnapshot" /></div></Message>
+        <Message v-if="detailRowsUnavailable" severity="info" :closable="false"><div class="flex flex-wrap items-center justify-between gap-3"><span>ข้อมูลแถวรายละเอียดเป็นข้อมูลชั่วคราวและหมดอายุแล้ว แต่ภาพรวมยังเปิดดูได้ กรุณาอัปเดตข้อมูลใหม่เมื่อต้องการตรวจรายการ</span><Button :label="reportKey === 'stock_reorder' ? 'ดูสถานะปัจจุบัน' : 'ดึงข้อมูลช่วงเดิมใหม่'" icon="pi pi-refresh" size="small" @click="replaySnapshot" /></div></Message>
         <template v-else>
           <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
-            <div><h2 class="text-lg font-semibold m-0">{{ snapshotMode ? 'ข้อมูล Snapshot จาก SQL' : 'ข้อมูลจาก SQL' }}</h2><p class="text-sm text-muted-color mt-1 mb-0">{{ rowTotal.toLocaleString('th-TH') }} แถวที่ตรงกับตัวกรอง · ข้อมูลรายละเอียดเก็บชั่วคราว 24 ชั่วโมง</p></div>
+            <div><h2 class="text-lg font-semibold m-0">{{ 'ข้อมูลรายละเอียด' }}</h2><p class="text-sm text-muted-color mt-1 mb-0">{{ rowTotal.toLocaleString('th-TH') }} แถวที่ตรงกับตัวกรอง · ข้อมูลรายละเอียดเก็บชั่วคราว 24 ชั่วโมง</p></div>
             <div class="flex flex-wrap gap-2"><MultiSelect v-model="selectedColumnKeys" :options="columnOptions" option-label="label" option-value="key" display="chip" filter aria-label="เลือกคอลัมน์ที่ต้องการแสดง" placeholder="เลือกคอลัมน์" class="w-full sm:w-80"><template #option="{ option }"><div class="flex items-center justify-between gap-3 w-full"><span>{{ option.label }}</span><Tag v-if="option.technical" severity="secondary" value="เทคนิค" /></div></template></MultiSelect><Tag v-if="run.isTruncated" severity="warn" value="ผลลัพธ์ถูกจำกัดตามจำนวนแถวสูงสุด" /></div>
           </div>
           <div class="card table-card report-panel">
             <small v-if="rowFilterError" class="block text-red-600 mt-2" role="alert">{{ rowFilterError }}</small>
-            <small class="block text-muted-color mt-2">การกรองและเปลี่ยนหน้าอ่านจาก Snapshot ที่บันทึกไว้เท่านั้น ไม่ดึงข้อมูลใหม่จาก SML</small>
+            <small class="block text-muted-color mt-2">การกรองและเปลี่ยนหน้าอ่านจากข้อมูลที่บันทึกไว้เท่านั้น ไม่ดึงข้อมูลใหม่จากระบบบัญชีของร้าน</small>
             <Message v-if="drillActive" severity="info" :closable="false" class="mt-3"><div class="flex flex-wrap items-center justify-between gap-3"><span>กำลังดูเฉพาะ {{ drillActiveLabel }}</span><Button label="ดูทั้งหมด" icon="pi pi-filter-slash" text size="small" @click="clearRowFilter" /></div></Message>
             <div class="hidden md:block mt-4"><DataTable v-model:filters="rowPrimeFilters" :value="rows" :loading="loadingRows" data-key="__rowKey" lazy paginator :first="rowPage * rowPageSize" :rows="rowPageSize" :total-records="rowTotal" :rows-per-page-options="[25, 50, 100]" filter-display="menu" row-hover show-gridlines scrollable striped-rows current-page-report-template="หน้า {currentPage} จาก {totalPages} · ทั้งหมด {totalRecords} รายการ" paginator-template="RowsPerPageDropdown FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport" @page="changeRowsPage" @filter="applyRowFilters"><template #header><SakaiTableHeader v-model:global-search="rowGlobalSearch" :loading="loadingRows" :has-filters="rowHasFilters" mobile-filters @clear="clearRowFilter" @open-mobile-filters="openMobileRowFilters" /></template><Column v-for="column in displayedColumns" :key="column.key" :field="column.key" :header="column.label" :frozen="column.frozen" align-frozen="left" :header-class="reportColumnClass(column)" :body-class="reportColumnClass(column)" :show-filter-menu="rowCapabilityByKey.has(column.key)" :show-filter-match-modes="false"><template #body="{ data }"><Button v-if="drillValue(column.key, data)" :label="formatReportCell(data[column.key], column)" icon="pi pi-external-link" icon-pos="right" link size="small" class="drill-cell safe-wrap" :aria-label="`เปิดข้อมูลของ ${formatReportCell(data[column.key], column)} ในรายงานอื่น`" @click="openDrillMenu($event, column.key, drillValue(column.key, data)!, data)" /><span v-else class="safe-wrap" :class="{ 'metric-value': column.dataType === 'NUMBER' }">{{ formatReportCell(data[column.key], column) }}</span></template><template v-if="rowCapabilityByKey.has(column.key)" #filter="{ filterModel }"><DatePicker v-if="rowCapabilityByKey.get(column.key)?.dataType === 'DATE'" v-model="filterModel.value" selection-mode="range" date-format="dd/mm/yy" placeholder="เลือกช่วงวันที่" /><div v-else class="grid gap-2"><Select v-model="rowFilterOperators[column.key]" :options="rowOperatorOptions(rowCapabilityByKey.get(column.key)!)" option-label="label" option-value="value" aria-label="เงื่อนไขตัวกรอง" /><InputText v-model="filterModel.value" :placeholder="rowCapabilityByKey.get(column.key)?.dataType === 'NUMBER' ? 'กรอกตัวเลข' : 'กรอกคำค้นหา'" /></div></template></Column><template #empty><div class="py-8 text-center text-muted-color">{{ loadingRows ? 'กำลังโหลดข้อมูล' : 'ไม่พบข้อมูลที่ตรงกับตัวกรอง' }} <Button v-if="rowHasFilters" label="ล้างตัวกรอง" text size="small" @click="clearRowFilter" /></div></template></DataTable></div>
             <div class="md:hidden grid gap-3 mt-4" aria-label="รายละเอียดรายงานแบบมือถือ"><article v-for="row in rows" :key="String(row.__rowKey)" class="mobile-row"><div v-for="column in mobileColumns(row)" :key="column.key" class="flex items-start justify-between gap-4"><span class="text-xs text-muted-color safe-wrap">{{ column.label }}</span><strong class="text-sm safe-wrap" :class="column.dataType === 'NUMBER' ? 'text-right metric-value' : 'text-left'">{{ formatReportCell(row[column.key], column) }}</strong><Button v-if="drillValue(column.key, row)" icon="pi pi-external-link" text rounded size="small" class="touch-action" :aria-label="`เปิดข้อมูลของ ${formatReportCell(row[column.key], column)} ในรายงานอื่น`" @click="openDrillMenu($event, column.key, drillValue(column.key, row)!, row)" /></div><Button v-if="displayedColumns.length > mobileSummaryColumns.length" :label="expandedMobileRows.has(String(row.__rowKey)) ? 'แสดงน้อยลง' : 'ดูรายละเอียดเพิ่ม'" :icon="expandedMobileRows.has(String(row.__rowKey)) ? 'pi pi-angle-up' : 'pi pi-angle-down'" text size="small" class="justify-self-start" @click="toggleMobileRow(row)" /></article><div v-if="!loadingRows && !rows.length" class="py-8 text-center text-muted-color">ไม่พบข้อมูลที่ตรงกับตัวกรอง</div></div>

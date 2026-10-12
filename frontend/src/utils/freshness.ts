@@ -15,8 +15,8 @@ export function freshnessPresentation(status?: FreshnessStatus) {
 export function progressPresentation(phase?: NonNullable<ReportRun['progress']>['phase']) {
   const labels: Record<string, string> = {
     QUEUED: 'กำลังรอคิว',
-    CONNECTING: 'กำลังเชื่อมต่อ SML',
-    QUERYING_CURRENT: 'กำลังดึงข้อมูลจาก SML',
+    CONNECTING: 'กำลังเชื่อมต่อระบบบัญชีของร้าน',
+    QUERYING_CURRENT: 'กำลังดึงข้อมูลจากระบบบัญชีของร้าน',
     QUERYING_COMPARISON: 'กำลังดึงข้อมูลช่วงเปรียบเทียบ',
     BUILDING_DASHBOARD: 'กำลังคำนวณภาพรวม',
     SAVING_RESULT: 'กำลังบันทึกผลลัพธ์',

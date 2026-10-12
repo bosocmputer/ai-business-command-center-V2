@@ -52,7 +52,7 @@ function openReport(reportKey: DeliveryContext['reports'][number]['reportKey']) 
 function reportSource(item: DeliveryContext['reports'][number]) {
   return item.summary
     ? formatSourceCollection(item.summary.sourceStartedAt, item.summary.sourceFinishedAt ?? item.summary.dashboard.generatedAt, item.summary.sourceConsistency)
-    : 'Snapshot สรุปไม่พร้อมใช้งานแล้ว';
+    : 'ข้อมูลสรุปไม่พร้อมใช้งานแล้ว';
 }
 
 onMounted(load);
@@ -76,7 +76,7 @@ watch([tenantId, deliveryId], load);
     </section>
 
     <Message v-if="context.orderStatus === 'LEGACY'" severity="secondary" :closable="false" class="mb-4">รายงานรอบเก่าแสดงตามลำดับที่ระบบกู้คืนได้ และอาจไม่ใช่ลำดับเดิมในตารางส่งรายงาน</Message>
-    <Message v-if="context.dataStatus !== 'AVAILABLE'" severity="warn" :closable="false" class="mb-4">Snapshot บางรายงานหมดอายุแล้ว ระบบจะแสดงเฉพาะข้อมูลที่ยังพร้อมใช้งานและจะไม่ดึงข้อมูลจาก SML ใหม่อัตโนมัติ</Message>
+    <Message v-if="context.dataStatus !== 'AVAILABLE'" severity="warn" :closable="false" class="mb-4">ข้อมูลบางรายงานหมดอายุแล้ว ระบบจะแสดงเฉพาะข้อมูลที่ยังพร้อมใช้งานและจะไม่อัปเดตข้อมูลใหม่อัตโนมัติ</Message>
 
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
       <button v-for="item in context.reports" :key="item.reportRunId" type="button" class="card delivery-report-card" @click="openReport(item.reportKey)">
@@ -88,7 +88,7 @@ watch([tenantId, deliveryId], load);
           <span v-if="item.summary" class="metric-list">
             <span v-for="metric in item.summary.dashboard.kpis.slice(0, 3)" :key="metric.key"><span>{{ metric.label }}</span><strong>{{ formatDashboardValue(metric.value, metric.unit) }}</strong></span>
           </span>
-          <Tag v-else severity="warn" value="Snapshot สรุปหมดอายุ" class="justify-self-start" />
+          <Tag v-else severity="warn" value="ข้อมูลสรุปหมดอายุ" class="justify-self-start" />
         </span>
         <i class="pi pi-chevron-right text-muted-color" aria-hidden="true" />
       </button>

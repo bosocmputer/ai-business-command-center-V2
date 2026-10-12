@@ -1,13 +1,14 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import PrimeVue from 'primevue/config';
 import { defineComponent, h } from 'vue';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   replace: vi.fn(async () => undefined),
   push: vi.fn(async () => undefined),
   exactSnapshot: vi.fn(),
   createRun: vi.fn(),
+  revalidateReport: vi.fn(),
   run: vi.fn(),
   queryRows: vi.fn(),
   route: { params: { tenantId: 'tenant-1', reportKey: 'ar_aging' }, query: {} as Record<string, string>, path: '/app/tenant/tenant-1/report/ar_aging', hash: '' }
@@ -18,7 +19,7 @@ vi.mock('primevue/useconfirm', () => ({ useConfirm: () => ({ require: vi.fn(), c
 vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: vi.fn() }) }));
 vi.mock('@/api', async () => {
   const actual = await vi.importActual<typeof import('@/api')>('@/api');
-  return { ...actual, viewerApi: { exactSnapshot: mocks.exactSnapshot, run: mocks.run, queryRows: mocks.queryRows, createRun: mocks.createRun } };
+  return { ...actual, viewerApi: { exactSnapshot: mocks.exactSnapshot, run: mocks.run, queryRows: mocks.queryRows, createRun: mocks.createRun, revalidateReport: mocks.revalidateReport } };
 });
 vi.mock('@/stores/viewer', async () => {
   const period = await vi.importActual<typeof import('@/utils/reportPeriod')>('@/utils/reportPeriod');
@@ -162,13 +163,16 @@ describe('ViewerReport drill-down', () => {
     mocks.route.params.reportKey = 'ar_aging';
   });
 
-  it('does not start a run by itself for an ordinary visit with no snapshot', async () => {
+  it('does not start a full run by itself for an ordinary visit with no snapshot, it reads the figures again and says so plainly', async () => {
     mocks.route.query = {};
     mocks.exactSnapshot.mockRejectedValueOnce(noSnapshot());
+    mocks.revalidateReport.mockResolvedValue({ disposition: 'MISSING_REFRESHING', run: { ...succeededRun, id: 'run-9', status: 'RUNNING' }, retryAfter: 0, legacyFallback: false });
     const wrapper = mountReport();
     await flushPromises();
     expect(mocks.createRun).not.toHaveBeenCalled();
-    expect(wrapper.text()).toContain('ยังไม่มี Snapshot');
+    expect(mocks.revalidateReport).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain('กำลังดึงข้อมูลล่าสุด');
+    expect(wrapper.text()).not.toMatch(/Snapshot|SML/);
   });
 
   it('fetches a run of its own for a drill when the snapshot found is a summary with no rows', async () => {
@@ -182,5 +186,73 @@ describe('ViewerReport drill-down', () => {
     // The rows are not asked for until there is a run that has them.
     expect(mocks.queryRows).not.toHaveBeenCalled();
     expect(wrapper.text()).not.toContain('กำลังดูเฉพาะ');
+  });
+});
+
+describe('ViewerReport reads old figures again by itself', () => {
+  const kpi = (value: string) => [{ key: 'total_balance', label: 'ยอดค้างรวม', value, unit: 'THB', comparison: { availability: 'UNAVAILABLE' } }];
+  const withKpi = (value: string) => ({ ...dashboard, kpis: kpi(value) });
+  const staleSnapshot = { runId: 'run-old', dashboard: withKpi('100.00'), freshnessStatus: 'STALE', detailsAvailable: true, sourceFinishedAt: '2026-10-01T01:17:00Z' };
+  const newSnapshot = { runId: 'run-new', dashboard: withKpi('200.00'), freshnessStatus: 'FRESH', detailsAvailable: true, sourceFinishedAt: '2026-10-01T08:30:00Z' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    mocks.route.query = {};
+    mocks.route.params.reportKey = 'ar_aging';
+    mocks.run.mockResolvedValue(succeededRun);
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('shows the old figures at once, reads again, and swaps in the new figures without a button', async () => {
+    mocks.exactSnapshot.mockResolvedValue(staleSnapshot);
+    mocks.revalidateReport
+      .mockResolvedValueOnce({ disposition: 'STALE_REFRESHING', snapshot: staleSnapshot, run: { ...succeededRun, id: 'run-new', status: 'RUNNING' }, retryAfter: 0, legacyFallback: false })
+      .mockResolvedValue({ disposition: 'FRESH_CACHE', snapshot: newSnapshot, retryAfter: 0, legacyFallback: false });
+    const wrapper = mountReport();
+    await flushPromises();
+    expect(wrapper.text()).toContain('100');
+    expect(wrapper.text()).toContain('กำลังอัปเดตตัวเลขให้เป็นล่าสุด');
+    expect(wrapper.text()).not.toMatch(/Snapshot|SML/);
+    await vi.advanceTimersByTimeAsync(4_000);
+    await flushPromises();
+    expect(mocks.revalidateReport).toHaveBeenCalledTimes(2);
+    expect(wrapper.text()).toContain('200');
+    expect(wrapper.text()).not.toContain('กำลังอัปเดตตัวเลขให้เป็นล่าสุด');
+    expect(mocks.createRun).not.toHaveBeenCalled();
+  });
+
+  it('does not ask the server to read again when the figures are fresh', async () => {
+    mocks.exactSnapshot.mockResolvedValue({ ...newSnapshot });
+    mountReport();
+    await flushPromises();
+    expect(mocks.revalidateReport).not.toHaveBeenCalled();
+  });
+
+  it('says plainly that it cannot update now, keeps the old figures, and lets the viewer try again', async () => {
+    mocks.exactSnapshot.mockResolvedValue(staleSnapshot);
+    mocks.revalidateReport.mockResolvedValue({ disposition: 'CIRCUIT_OPEN', snapshot: staleSnapshot, retryAfter: 120, legacyFallback: false });
+    const wrapper = mountReport();
+    await flushPromises();
+    expect(wrapper.text()).toContain('ตอนนี้อัปเดตตัวเลขไม่ได้');
+    expect(wrapper.text()).toContain('100');
+    mocks.revalidateReport.mockResolvedValue({ disposition: 'FRESH_CACHE', snapshot: newSnapshot, retryAfter: 0, legacyFallback: false });
+    await wrapper.findAll('button').find((button) => button.text() === 'ลองอีกครั้ง')!.trigger('click');
+    await flushPromises();
+    expect(mocks.revalidateReport).toHaveBeenCalledTimes(2);
+    expect(wrapper.text()).toContain('200');
+  });
+
+  it('stops following after the time limit and offers a retry instead of waiting forever', async () => {
+    mocks.exactSnapshot.mockResolvedValue(staleSnapshot);
+    mocks.revalidateReport.mockResolvedValue({ disposition: 'STALE_REFRESHING', snapshot: staleSnapshot, run: { ...succeededRun, id: 'run-slow', status: 'RUNNING' }, retryAfter: 0, legacyFallback: false });
+    const wrapper = mountReport();
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    await flushPromises();
+    expect(wrapper.text()).toContain('ตอนนี้อัปเดตตัวเลขไม่ได้');
+    const calls = mocks.revalidateReport.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mocks.revalidateReport.mock.calls.length).toBe(calls);
   });
 });

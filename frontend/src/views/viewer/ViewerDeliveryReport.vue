@@ -61,7 +61,7 @@ watch([tenantId, deliveryId, reportKey], load);
   </AppPageHeader>
 
   <Message v-if="error" severity="error" :closable="false" class="mb-4">{{ error }}</Message>
-  <section v-if="loading" class="card text-center"><ProgressSpinner style="width: 2.5rem; height: 2.5rem" stroke-width="6" /><p class="text-muted-color mb-0">กำลังเปิด Snapshot ที่ใช้ส่ง LINE โดยไม่ดึง SQL ใหม่</p></section>
+  <section v-if="loading" class="card text-center"><ProgressSpinner style="width: 2.5rem; height: 2.5rem" stroke-width="6" /><p class="text-muted-color mb-0">กำลังเปิด Snapshot ที่ใช้ส่ง LINE โดยไม่อัปเดตข้อมูลใหม่</p></section>
 
   <template v-else-if="item && dashboard">
     <section class="card snapshot-context">
@@ -70,7 +70,7 @@ watch([tenantId, deliveryId, reportKey], load);
       <div><span>แหล่งข้อมูล</span><strong>{{ formatSourceCollection(item.summary?.sourceStartedAt, item.summary?.sourceFinishedAt ?? dashboard.generatedAt, item.summary?.sourceConsistency) }}</strong></div>
     </section>
 
-    <Message v-if="item.snapshotStatus === 'DETAIL_EXPIRED'" severity="info" :closable="false" class="mb-4">ภาพรวมยังพร้อมใช้งาน แต่ข้อมูลแถวรายละเอียดหมดอายุแล้ว ระบบจะไม่ดึงข้อมูลจาก SML ใหม่อัตโนมัติ</Message>
+    <Message v-if="item.snapshotStatus === 'DETAIL_EXPIRED'" severity="info" :closable="false" class="mb-4">ภาพรวมยังพร้อมใช้งาน แต่ข้อมูลแถวรายละเอียดหมดอายุแล้ว ระบบจะไม่อัปเดตข้อมูลใหม่อัตโนมัติ</Message>
     <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
       <article v-for="metric in dashboard.kpis" :key="metric.key" class="card delivery-kpi">
         <span class="text-sm text-muted-color">{{ metric.label }}</span>
@@ -82,7 +82,7 @@ watch([tenantId, deliveryId, reportKey], load);
       <article v-for="visualization in peopleVisualizations(dashboard.visualizations)" :key="visualization.key" class="card delivery-chart"><h2>{{ visualization.title }}</h2><ExecutiveChart :visualization="visualization" /></article>
     </div>
   </template>
-  <Message v-else-if="item" severity="warn" :closable="false">Snapshot สรุปของรายงานนี้หมดอายุแล้ว ระบบเก็บประวัติว่ารายงานนี้เคยถูกส่ง แต่จะไม่ดึง SQL ใหม่โดยอัตโนมัติ</Message>
+  <Message v-else-if="item" severity="warn" :closable="false">ข้อมูลสรุปของรายงานนี้หมดอายุแล้ว ระบบเก็บประวัติว่ารายงานนี้เคยถูกส่ง แต่จะไม่อัปเดตข้อมูลใหม่โดยอัตโนมัติ</Message>
 </template>
 
 <style scoped>

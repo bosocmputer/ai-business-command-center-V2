@@ -42,6 +42,7 @@ Long-lived pages that react to route, tenant, report, period, or run changes mus
 - Initial overview/report rendering prefers an authorized snapshot.
 - Fresh snapshots do not trigger SML work.
 - Stale/missing data may expose explicit revalidation or refresh flows.
+- A report page that opens on stale, expired or missing figures asks the server to read them again by itself (`viewerApi.revalidateReport`, decided in `src/utils/reportAutoRefresh.ts`) and follows it every 4 s (15 s in a hidden tab) for at most 4 minutes: fresh figures are swapped in without a button, a running read keeps the old figures with a plain "updating" note, `CIRCUIT_OPEN`/`DISABLED` or a failed or timed-out read show the old figures with "cannot update now" and a retry button. Fresh figures trigger no read. The server owns the guards (refresh policy per shop, one shared read per period, schedule guard, circuit breaker). "อัปเดตตอนนี้" still starts a full run, without a confirm dialog. Viewer-facing text says "ข้อมูล" and "ระบบบัญชีของร้าน", never Snapshot, Cache, SQL or SML (12 Oct 2026).
 - Overview refresh replaces a complete result set atomically; partial output must be labelled and never mixed silently with another period.
 - `runId`, `refreshId`, `snapshotRunId`, and `deliveryId` identify resources but are never authorization tokens.
 - Delivery routes are read-only snapshot flows.

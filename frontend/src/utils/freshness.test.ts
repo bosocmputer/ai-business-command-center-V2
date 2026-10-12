@@ -10,7 +10,7 @@ describe('freshness presentation', () => {
   });
 
   it('maps backend progress phases to honest Thai status', () => {
-    expect(progressPresentation('QUERYING_CURRENT')).toContain('SML');
+    expect(progressPresentation('QUERYING_CURRENT')).toContain('ระบบบัญชี');
     expect(progressPresentation('QUERYING_COMPARISON')).toContain('เปรียบเทียบ');
     expect(progressPresentation('SAVING_RESULT')).toContain('บันทึก');
   });
