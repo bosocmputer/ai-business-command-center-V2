@@ -602,3 +602,18 @@ func TestActingMakesTheCallThePersonsOwnAndLogsItAsTheirs(t *testing.T) {
 		t.Fatalf("nor to change: %v", err)
 	}
 }
+
+func TestEveryReportAnswerCarriesTheShopsDateOfTheMoment(t *testing.T) {
+	period := report.Period{DateFrom: "2026-09-01", DateTo: "2026-09-30"}
+	store := &fakeStore{permitted: []report.Key{report.SalesGoodsServices}}
+	snapshots := &fakeSnapshots{exact: map[string]viewer.DashboardSnapshot{snapshotKey(report.SalesGoodsServices, period): fresh(salesDashboard(period, "150.00"))}}
+	ready, err := newService(store, snapshots).Report(context.Background(), principal, "sales_goods_services", "2026-09-01", "2026-09-30")
+	if err != nil || ready.Today != "2026-10-01" {
+		t.Fatalf("a ready answer must say today: %q %v", ready.Today, err)
+	}
+	// Preparing answers carry it too: it is exactly then that the assistant is tempted to answer from an earlier day.
+	preparing, err := newService(&fakeStore{permitted: []report.Key{report.SalesGoodsServices}}, &fakeSnapshots{revalidation: viewer.ReportRevalidation{Disposition: viewer.RevalidationMissingRefreshing}}).Report(context.Background(), principal, "sales_goods_services", "2026-09-01", "2026-09-30")
+	if err != nil || preparing.Status != "PREPARING" || preparing.Today != "2026-10-01" {
+		t.Fatalf("a preparing answer must say today: %+v %v", preparing, err)
+	}
+}

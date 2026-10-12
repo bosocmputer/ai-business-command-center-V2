@@ -208,6 +208,9 @@ type Visualization struct {
 // ReportResponse is READY with numbers, PREPARING while a fetch is under way, or UNAVAILABLE. The period is
 // always the one actually used, and collectedAt is when SML was read, never "now".
 type ReportResponse struct {
+	// Today is the shop's date at the moment of the answer. A conversation can stay open across days, so the date the assistant learned in an
+	// earlier answer is not to be trusted; this one is.
+	Today             string          `json:"today,omitempty"`
 	ReportKey         report.Key      `json:"reportKey"`
 	Label             string          `json:"label"`
 	Status            string          `json:"status"`
@@ -230,6 +233,7 @@ type CompareSide struct {
 }
 
 type CompareResponse struct {
+	Today             string       `json:"today,omitempty"`
 	ReportKey         report.Key   `json:"reportKey"`
 	Label             string       `json:"label"`
 	Status            string       `json:"status"`
@@ -320,7 +324,7 @@ func (service *Service) Compare(ctx context.Context, principal Principal, rawKey
 		service.record(ctx, principal, ToolCompare, string(definition.Key), report.Period{}, OutcomeInvalidPeriod, started, nil)
 		return CompareResponse{}, ErrInvalidPeriod
 	}
-	response := CompareResponse{ReportKey: definition.Key, Label: definition.LabelTH, Metric: metric}
+	response := CompareResponse{Today: shopToday(principal, now), ReportKey: definition.Key, Label: definition.LabelTH, Metric: metric}
 	if !compareSupported(definition) {
 		response.Status, response.Message = "UNAVAILABLE", "รายงานนี้เทียบสองช่วงเวลาไม่ได้"
 		service.record(ctx, principal, ToolCompare, string(definition.Key), periodA, OutcomeUnavailable, started, nil)
@@ -381,7 +385,7 @@ func (service *Service) LatestDelivery(ctx context.Context, principal Principal,
 		return ReportResponse{}, err
 	}
 	location := locationOf(principal)
-	response := ReportResponse{ReportKey: definition.Key, Label: definition.LabelTH, Status: "READY", Freshness: "DELIVERED", DeliveredAt: delivered.DeliveredAt.In(location).Format(time.RFC3339)}
+	response := ReportResponse{Today: shopToday(principal, service.now().UTC()), ReportKey: definition.Key, Label: definition.LabelTH, Status: "READY", Freshness: "DELIVERED", DeliveredAt: delivered.DeliveredAt.In(location).Format(time.RFC3339)}
 	if delivered.CollectedAt != nil {
 		response.CollectedAt = delivered.CollectedAt.In(location).Format(time.RFC3339)
 	}
@@ -586,7 +590,7 @@ func (service *Service) waitForFresh(ctx context.Context, principal Principal, d
 }
 
 func (service *Service) reportResponse(principal Principal, definition report.Definition, period report.Period, snapshot snapshotResult) ReportResponse {
-	response := ReportResponse{ReportKey: definition.Key, Label: definition.LabelTH, Status: snapshot.state.status(), Message: snapshot.message(), RetryAfterSeconds: snapshot.retryAfter}
+	response := ReportResponse{Today: shopToday(principal, service.now().UTC()), ReportKey: definition.Key, Label: definition.LabelTH, Status: snapshot.state.status(), Message: snapshot.message(), RetryAfterSeconds: snapshot.retryAfter}
 	if snapshot.state != stateReady {
 		response.Period = &PeriodView{DateFrom: period.DateFrom, DateTo: period.DateTo, Mode: string(definition.ParameterKind)}
 		return response
@@ -779,4 +783,9 @@ func compareWarnings(a, b report.Period, location *time.Location, now time.Time)
 		warnings = append(warnings, "สองช่วงทับซ้อนกัน")
 	}
 	return warnings
+}
+
+// shopToday is the date in the shop's time zone at a moment.
+func shopToday(principal Principal, at time.Time) string {
+	return at.In(locationOf(principal)).Format("2006-01-02")
 }
