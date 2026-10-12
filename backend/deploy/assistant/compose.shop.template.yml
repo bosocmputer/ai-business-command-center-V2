@@ -1,0 +1,125 @@
+# Template of one more shop's assistant. add-shop.sh fills __INST__ (a short name such as shop2) and __IMAGE__ (the image line of
+# compose.assistant.yml) and writes compose.assistant-__INST__.yml next to it; do not edit the generated file by hand.
+#
+# What is different from the first shop's assistant in compose.assistant.yml:
+#  - its own internal network (agent-__INST__) with only api and this assistant on it, so two shops' assistants can never reach each other;
+#  - its own egress proxy, volume and secrets file (secrets/assistant/hermes-__INST__.env: AIBCC_TOKEN and API_SERVER_KEY only);
+#  - it always takes its model and secrets from AI-BCC (ASSISTANT_CONFIG_PULL on): there is no old way to fall back to.
+# The gate in AI-BCC reaches it at http://assistant-__INST__:8646 (set "assistant-__INST__" as the shop's assistant host in the admin page).
+services:
+  api:
+    networks: [internal, agent-__INST__]
+
+  assistant-__INST__-state-init:
+    image: __IMAGE__
+    user: "0:0"
+    entrypoint: ["sh", "-ceu", "chmod 0700 /opt/data && chown 10000:10000 /opt/data"]
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    volumes:
+      - assistant_data___INST__:/opt/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    network_mode: none
+
+  assistant-__INST__-egress:
+    image: __IMAGE__
+    user: "10000:10000"
+    entrypoint: ["/opt/hermes/.venv/bin/python", "/assistant/egress_proxy.py", "3128"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      EGRESS_ALLOW: ${ASSISTANT_EGRESS_ALLOW:-openrouter.ai}
+    restart: unless-stopped
+    volumes:
+      - ./assistant:/assistant:ro
+    mem_limit: 128m
+    pids_limit: 64
+    init: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks: [agent-__INST__, egress-__INST__]
+
+  assistant-__INST__:
+    image: __IMAGE__
+    user: "10000:10000"
+    entrypoint: ["/bin/sh", "/assistant/entrypoint.sh"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    env_file: ./secrets/assistant/hermes-__INST__.env
+    environment:
+      HERMES_HOME: /opt/data
+      HOME: /opt/data
+      AIBCC_URL: http://api:8080
+      WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-serper}
+      WEB_SEARCH_FALLBACK_PROVIDER: ${WEB_SEARCH_FALLBACK_PROVIDER:-serpapi}
+      WEB_SEARCH_DAILY_CAP: ${WEB_SEARCH_DAILY_CAP:-80}
+      LINE_PENDING_TEXT: "กำลังเตรียมคำตอบอยู่ครับ แตะปุ่มด้านล่างเมื่อพร้อมรับ"
+      LINE_BUTTON_LABEL: "รับคำตอบ"
+      LINE_DELIVERED_TEXT: "ส่งคำตอบให้แล้วครับ ✅"
+      LINE_INTERRUPTED_TEXT: "งานถูกหยุดก่อนเสร็จ ลองถามใหม่อีกครั้งครับ"
+      LINE_EXPIRED_TEXT: "คำขอนี้หมดอายุแล้ว ถามใหม่อีกครั้งครับ"
+      ASSISTANT_CONFIG_PULL: "on"
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: "8642"
+      HTTPS_PROXY: http://assistant-__INST__-egress:3128
+      HTTP_PROXY: http://assistant-__INST__-egress:3128
+      NO_PROXY: api,localhost,127.0.0.1
+      RETENTION_HOURS: ${ASSISTANT_RETENTION_HOURS:-24}
+      LOG_RETENTION_DAYS: ${ASSISTANT_LOG_RETENTION_DAYS:-7}
+      MAINTENANCE_HOUR_UTC: ${ASSISTANT_MAINTENANCE_HOUR_UTC:-21}
+      MEMORY_GUARD_TICKS: ${ASSISTANT_MEMORY_GUARD_TICKS:-20}
+      PREWARM_FROM_MINUTE: ${ASSISTANT_PREWARM_FROM_MINUTE:-30}
+    volumes:
+      - assistant_data___INST__:/opt/data
+      - ./assistant:/assistant:ro
+    tmpfs:
+      - /tmp:size=64m
+    depends_on:
+      assistant-__INST__-state-init:
+        condition: service_completed_successfully
+      assistant-__INST__-egress:
+        condition: service_started
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/opt/hermes/.venv/bin/python", "/assistant/healthcheck.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
+    init: true
+    mem_limit: 1g
+    cpus: 1
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks: [agent-__INST__]
+
+networks:
+  agent-__INST__:
+    driver: bridge
+    internal: true
+  egress-__INST__:
+    driver: bridge
+
+volumes:
+  assistant_data___INST__:

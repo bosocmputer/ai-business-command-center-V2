@@ -333,3 +333,24 @@ The model, the shop's OpenRouter key and its Telegram and LINE secrets can be ke
 - **Models** are a fixed list in code (`internal/assistantcfg/catalog.go`), each with providers pinned to hosts OpenRouter lists as not keeping
   data. A test-only model can be chosen only for a shop marked as a test shop. `model-probe.sh` puts one measurable question to a model on a
   throwaway assistant; it is not a safety check.
+
+## More than one shop (12 Oct 2026)
+
+Each shop's assistant is its own set of containers, so two shops' assistants cannot reach each other and share no volume, key or token.
+`./assistant/add-shop.sh shop2` (run from `backend/deploy` on the server) writes `assistant/compose.assistant-shop2.yml` from
+`compose.shop.template.yml` (an assistant, its egress proxy and a state-init container on their own networks `agent-shop2` and
+`egress-shop2`, volume `assistant_data_shop2`), creates `secrets/assistant/hermes-shop2.env` (mode 0600, holds `AIBCC_TOKEN` and
+`API_SERVER_KEY` only) with a random `API_SERVER_KEY`, and starts nothing. Start the stack with the generated file added to `COMPOSE_FILE`:
+`compose.local.yml:assistant/compose.assistant.yml:assistant/compose.assistant-shop2.yml`. The generated file is not in git (one per installation); run
+the script again after the image line in `compose.assistant.yml` changes. `test_shop_template.py` fails when the two assistants' settings drift apart.
+
+Per new shop, in this order: issue the shop's assistant token in the admin page, then
+`ASSISTANT_INSTANCE=shop2 ./assistant/set-secret.sh AIBCC_TOKEN` (the same script, the value is typed hidden); in the admin tab "เลขา AI" set the model,
+the OpenRouter key, LINE mode CENTRAL and the assistant host `assistant-shop2`, and switch it on; then `docker compose up -d` the new services. Everything
+else (model, keys, the LINE channel) is pulled from AI-BCC.
+
+LINE allowed people: when AI-BCC runs the front gate and the shop is on the shared channel with an assistant host, the pulled settings carry
+`lineGate: true` and `config_pull.py` exports `LINE_ALLOW_ALL_USERS=true` for that assistant (otherwise it unsets it), so who may write is decided by
+the gate (recipients with the assistant switched on) instead of a list typed on the server. The assistant only accepts webhooks signed with
+the channel secret, which only AI-BCC passes on. The config tag becomes `"v<N>-true-gate"`; turning the gate off changes it again and the assistant restarts without the trust.
+Telegram has no gate, so `TELEGRAM_ALLOWED_USERS` is still a list kept by hand.

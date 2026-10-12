@@ -22,7 +22,8 @@ if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -z "${TELEGRAM_ALLOWED_USERS:-}" ]; the
   unset TELEGRAM_BOT_TOKEN
 fi
 # The same for LINE: a channel without a list of allowed people would let anyone who adds the account ask for the shop's numbers.
-if [ -n "${LINE_CHANNEL_ACCESS_TOKEN:-}" ] && [ -z "${LINE_ALLOWED_USERS:-}" ]; then
+# (With AI-BCC's front gate in front, config_pull.py sets LINE_ALLOW_ALL_USERS: the gate is then the list of allowed people.)
+if [ -n "${LINE_CHANNEL_ACCESS_TOKEN:-}" ] && [ -z "${LINE_ALLOWED_USERS:-}" ] && [ "${LINE_ALLOW_ALL_USERS:-}" != true ]; then
   echo '{"line":"not started: LINE_CHANNEL_ACCESS_TOKEN is set but LINE_ALLOWED_USERS is empty"}'
   unset LINE_CHANNEL_ACCESS_TOKEN LINE_CHANNEL_SECRET
 fi

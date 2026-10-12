@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -410,5 +411,62 @@ func TestTheAssistantHostIsOneInternalNameAndNothingElse(t *testing.T) {
 	view, err = service.Update(context.Background(), actor, "r", shop, UpdateInput{AssistantHost: ptr(""), Version: versionOf(store, shop)})
 	if err != nil || view.AssistantHost != "" {
 		t.Fatalf("the host may be cleared: %+v %v", view, err)
+	}
+}
+
+func TestTheAssistantIsToldTheFrontGateDecidesOnlyForACentralShopWithAHostWhileTheGateIsOn(t *testing.T) {
+	service, store := newService(t)
+	ctx := context.Background()
+	if _, err := service.SetGlobalSecret(ctx, actor, "r", FieldLineSecret, goodLineSecret); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetGlobalSecret(ctx, actor, "r", FieldLineToken, "central-token-0123456789-abcdefghijklmnopqrstuv"); err != nil {
+		t.Fatal(err)
+	}
+	shop := readyShop(t, service)
+	if _, err := service.Update(ctx, actor, "r", shop, UpdateInput{LineMode: ptr(LineCentral), Version: versionOf(store, shop)}); err != nil {
+		t.Fatal(err)
+	}
+	ask := func() AgentConfig {
+		config, err := service.AgentConfig(ctx, shop)
+		if err != nil || !config.Enabled {
+			t.Fatalf("config = %+v err = %v", config, err)
+		}
+		return config
+	}
+	// Gate off, or no host yet: the assistant keeps its own list of people.
+	if ask().LineGate {
+		t.Fatal("the gate is off")
+	}
+	service.ConfigureLineFrontGate(true)
+	if ask().LineGate {
+		t.Fatal("a shop with no assistant host is never passed anything by the gate")
+	}
+	if _, err := service.Update(ctx, actor, "r", shop, UpdateInput{AssistantHost: ptr("assistant"), Version: versionOf(store, shop)}); err != nil {
+		t.Fatal(err)
+	}
+	on := ask()
+	if !on.LineGate || on.ETag() != fmt.Sprintf(`"v%d-true-gate"`, on.ConfigVersion) {
+		t.Fatalf("gate on: %+v tag %s", on.LineGate, on.ETag())
+	}
+	service.ConfigureLineFrontGate(false)
+	off := ask()
+	if off.LineGate || off.ETag() == on.ETag() {
+		t.Fatal("switching the gate off must change the tag so the assistant stops trusting it")
+	}
+	// A shop on its own LINE channel is not reached through the gate.
+	service.ConfigureLineFrontGate(true)
+	own := readyShop(t, service)
+	if _, err := service.SetSecret(ctx, actor, "r", own, FieldLineSecret, "fedcba9876543210fedcba9876543210"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SetSecret(ctx, actor, "r", own, FieldLineToken, "own-token-0123456789-abcdefghijklmnopqrstuvwxyz-0123"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Update(ctx, actor, "r", own, UpdateInput{LineMode: ptr(LineOwn), AssistantHost: ptr("assistant-own"), Version: versionOf(store, own)}); err != nil {
+		t.Fatal(err)
+	}
+	if config, _ := service.AgentConfig(ctx, own); config.LineGate {
+		t.Fatal("a shop with its own channel has no gate in front of it")
 	}
 }

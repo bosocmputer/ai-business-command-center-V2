@@ -16,7 +16,10 @@ case "$MODE" in ""|--add) ;; *) echo "unknown option: $MODE" >&2; exit 2;; esac
 cd "$(dirname "$0")/.."
 umask 077
 mkdir -p secrets/assistant
-FILE=secrets/assistant/hermes.env
+# ASSISTANT_INSTANCE=shop2 keeps the value in the secrets file of that shop's assistant (see add-shop.sh) instead of the first shop's.
+INSTANCE="${ASSISTANT_INSTANCE:-}"
+case "$INSTANCE" in *[!a-z0-9-]*) echo "ASSISTANT_INSTANCE: lower-case letters, digits and dashes only" >&2; exit 2;; esac
+FILE=secrets/assistant/hermes${INSTANCE:+-$INSTANCE}.env
 touch "$FILE"; chmod 600 "$FILE"
 printf '%s: ' "$NAME"; stty -echo 2>/dev/null || true; read -r VALUE; stty echo 2>/dev/null || true; echo
 if [ "$VALUE" = "generate" ] && [ "$NAME" = "API_SERVER_KEY" ]; then VALUE=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'); fi

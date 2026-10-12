@@ -4,3 +4,6 @@
 backend/.env
 frontend/.env
 .runtime/
+
+# Generated per installation by backend/deploy/assistant/add-shop.sh (one file per extra shop assistant)
+backend/deploy/assistant/compose.assistant-*.yml

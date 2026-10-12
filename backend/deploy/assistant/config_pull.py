@@ -97,6 +97,11 @@ def shell_lines(config):
     for key, name in SECRET_ENV.items():
         value = secrets.get(key) if config.get("enabled") else None
         lines.append(f"export {name}={shlex.quote(value)}" if value else f"unset {name}")
+    # Anyone AI-BCC's LINE front gate passes on may write: the gate checks who they are and which shop they chose, and the assistant only
+    # accepts webhooks signed with the channel secret. Without the gate the assistant keeps its own list (LINE_ALLOWED_USERS), so the
+    # variable is always set here or unset, never left over from hermes.env.
+    gate = bool(config.get("enabled") and config.get("lineGate") and secrets.get("lineChannelSecret") and secrets.get("lineChannelAccessToken"))
+    lines.append("export LINE_ALLOW_ALL_USERS=true" if gate else "unset LINE_ALLOW_ALL_USERS")
     return lines
 
 

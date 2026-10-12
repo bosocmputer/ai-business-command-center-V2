@@ -101,13 +101,20 @@ type Store interface {
 }
 
 type Service struct {
-	store Store
-	box   *secret.Box
-	now   func() time.Time
+	store     Store
+	box       *secret.Box
+	now       func() time.Time
+	frontGate bool
 }
 
 func NewService(store Store, box *secret.Box, now func() time.Time) *Service {
 	return &Service{store: store, box: box, now: now}
+}
+
+// ConfigureLineFrontGate tells the service the LINE front gate is on, so a shop on the shared channel with an assistant host is told so.
+func (service *Service) ConfigureLineFrontGate(enabled bool) *Service {
+	service.frontGate = enabled
+	return service
 }
 
 // ---- views -----------------------------------------------------------------
@@ -418,17 +425,24 @@ type AgentSecrets struct {
 // AgentConfig is the answer to the assistant's pull. When the assistant must not run (switched off, past the shop's end date, no key,
 // a secret that cannot be read) it says so and carries no model and no secret.
 type AgentConfig struct {
-	ConfigVersion int64         `json:"configVersion"`
-	Enabled       bool          `json:"enabled"`
-	Reason        string        `json:"reason,omitempty"`
-	ShopName      string        `json:"shopName,omitempty"`
-	Model         *AgentModel   `json:"model,omitempty"`
-	LineMode      string        `json:"lineMode,omitempty"`
-	Secrets       *AgentSecrets `json:"secrets,omitempty"`
+	ConfigVersion int64       `json:"configVersion"`
+	Enabled       bool        `json:"enabled"`
+	Reason        string      `json:"reason,omitempty"`
+	ShopName      string      `json:"shopName,omitempty"`
+	Model         *AgentModel `json:"model,omitempty"`
+	LineMode      string      `json:"lineMode,omitempty"`
+	// LineGate says AI-BCC's LINE front gate decides who may write to this assistant on the shared channel. Only then may the
+	// assistant accept every LINE sender it is passed; without it the assistant keeps its own list of allowed people.
+	LineGate bool          `json:"lineGate,omitempty"`
+	Secrets  *AgentSecrets `json:"secrets,omitempty"`
 }
 
-// ETag changes when the version changes and when the shop turns from usable to unusable by the passing of its end date.
+// ETag changes when the version changes, when the shop turns from usable to unusable by the passing of its end date, and when the front
+// gate is switched on or off (the assistant then restarts and stops, or starts, trusting the gate).
 func (config AgentConfig) ETag() string {
+	if config.LineGate {
+		return fmt.Sprintf(`"v%d-%t-gate"`, config.ConfigVersion, config.Enabled)
+	}
 	return fmt.Sprintf(`"v%d-%t"`, config.ConfigVersion, config.Enabled)
 }
 
@@ -500,6 +514,7 @@ func (service *Service) AgentConfig(ctx context.Context, tenantID uuid.UUID) (Ag
 		return config, nil
 	}
 	config.Enabled, config.ShopName, config.LineMode, config.Secrets = true, gate.Name, stored.LineMode, secrets
+	config.LineGate = service.frontGate && stored.LineMode == LineCentral && stored.AssistantHost != ""
 	config.Model = &AgentModel{Key: model.Key, ModelID: model.ModelID, Providers: append([]string(nil), model.Providers...), DataCollectionDeny: model.DataCollectionDeny}
 	return config, nil
 }

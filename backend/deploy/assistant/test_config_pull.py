@@ -63,9 +63,21 @@ class PullTests(unittest.TestCase):
         code, out, post = self.run_start((200, '"v8-false"', off))
         self.assertEqual(code, 0)
         self.assertNotIn("export", out)
-        self.assertEqual(out.count("unset"), 4)
+        self.assertEqual(out.count("unset"), 5)
+        self.assertIn("unset LINE_ALLOW_ALL_USERS", out)
         self.assertEqual(open(os.path.join(self.dir, "config.yaml")).read(), TEMPLATE)
         post.assert_called_once()
+
+    def test_the_front_gate_is_trusted_only_when_ai_bcc_says_so_and_a_line_channel_is_there(self):
+        line = {"lineChannelSecret": "0123456789abcdef0123456789abcdef", "lineChannelAccessToken": "t" * 40}
+        gated = dict(ENABLED, lineMode="CENTRAL", lineGate=True, secrets=dict(ENABLED["secrets"], **line))
+        self.assertIn("export LINE_ALLOW_ALL_USERS=true", self.run_start((200, '"v7-true-gate"', gated))[1])
+        # no gate flag: whatever hermes.env says is cleared, the assistant keeps its own list
+        self.assertIn("unset LINE_ALLOW_ALL_USERS", self.run_start((200, '"v7-true"', dict(gated, lineGate=False)))[1])
+        # a gate flag but no LINE channel to trust
+        self.assertIn("unset LINE_ALLOW_ALL_USERS", self.run_start((200, '"v7-true-gate"', dict(ENABLED, lineGate=True)))[1])
+        # a shop that must not run never trusts anything
+        self.assertIn("unset LINE_ALLOW_ALL_USERS", self.run_start((200, '"v8-false"', {"configVersion": 8, "enabled": False, "lineGate": True}))[1])
 
     def test_a_test_model_has_no_provider_pin_and_allows_collection(self):
         free = dict(ENABLED, model={"key": "openrouter-free", "modelId": "openrouter/free", "providers": [], "dataCollectionDeny": False})
