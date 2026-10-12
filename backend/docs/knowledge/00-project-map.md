@@ -1,6 +1,6 @@
 ---
 status: current
-last_verified: 2026-10-08
+last_verified: 2026-10-13
 source_of_truth: [cmd/api/main.go, cmd/worker/main.go, cmd/sentinel/main.go, api/openapi.yaml, internal/report/catalog.go]
 tags: [nextstep, backend, project-map]
 ---
@@ -19,6 +19,7 @@ Nextstep Dashboard Backend is the authorization and business-data boundary for a
 | Auth, SML safety, retention, release | [Security and operations](04-security-operations.md) | auth/SML/retention source and `deploy/RUNBOOK.md` |
 | Production incidents, Telegram, host/backup probes | [Security and operations](04-security-operations.md) | `internal/sentinel/`, Sentinel store, deploy scripts |
 | Owner assistant: Agent API, alerts, drafts, search, live lookups | [Security and operations](04-security-operations.md), [Agent API ADR](adr/0001-agent-api.md) | `internal/agent/`, `internal/alert/`, `internal/master/`, `internal/lookup/`, `deploy/assistant/` |
+| Shared LINE channel: front gate, shop choice, per-person permissions, slow answers, per-shop assistant settings, creating a shop's assistant from the admin page | [Security and operations](04-security-operations.md), `deploy/assistant/README.md` | `internal/linegate/`, `internal/assistantcfg/`, `internal/provision/`, `cmd/provision`, `deploy/provision.sh`, `deploy/assistant/actor.py` |
 | Opening a new shop | [New-shop onboarding](05-new-shop-onboarding.md) | `cmd/onboarding-check`, `internal/onboarding/` |
 | Going past three shops: cost brake, evidence, Hermes updates | [Multi-shop conditions](06-multi-shop-conditions.md) | `cmd/evidence`, `deploy/assistant/upgrade-check.sh` |
 | User-facing behavior | Frontend knowledge vault | `../nextstep-dashboard-frontend/docs/knowledge/00-project-map.md` |
