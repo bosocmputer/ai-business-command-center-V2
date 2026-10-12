@@ -77,6 +77,9 @@ type fakeSnapshots struct {
 	exact        map[string]viewer.DashboardSnapshot // key: reportKey|from|to
 	revalidation viewer.ReportRevalidation
 	revalidated  int
+	gets         int
+	// afterGet, when set, runs after every look at a stored snapshot (a test uses it to let the refresh "finish").
+	afterGet func(gets int)
 }
 
 func snapshotKey(key report.Key, period report.Period) string {
@@ -84,7 +87,12 @@ func snapshotKey(key report.Key, period report.Period) string {
 }
 
 func (snapshots *fakeSnapshots) GetExactSnapshotForPeriod(_ context.Context, _ uuid.UUID, key report.Key, period report.Period, _ time.Time) (viewer.DashboardSnapshot, error) {
-	if snapshot, ok := snapshots.exact[snapshotKey(key, period)]; ok {
+	snapshots.gets++
+	snapshot, ok := snapshots.exact[snapshotKey(key, period)]
+	if snapshots.afterGet != nil {
+		defer snapshots.afterGet(snapshots.gets)
+	}
+	if ok {
 		return snapshot, nil
 	}
 	return viewer.DashboardSnapshot{}, report.ErrRunNotFound
@@ -481,4 +489,71 @@ func TestContextShowsTheMonthlyBudgetOnlyWhenThereIsOne(t *testing.T) {
 	if plain.Limits.MonthlyBudget != 0 || plain.Limits.CallsThisMonth != 0 {
 		t.Errorf("no budget, nothing shown: %+v", plain.Limits)
 	}
+}
+
+func newServiceWith(store *fakeStore, snapshots *fakeSnapshots, config Config) *Service {
+	service := newService(store, snapshots)
+	service.config = config.withDefaults()
+	return service
+}
+
+func staleSales(period report.Period, total string) (viewer.DashboardSnapshot, *fakeStore, *fakeSnapshots) {
+	stale := fresh(salesDashboard(period, total))
+	stale.FreshnessStatus = viewer.FreshnessStale
+	store := &fakeStore{permitted: []report.Key{report.SalesGoodsServices}}
+	snapshots := &fakeSnapshots{
+		exact:        map[string]viewer.DashboardSnapshot{snapshotKey(report.SalesGoodsServices, period): stale},
+		revalidation: viewer.ReportRevalidation{Disposition: viewer.RevalidationStaleRefreshing, Snapshot: &stale},
+	}
+	return stale, store, snapshots
+}
+
+func TestAnswerWaitsForTheRefreshOfOldNumbersAndGivesTheNewOnesWithoutAWarning(t *testing.T) {
+	period := report.Period{DateFrom: "2026-09-01", DateTo: "2026-09-30"}
+	_, store, snapshots := staleSales(period, "150.00")
+	snapshots.afterGet = func(gets int) {
+		if gets == 3 { // the refresh finishes between the third and fourth look
+			snapshots.exact[snapshotKey(report.SalesGoodsServices, period)] = fresh(salesDashboard(period, "200.00"))
+		}
+	}
+	started := time.Now()
+	response, err := newServiceWith(store, snapshots, Config{StaleWait: 2 * time.Second, StalePoll: 5 * time.Millisecond}).Report(context.Background(), principal, "sales_goods_services", "2026-09-01", "2026-09-30")
+	if err != nil || response.Status != "READY" || response.Freshness != "FRESH" || response.KPIs[0].Value != "200.00" {
+		t.Fatalf("response = %+v, %v", response, err)
+	}
+	if strings.Contains(strings.Join(response.Warnings, "|"), MessageStale) || time.Since(started) > time.Second {
+		t.Fatalf("no stale warning, and no waiting beyond the refresh: %v after %v", response.Warnings, time.Since(started))
+	}
+}
+
+func TestAnswerGivesTheOldNumbersWithTheWarningWhenTheRefreshIsTooSlow(t *testing.T) {
+	period := report.Period{DateFrom: "2026-09-01", DateTo: "2026-09-30"}
+	_, store, snapshots := staleSales(period, "150.00")
+	started := time.Now()
+	response, err := newServiceWith(store, snapshots, Config{StaleWait: 60 * time.Millisecond, StalePoll: 5 * time.Millisecond}).Report(context.Background(), principal, "sales_goods_services", "2026-09-01", "2026-09-30")
+	if err != nil || response.Freshness != "STALE" || response.KPIs[0].Value != "150.00" || !strings.Contains(strings.Join(response.Warnings, "|"), MessageStale) {
+		t.Fatalf("response = %+v, %v", response, err)
+	}
+	if took := time.Since(started); took < 50*time.Millisecond || took > time.Second {
+		t.Fatalf("it should wait about the budget, not less and not much more: %v", took)
+	}
+}
+
+func TestNoWaitHappensWhenItIsSwitchedOffOrTheRequestIsCancelled(t *testing.T) {
+	period := report.Period{DateFrom: "2026-09-01", DateTo: "2026-09-30"}
+	_, store, snapshots := staleSales(period, "150.00")
+	started := time.Now()
+	response, err := newServiceWith(store, snapshots, Config{StaleWait: 0}).Report(context.Background(), principal, "sales_goods_services", "2026-09-01", "2026-09-30")
+	if err != nil || response.Freshness != "STALE" || time.Since(started) > 200*time.Millisecond || snapshots.gets != 1 {
+		t.Fatalf("response = %+v, %v after %v, looks %d", response, err, time.Since(started), snapshots.gets)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	started = time.Now()
+	response, err = newServiceWith(store, snapshots, Config{StaleWait: 5 * time.Second}).Report(ctx, principal, "sales_goods_services", "2026-09-01", "2026-09-30")
+	if time.Since(started) > time.Second {
+		t.Fatalf("a cancelled request must not wait: %v", time.Since(started))
+	}
+	_ = response
+	_ = err
 }

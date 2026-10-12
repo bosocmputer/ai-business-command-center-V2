@@ -45,7 +45,7 @@ def call(path, query=None, method="GET", body=None):
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=28) as response:  # AI-BCC may hold a question up to 25 s for the refresh of old numbers
             return response.read().decode("utf-8")
     except urllib.error.HTTPError as error:
         # AI-BCC answers a missing and a forbidden report with the same bytes; pass its answer on untouched.

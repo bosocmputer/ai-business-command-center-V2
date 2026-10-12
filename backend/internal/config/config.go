@@ -65,6 +65,8 @@ type Config struct {
 	// never reached (1,000,000) removes it. They protect a shop's own SML from being asked too often, and the model bill from a loop.
 	AgentCallsPerHour     int
 	AgentRefreshesPerHour int
+	// AgentStaleWaitSeconds is how long a question waits for numbers past their time to be read again before answering with the old ones (0 = do not wait).
+	AgentStaleWaitSeconds int
 	AgentLookupsPerHour   int
 	// AgentMonthlyCallBudget caps the assistant calls a shop may make in a calendar month (0 = no cap). It is the cost brake.
 	AgentMonthlyCallBudget  int
@@ -257,6 +259,10 @@ func Load(lookup LookupFunc) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	agentStaleWait, err := intValue(lookup, "AGENT_STALE_WAIT_SECONDS", 15, 0, 25)
+	if err != nil {
+		return Config{}, err
+	}
 	agentLookupsPerHour, err := intValue(lookup, "AGENT_LOOKUPS_PER_HOUR", 30, 1, 1_000_000)
 	if err != nil {
 		return Config{}, err
@@ -394,6 +400,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		AgentLiveLookupsEnabled:      liveLookupsEnabled,
 		AgentCallsPerHour:            agentCallsPerHour,
 		AgentRefreshesPerHour:        agentRefreshesPerHour,
+		AgentStaleWaitSeconds:        agentStaleWait,
 		AgentLookupsPerHour:          agentLookupsPerHour,
 		AgentMonthlyCallBudget:       agentMonthlyCallBudget,
 		MasterSyncStartMinute:        masterSyncStartMinute,

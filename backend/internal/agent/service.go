@@ -30,6 +30,11 @@ type Config struct {
 	// MonthlyCallBudget is the most counted calls a shop's assistant may make in a month of the shop's calendar. 0 means no
 	// budget. Calls are the measure AI-BCC can see; each question costs a few of them, and the model's own cost follows it.
 	MonthlyCallBudget int
+	// StaleWait is how long a question waits for the refresh of numbers that are past their time before it answers with the old ones. Most
+	// reports are read again from the shop's system in a few seconds, so the owner gets the new numbers instead of a warning. 0 means do not
+	// wait (answer at once with the old numbers and the warning). StalePoll is how often the wait looks (1 second when 0).
+	StaleWait time.Duration
+	StalePoll time.Duration
 }
 
 func (config Config) withDefaults() Config {
@@ -41,6 +46,12 @@ func (config Config) withDefaults() Config {
 	}
 	if config.TokenTTL <= 0 {
 		config.TokenTTL = 90 * 24 * time.Hour
+	}
+	if config.StaleWait < 0 {
+		config.StaleWait = 0
+	}
+	if config.StalePoll <= 0 {
+		config.StalePoll = time.Second
 	}
 	return config
 }
@@ -290,6 +301,9 @@ func (service *Service) Compare(ctx context.Context, principal Principal, rawKey
 		service.record(ctx, principal, ToolCompare, string(definition.Key), periodA, OutcomeUnavailable, started, nil)
 		return response, nil
 	}
+	if service.config.StaleWait > 0 {
+		ctx = withFreshDeadline(ctx, time.Now().Add(service.config.StaleWait)) // the two periods share one wait
+	}
 	snapshotA := service.snapshot(ctx, principal, definition, periodA, now)
 	snapshotB := service.snapshot(ctx, principal, definition, periodB, now)
 	for _, snapshot := range []snapshotResult{snapshotA, snapshotB} {
@@ -500,11 +514,50 @@ func (service *Service) snapshot(ctx context.Context, principal Principal, defin
 		}
 	case viewer.RevalidationMissingRefreshing, viewer.RevalidationStaleRefreshing, viewer.RevalidationJoined:
 		if revalidation.Snapshot != nil && revalidation.Snapshot.FreshnessStatus != viewer.FreshnessExpired {
+			if fresh, ok := service.waitForFresh(ctx, principal, definition, period); ok {
+				return fresh
+			}
 			return snapshotResult{state: stateReady, snapshot: *revalidation.Snapshot, stale: true, retryAfter: retry}
 		}
 		return snapshotResult{state: statePreparing, retryAfter: retry}
 	}
 	return fallback(retry)
+}
+
+type freshDeadlineKey struct{}
+
+// withFreshDeadline limits how long the waits for fresh numbers of one request may take together (a comparison reads two periods).
+func withFreshDeadline(ctx context.Context, deadline time.Time) context.Context {
+	return context.WithValue(ctx, freshDeadlineKey{}, deadline)
+}
+
+// waitForFresh looks every StalePoll for the refreshed numbers of a period while the refresh that was just started runs, until StaleWait is used up
+// (or the request's own deadline). It answers false when they did not come in time, and then the caller answers with the old ones.
+func (service *Service) waitForFresh(ctx context.Context, principal Principal, definition report.Definition, period report.Period) (snapshotResult, bool) {
+	if service.config.StaleWait <= 0 {
+		return snapshotResult{}, false
+	}
+	deadline := time.Now().Add(service.config.StaleWait)
+	if limit, ok := ctx.Value(freshDeadlineKey{}).(time.Time); ok && limit.Before(deadline) {
+		deadline = limit
+	}
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return snapshotResult{}, false
+		}
+		timer := time.NewTimer(min(service.config.StalePoll, remaining))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return snapshotResult{}, false
+		case <-timer.C:
+		}
+		snapshot, err := service.snapshots.GetExactSnapshotForPeriod(ctx, principal.TenantID, definition.Key, period, service.now())
+		if err == nil && snapshot.FreshnessStatus == viewer.FreshnessFresh {
+			return snapshotResult{state: stateReady, snapshot: snapshot}, true
+		}
+	}
 }
 
 func (service *Service) reportResponse(principal Principal, definition report.Definition, period report.Period, snapshot snapshotResult) ReportResponse {
