@@ -367,3 +367,15 @@ func TestAShopNameThatStartsWithRanIsNotGivenASecondOne(t *testing.T) {
 		t.Fatalf("labels: %q %q", shopLabel("ร้านกระบี่ demo"), shopLabel("สินทวีคอนกรีต"))
 	}
 }
+
+func TestACommandIsPassedOnWithoutTheShopPrefix(t *testing.T) {
+	shops := shopsOf("A", "B")
+	store := &fakeStore{recipient: uuid.New(), shops: shops, selected: map[uuid.UUID]uuid.UUID{}}
+	store.selected[store.recipient] = shops[1].TenantID
+	forwarder := &fakeForwarder{}
+	gate, _ := newGate(store, forwarder)
+	gate.Process(context.Background(), []byte(textEvent("Umany", "/new")))
+	if len(forwarder.sent) != 1 || forwarder.sent[0].host != shops[1].Host || forwardedText(t, forwarder.sent[0]) != "/new" {
+		t.Fatalf("sent=%+v", forwarder.sent)
+	}
+}

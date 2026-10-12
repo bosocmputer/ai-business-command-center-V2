@@ -171,7 +171,8 @@ func (gate *Gate) handle(ctx context.Context, destination string, raw json.RawMe
 		}
 	}
 	forwarded := raw
-	if isMessage && event.Message.Type == "text" && len(shops) > 1 {
+	// A message that starts with "/" is a command to the assistant ("/new"); a prefix in front of it would make it an ordinary question.
+	if isMessage && event.Message.Type == "text" && len(shops) > 1 && !strings.HasPrefix(strings.TrimSpace(event.Message.Text), "/") {
 		forwarded = withShopPrefix(raw, target.Name)
 	}
 	done := gate.showLoading(ctx, event)
