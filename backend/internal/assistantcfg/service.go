@@ -16,6 +16,8 @@ var (
 	ErrNotConfigured   = errors.New("assistant settings are not configured")
 	ErrVersionConflict = errors.New("assistant settings version conflict")
 	ErrTenantNotFound  = errors.New("shop not found")
+	// ErrHostInUse is returned by the store when another shop already has this assistant host.
+	ErrHostInUse = errors.New("assistant host is used by another shop")
 )
 
 // ValidationError names the field and a stable code. It never carries the value that was refused.
@@ -289,6 +291,9 @@ func (service *Service) Update(ctx context.Context, actorHash []byte, requestID 
 		}
 	}
 	stored, err := service.store.Patch(ctx, actorHash, requestID, tenantID, Patch{Enabled: &next.Enabled, IsTest: &next.IsTest, ModelKey: &next.ModelKey, LineMode: &next.LineMode, AssistantHost: &next.AssistantHost}, input.Version, service.now().UTC())
+	if errors.Is(err, ErrHostInUse) {
+		return AdminView{}, &ValidationError{Field: "assistantHost", Code: "HOST_IN_USE"}
+	}
 	if err != nil {
 		return AdminView{}, err
 	}

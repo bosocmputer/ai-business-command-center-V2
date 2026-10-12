@@ -48,6 +48,13 @@ func (store *fakeStore) Patch(_ context.Context, _ []byte, _ string, id uuid.UUI
 	if (existing == nil && expected != 0) || (existing != nil && existing.Version != expected) {
 		return Stored{}, ErrVersionConflict
 	}
+	if *patch.AssistantHost != "" {
+		for other, stored := range store.rows {
+			if other != id && stored.AssistantHost == *patch.AssistantHost {
+				return Stored{}, ErrHostInUse
+			}
+		}
+	}
 	row := store.row(id)
 	if existing != nil {
 		row.Version++
@@ -468,5 +475,22 @@ func TestTheAssistantIsToldTheFrontGateDecidesOnlyForACentralShopWithAHostWhileT
 	}
 	if config, _ := service.AgentConfig(ctx, own); config.LineGate {
 		t.Fatal("a shop with its own channel has no gate in front of it")
+	}
+}
+
+func TestTwoShopsCannotShareAnAssistantHost(t *testing.T) {
+	service, store := newService(t)
+	first, second := uuid.New(), uuid.New()
+	if _, err := service.Update(context.Background(), actor, "r", first, UpdateInput{AssistantHost: ptr("assistant"), Version: 0}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := service.Update(context.Background(), actor, "r", second, UpdateInput{AssistantHost: ptr("assistant"), Version: 0})
+	assertCode(t, err, "HOST_IN_USE")
+	if _, err := service.Update(context.Background(), actor, "r", second, UpdateInput{AssistantHost: ptr("assistant-second"), Version: 0}); err != nil {
+		t.Fatalf("a different host is fine: %v", err)
+	}
+	// the same shop may save its own host again, and a shop may leave the host empty like others
+	if _, err := service.Update(context.Background(), actor, "r", first, UpdateInput{AssistantHost: ptr("assistant"), Version: versionOf(store, first)}); err != nil {
+		t.Fatalf("saving its own host again: %v", err)
 	}
 }

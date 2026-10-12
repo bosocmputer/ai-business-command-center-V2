@@ -11,6 +11,7 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/secret"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -90,6 +91,10 @@ func (store *AssistantSettingsStore) Patch(ctx context.Context, actorHash []byte
 			update tenant_assistant_settings
 			set enabled = $2, is_test = $3, model_key = $4, line_mode = $5, assistant_host = $7, version = version + 1, config_version = config_version + 1, updated_at = $6
 			where tenant_id = $1`, tenantID, *patch.Enabled, *patch.IsTest, *patch.ModelKey, *patch.LineMode, now, *patch.AssistantHost)
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "tenant_assistant_settings_assistant_host_uidx" {
+		return assistantcfg.Stored{}, assistantcfg.ErrHostInUse
 	}
 	if err != nil {
 		return assistantcfg.Stored{}, fmt.Errorf("write assistant settings: %w", err)

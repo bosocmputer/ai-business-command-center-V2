@@ -2,10 +2,13 @@ package database
 
 import (
 	"context"
+	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/assistantcfg"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -37,6 +40,9 @@ func TestLineGateStoreListsOnlyShopsThePersonMayAskAboutAndKeepsTheirChoice(t *t
 	// shop(...) makes a shop with the given state; each flag is one reason the shop must not be offered.
 	shop := func(name, status string, endsAt time.Time, membership string, chat, enabled bool, mode, host string) uuid.UUID {
 		id := uuid.New()
+		if host != "" {
+			host += "-" + id.String()[:8] // a database used again must not already hold this host
+		}
 		exec(`insert into tenants (id, slug, name, timezone, status, access_ends_at) values ($1, $2, $3, 'Asia/Bangkok', $4, $5)`, id, "gate-"+id.String()[:8], name, status, endsAt)
 		exec(`insert into tenant_memberships (tenant_id, recipient_id, status, ai_chat_enabled) values ($1, $2, $3, $4)`, id, person, membership, chat)
 		exec(`insert into tenant_assistant_settings (tenant_id, enabled, is_test, model_key, line_mode, assistant_host) values ($1, $2, true, 'google/gemini-3.1-flash-lite', $3, $4)`, id, enabled, mode, host)
@@ -55,7 +61,7 @@ func TestLineGateStoreListsOnlyShopsThePersonMayAskAboutAndKeepsTheirChoice(t *t
 
 	store := NewLineGateStore(pool)
 	gotPerson, shops, err := store.Shops(ctx, lineHash, now)
-	if err != nil || gotPerson != person || len(shops) != 2 || shops[0].TenantID != good1 || shops[1].TenantID != good2 || shops[1].Host != "assistant-b" {
+	if err != nil || gotPerson != person || len(shops) != 2 || shops[0].TenantID != good1 || shops[1].TenantID != good2 || !strings.HasPrefix(shops[1].Host, "assistant-b-") {
 		t.Fatalf("person=%v shops=%+v err=%v", gotPerson, shops, err)
 	}
 	if _, none, err := store.Shops(ctx, []byte("someone-else"), now); err != nil || len(none) != 0 {
@@ -75,3 +81,49 @@ func TestLineGateStoreListsOnlyShopsThePersonMayAskAboutAndKeepsTheirChoice(t *t
 		t.Fatalf("the latest choice must win: %v %v %v", chosen, found, err)
 	}
 }
+
+func TestTwoShopsCannotHoldTheSameAssistantHostInTheDatabase(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 12, 5, 0, 0, 0, time.UTC)
+	host := "dup-" + uuid.NewString()[:8]
+	store := NewAssistantSettingsStore(pool)
+	patch := func(tenantID uuid.UUID, host string) error {
+		_, err := store.Patch(ctx, []byte("actor"), "r", tenantID, assistantcfg.Patch{Enabled: boolPtr(false), IsTest: boolPtr(true), ModelKey: strPtr("google/gemini-3.1-flash-lite"), LineMode: strPtr("CENTRAL"), AssistantHost: strPtr(host)}, 0, now)
+		return err
+	}
+	var tenants [3]uuid.UUID
+	for index := range tenants {
+		tenants[index] = uuid.New()
+		if _, err := pool.Exec(ctx, `insert into tenants (id, slug, name, timezone, status, access_ends_at) values ($1, $2, 'Host Shop', 'Asia/Bangkok', 'ACTIVE', $3)`, tenants[index], "host-"+tenants[index].String()[:8], now.AddDate(1, 0, 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := patch(tenants[0], host); err != nil {
+		t.Fatal(err)
+	}
+	if err := patch(tenants[1], host); !errors.Is(err, assistantcfg.ErrHostInUse) {
+		t.Fatalf("a second shop with the same host must be refused, got %v", err)
+	}
+	// Any number of shops may leave the host empty.
+	if err := patch(tenants[1], ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := patch(tenants[2], ""); err != nil {
+		t.Fatalf("empty hosts are not duplicates: %v", err)
+	}
+}
+
+func boolPtr(value bool) *bool    { return &value }
+func strPtr(value string) *string { return &value }
