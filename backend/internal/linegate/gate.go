@@ -81,6 +81,7 @@ type Gate struct {
 	replier   Replier
 	forwarder Forwarder
 	loader    Loader
+	cards     Cards
 	logger    *slog.Logger
 	now       func() time.Time
 	slots     chan struct{}
@@ -93,6 +94,12 @@ func New(channelSecret string, store Store, tokens hasher, replier Replier, forw
 // WithLoader makes the gate show the loading animation while a message is on its way to the assistant.
 func (gate *Gate) WithLoader(loader Loader) *Gate {
 	gate.loader = loader
+	return gate
+}
+
+// WithCards makes the menu's report buttons answer with a card made here, without the assistant.
+func (gate *Gate) WithCards(cards Cards) *Gate {
+	gate.cards = cards
 	return gate
 }
 
@@ -172,6 +179,12 @@ func (gate *Gate) handle(ctx context.Context, destination string, raw json.RawMe
 			if isMessage {
 				gate.reply(ctx, event, chooser(shops))
 			}
+			return
+		}
+	}
+	if gate.cards != nil && isMessage && event.Message.Type == "text" {
+		if action, ok := quickActions[strings.TrimSpace(event.Message.Text)]; ok {
+			gate.quick(ctx, event, recipientID, target, len(shops) > 1, action)
 			return
 		}
 	}
@@ -268,13 +281,13 @@ func (gate *Gate) forward(ctx context.Context, destination string, raw json.RawM
 	gate.reply(ctx, event, text(MessageUnavailable))
 }
 
-func (gate *Gate) reply(ctx context.Context, event line.WebhookEvent, message json.RawMessage) {
+func (gate *Gate) reply(ctx context.Context, event line.WebhookEvent, messages ...json.RawMessage) {
 	if event.ReplyToken == "" || gate.replier == nil {
 		return
 	}
 	replyCtx, cancel := context.WithTimeout(ctx, replyTimeout)
 	defer cancel()
-	if err := gate.replier.Reply(replyCtx, event.ReplyToken, message); err != nil {
+	if err := gate.replier.Reply(replyCtx, event.ReplyToken, messages...); err != nil {
 		gate.warn("LINE gate could not reply", "reason", "reply failed")
 	}
 }
@@ -408,4 +421,29 @@ func (forwarder *HTTPForwarder) Forward(ctx context.Context, host string, body [
 		return fmt.Errorf("assistant answered %d", response.StatusCode)
 	}
 	return nil
+}
+
+// quick answers a menu button. A card is made from the shop's figures for this person (their own report permissions apply); a failure says
+// so and points to the assistant instead of staying silent.
+func (gate *Gate) quick(ctx context.Context, event line.WebhookEvent, recipientID uuid.UUID, shop Shop, severalShops bool, action quickAction) {
+	if action.chat {
+		gate.reply(ctx, event, chatInvitation(shop, severalShops))
+		return
+	}
+	started := gate.now()
+	done := gate.showLoading(ctx, event)
+	cardCtx, cancel := context.WithTimeout(ctx, cardTimeout)
+	messages, err := gate.cards.Card(cardCtx, recipientID, shop, severalShops, action.kind)
+	cancel()
+	done()
+	outcome := "ok"
+	if err != nil || len(messages) == 0 {
+		outcome = "failed"
+		messages = []json.RawMessage{text(MessageCardFailed)}
+	}
+	// Only the kind of button, the outcome and the time taken are logged: nothing about the person, the shop or the figures.
+	if gate.logger != nil {
+		gate.logger.Info("LINE menu card", "kind", string(action.kind), "outcome", outcome, "ms", gate.now().Sub(started).Milliseconds())
+	}
+	gate.reply(ctx, event, messages...)
 }

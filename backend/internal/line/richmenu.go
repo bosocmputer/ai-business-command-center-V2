@@ -33,14 +33,15 @@ type MenuButton struct {
 	Text  string // what the button sends
 }
 
-// DefaultMenuButtons is the menu the owners get. The second text asks for the figure read live from the shop's system (the assistant
-// treats "ตัวเลขสดล่าสุด" as an explicit request for the latest figures).
+// DefaultMenuButtons is the menu the owners get. Each text is answered by the front gate (internal/linegate quickActions): three with a
+// card made from the shop's figures, the last with example questions for the assistant. The words must stay equal to the gate's; a test
+// in linegate holds them together. The picture is deploy/line/richmenu.png and its four labels are the same words.
 func DefaultMenuButtons() []MenuButton {
 	return []MenuButton{
 		{Label: "ยอดขายเมื่อวาน", Text: "ยอดขายเมื่อวาน"},
-		{Label: "ยอดขายวันนี้", Text: "ยอดขายวันนี้ ตัวเลขสดล่าสุด"},
+		{Label: "ยอดขายล่าสุด", Text: "ยอดขายล่าสุด"},
 		{Label: "สินค้าใกล้หมด", Text: "สินค้าใกล้หมด"},
-		{Label: "เปลี่ยนร้าน", Text: "เปลี่ยนร้าน"},
+		{Label: "คุยกับเลขา AI", Text: "คุยกับเลขา AI"},
 	}
 }
 
