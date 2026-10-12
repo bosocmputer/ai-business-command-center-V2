@@ -230,6 +230,11 @@ const (
 
 var ErrAlertsUnavailable = errors.New("alerts are not available")
 
+// ErrAlertsHolderOnly: the alert rules of a shop's assistant belong to the person whose token it holds.
+var ErrAlertsHolderOnly = errors.New("alerts belong to the assistant's token holder")
+
+const MessageAlertsHolderOnly = "ตั้งหรือดูการเตือนได้เฉพาะเจ้าของบัญชีเลขา AI ของร้านนี้"
+
 // ConfigureAlerts turns on the two alert tools. Without it they answer as if there were no such thing.
 func (service *Service) ConfigureAlerts(store AlertStore) *Service {
 	service.alerts = store
@@ -238,6 +243,9 @@ func (service *Service) ConfigureAlerts(store AlertStore) *Service {
 
 func (service *Service) Alerts(ctx context.Context, principal Principal) (AlertsResponse, error) {
 	started := service.now()
+	if principal.holderOnly() {
+		return AlertsResponse{}, ErrAlertsHolderOnly
+	}
 	if service.alerts == nil {
 		return AlertsResponse{}, ErrAlertsUnavailable
 	}
@@ -274,6 +282,9 @@ func (service *Service) Alerts(ctx context.Context, principal Principal) (Alerts
 // not in the catalog, answers exactly like a missing report.
 func (service *Service) SetAlert(ctx context.Context, principal Principal, rawRule string, request AlertSetRequest, requestID string) (AlertView, error) {
 	started := service.now()
+	if principal.holderOnly() {
+		return AlertView{}, ErrAlertsHolderOnly
+	}
 	if service.alerts == nil {
 		return AlertView{}, ErrAlertsUnavailable
 	}

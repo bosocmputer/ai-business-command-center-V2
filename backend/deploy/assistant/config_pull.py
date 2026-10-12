@@ -102,6 +102,8 @@ def shell_lines(config):
     # variable is always set here or unset, never left over from hermes.env.
     gate = bool(config.get("enabled") and config.get("lineGate") and secrets.get("lineChannelSecret") and secrets.get("lineChannelAccessToken"))
     lines.append("export LINE_ALLOW_ALL_USERS=true" if gate else "unset LINE_ALLOW_ALL_USERS")
+    # Behind the gate several people write to this assistant, each with their own permissions: its calls to AI-BCC are made as the person who asks.
+    lines.append("export AIBCC_ACTING=line" if gate else "unset AIBCC_ACTING")
     # Past the time a reply allows (about 45 s) the adapter normally leaves a button for the owner to tap. With 0 it sends the answer by itself
     # when it is ready (one channel message). AI-BCC says so only while the shared channel has quota to spare.
     push = bool(config.get("enabled") and config.get("lineSlowPush") and secrets.get("lineChannelAccessToken"))

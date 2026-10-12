@@ -225,3 +225,21 @@ func (store *AgentStore) TokenInfo(ctx context.Context, tenantID, recipientID uu
 	}
 	return info, nil
 }
+
+// ResolveActor finds the recipient behind a LINE user hash, for one shop, only while they are an active recipient, an active member and
+// switched on for the assistant. Anyone else is the same ErrUnauthorized as a bad token.
+func (store *AgentStore) ResolveActor(ctx context.Context, tenantID uuid.UUID, lineUserHash []byte) (uuid.UUID, error) {
+	var recipientID uuid.UUID
+	err := store.pool.QueryRow(ctx, `
+		select r.id
+		from line_recipients r
+		join tenant_memberships m on m.recipient_id = r.id and m.tenant_id = $1 and m.status = 'ACTIVE' and m.ai_chat_enabled
+		where r.line_user_id_hash = $2 and r.status = 'ACTIVE'`, tenantID, lineUserHash).Scan(&recipientID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, agent.ErrUnauthorized
+	}
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("resolve acting recipient: %w", err)
+	}
+	return recipientID, nil
+}

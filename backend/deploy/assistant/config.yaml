@@ -18,6 +18,9 @@ mcp_servers:
     env:
       AIBCC_URL: "${AIBCC_URL}"
       AIBCC_TOKEN: "${AIBCC_TOKEN}"
+      # "line" = in LINE each call is made as the person who is asking (actor.py reads Hermes' conversation store under HERMES_HOME)
+      AIBCC_ACTING: "${AIBCC_ACTING}"
+      HERMES_HOME: "${HERMES_HOME}"
       WEB_SEARCH_API_KEY: "${WEB_SEARCH_API_KEY}"
       WEB_SEARCH_FALLBACK_KEY: "${WEB_SEARCH_FALLBACK_KEY}"
       WEB_SEARCH_PROVIDER: "${WEB_SEARCH_PROVIDER}"

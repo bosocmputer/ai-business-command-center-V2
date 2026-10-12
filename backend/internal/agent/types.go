@@ -79,12 +79,22 @@ func (err *RateLimitedError) Error() string { return "agent call limit reached" 
 
 // Principal is who a valid token stands for.
 type Principal struct {
-	TokenID      uuid.UUID
-	TenantID     uuid.UUID
-	RecipientID  uuid.UUID
-	NamesVisible bool
-	ShopName     string
-	Timezone     string
+	TokenID  uuid.UUID
+	TenantID uuid.UUID
+	// RecipientID is whose permissions the call runs with: the person who holds the token, or, when Acting, the person who asked in LINE.
+	RecipientID uuid.UUID
+	// HolderRecipientID is the person the token belongs to. It is the same as RecipientID unless Acting.
+	HolderRecipientID uuid.UUID
+	Acting            bool
+	NamesVisible      bool
+	ShopName          string
+	Timezone          string
+}
+
+// holderOnly is true for a person other than the token's holder: they may read what they are allowed to, but the alert rules of the shop's
+// assistant are the holder's and are not theirs to see or change.
+func (principal Principal) holderOnly() bool {
+	return principal.Acting && principal.RecipientID != principal.HolderRecipientID
 }
 
 // TokenInfo is what an admin sees about a recipient's token. The token itself is shown once when issued.
@@ -123,6 +133,8 @@ type Delivered struct {
 
 type Store interface {
 	Authenticate(ctx context.Context, tokenHash []byte, now time.Time) (Principal, error)
+	// ResolveActor finds the recipient behind a LINE user hash for one shop, only while they are active, a member and switched on for the assistant.
+	ResolveActor(ctx context.Context, tenantID uuid.UUID, lineUserHash []byte) (uuid.UUID, error)
 	TouchToken(ctx context.Context, tokenID uuid.UUID, now time.Time) error
 	CallsSince(ctx context.Context, tokenID uuid.UUID, since time.Time) (int, error)
 	// TenantCallsSince counts the calls every token of a shop made since a moment, counted the same way as CallsSince.

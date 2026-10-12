@@ -18,6 +18,7 @@ import (
 // AgentAPI is what the assistant routes and the token admin routes need from the agent service.
 type AgentAPI interface {
 	Authenticate(ctx context.Context, rawToken string) (agent.Principal, error)
+	Acting(ctx context.Context, principal agent.Principal, lineUserID string) (agent.Principal, error)
 	Context(ctx context.Context, principal agent.Principal) (agent.ContextResponse, error)
 	Report(ctx context.Context, principal agent.Principal, reportKey, dateFrom, dateTo string) (agent.ReportResponse, error)
 	Compare(ctx context.Context, principal agent.Principal, reportKey, metric, aFrom, aTo, bFrom, bTo string) (agent.CompareResponse, error)
@@ -82,6 +83,19 @@ func registerAgentRoutes(router chi.Router, api AgentAPI, enabled bool) {
 				case err != nil:
 					writeAgentJSON(response, http.StatusInternalServerError, agentError{Status: "ERROR", Message: "ระบบขัดข้อง ลองใหม่ภายหลัง"})
 					return
+				}
+				// In LINE the assistant says who is asking; the call is then that person's own (see agent.Service.Acting).
+				if actor := request.Header.Get("X-Acting-Line-User"); actor != "" {
+					acting, actingErr := api.Acting(request.Context(), principal, actor)
+					switch {
+					case errors.Is(actingErr, agent.ErrUnauthorized):
+						writeAgentJSON(response, http.StatusUnauthorized, agentError{Status: "UNAUTHORIZED", Message: agent.MessageUnauthorized})
+						return
+					case actingErr != nil:
+						writeAgentJSON(response, http.StatusInternalServerError, agentError{Status: "ERROR", Message: "ระบบขัดข้อง ลองใหม่ภายหลัง"})
+						return
+					}
+					principal = acting
 				}
 				next.ServeHTTP(response, request.WithContext(context.WithValue(request.Context(), agentPrincipalKey{}, principal)))
 			})
@@ -222,6 +236,8 @@ func respondAgent(response http.ResponseWriter, result any, err error) {
 		writeAgentJSON(response, http.StatusOK, result)
 	case errors.Is(err, agent.ErrNoData), errors.Is(err, agent.ErrAlertsUnavailable), errors.Is(err, agent.ErrMasterUnavailable), errors.Is(err, agent.ErrLookupUnavailable), errors.Is(err, agent.ErrExportUnavailable):
 		writeAgentJSON(response, http.StatusNotFound, agentError{Status: "NO_DATA", Message: agent.MessageNoData})
+	case errors.Is(err, agent.ErrAlertsHolderOnly):
+		writeAgentJSON(response, http.StatusForbidden, agentError{Status: "NOT_ALLOWED", Message: agent.MessageAlertsHolderOnly})
 	case isInvalidAlert(err):
 		var invalid *agent.InvalidAlertError
 		_ = errors.As(err, &invalid)

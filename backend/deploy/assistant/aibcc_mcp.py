@@ -10,6 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import actor
 import secretary_tools
 
 try:
@@ -39,6 +40,11 @@ def call(path, query=None, method="GET", body=None):
     query = {k: v for k, v in (query or {}).items() if v}
     url = BASE + path + (("?" + urllib.parse.urlencode(query)) if query else "")
     headers = {"Authorization": f"Bearer {TOKEN}"}
+    # In LINE the call is made as the person who is asking (see actor.py); when that cannot be told it is refused, never answered as someone else.
+    try:
+        headers.update(actor.actor_headers())
+    except actor.ActorRefused:
+        return json.dumps({"status": "UNAVAILABLE", "message": actor.MESSAGE_REFUSED}, ensure_ascii=False)
     data = None
     if body is not None:
         data = json.dumps(body).encode("utf-8")

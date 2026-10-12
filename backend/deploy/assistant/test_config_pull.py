@@ -63,7 +63,7 @@ class PullTests(unittest.TestCase):
         code, out, post = self.run_start((200, '"v8-false"', off))
         self.assertEqual(code, 0)
         self.assertNotIn("export", out)
-        self.assertEqual(out.count("unset"), 6)
+        self.assertEqual(out.count("unset"), 7)
         self.assertIn("unset LINE_ALLOW_ALL_USERS", out)
         self.assertEqual(open(os.path.join(self.dir, "config.yaml")).read(), TEMPLATE)
         post.assert_called_once()
@@ -72,6 +72,8 @@ class PullTests(unittest.TestCase):
         line = {"lineChannelSecret": "0123456789abcdef0123456789abcdef", "lineChannelAccessToken": "t" * 40}
         gated = dict(ENABLED, lineMode="CENTRAL", lineGate=True, secrets=dict(ENABLED["secrets"], **line))
         self.assertIn("export LINE_ALLOW_ALL_USERS=true", self.run_start((200, '"v7-true-gate"', gated))[1])
+        self.assertIn("export AIBCC_ACTING=line", self.run_start((200, '"v7-true-gate"', gated))[1])
+        self.assertIn("unset AIBCC_ACTING", self.run_start((200, '"v7-true"', dict(gated, lineGate=False)))[1])
         # no gate flag: whatever hermes.env says is cleared, the assistant keeps its own list
         self.assertIn("unset LINE_ALLOW_ALL_USERS", self.run_start((200, '"v7-true"', dict(gated, lineGate=False)))[1])
         # a gate flag but no LINE channel to trust

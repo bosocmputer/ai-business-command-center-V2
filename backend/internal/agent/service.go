@@ -21,6 +21,8 @@ const (
 	tokenPrefix       = "abcc_"
 	tokenBytes        = 32
 	maximumTokenChars = 200
+	// actingLineUserMaxChars is the longest LINE user id accepted from the assistant (real ones are 33 characters).
+	actingLineUserMaxChars = 128
 )
 
 type Config struct {
@@ -91,6 +93,7 @@ func (service *Service) Authenticate(ctx context.Context, rawToken string) (Prin
 		}
 		return Principal{}, err
 	}
+	principal.HolderRecipientID = principal.RecipientID
 	used, err := service.store.CallsSince(ctx, principal.TokenID, now.Add(-time.Hour))
 	if err != nil {
 		return Principal{}, err
@@ -113,6 +116,28 @@ func (service *Service) Authenticate(ctx context.Context, rawToken string) (Prin
 		}
 	}
 	_ = service.store.TouchToken(ctx, principal.TokenID, now)
+	return principal, nil
+}
+
+// Acting makes the call the person's own. The assistant of a shop holds one token, but several people may write to it; in LINE the assistant
+// says who is asking (the LINE user id it was passed by AI-BCC's front gate), and from then on the call reads what that person may read, and is
+// logged as theirs. A person who is not an active, switched-on member of this shop is refused like a bad token. The token still decides the shop.
+func (service *Service) Acting(ctx context.Context, principal Principal, lineUserID string) (Principal, error) {
+	lineUserID = strings.TrimSpace(lineUserID)
+	if lineUserID == "" {
+		return principal, nil
+	}
+	if len(lineUserID) < 2 || len(lineUserID) > actingLineUserMaxChars {
+		return Principal{}, ErrUnauthorized
+	}
+	actor, err := service.store.ResolveActor(ctx, principal.TenantID, service.hasher.HashToken("line-user:"+lineUserID))
+	if err != nil {
+		if errors.Is(err, ErrUnauthorized) {
+			return Principal{}, ErrUnauthorized
+		}
+		return Principal{}, err
+	}
+	principal.HolderRecipientID, principal.RecipientID, principal.Acting = principal.RecipientID, actor, true
 	return principal, nil
 }
 

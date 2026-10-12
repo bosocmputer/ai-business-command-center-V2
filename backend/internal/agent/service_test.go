@@ -22,6 +22,7 @@ func (testHasher) HashToken(token string) []byte {
 }
 
 type fakeStore struct {
+	actors      map[string]uuid.UUID // line user hash -> recipient
 	principals  map[string]Principal
 	permitted   []report.Key
 	calls       []Call
@@ -38,6 +39,12 @@ func (store *fakeStore) Authenticate(_ context.Context, hash []byte, _ time.Time
 		return principal, nil
 	}
 	return Principal{}, ErrUnauthorized
+}
+func (store *fakeStore) ResolveActor(_ context.Context, _ uuid.UUID, hash []byte) (uuid.UUID, error) {
+	if actor, ok := store.actors[string(hash)]; ok {
+		return actor, nil
+	}
+	return uuid.Nil, ErrUnauthorized
 }
 func (store *fakeStore) TouchToken(context.Context, uuid.UUID, time.Time) error { return nil }
 func (store *fakeStore) CallsSince(context.Context, uuid.UUID, time.Time) (int, error) {
@@ -556,4 +563,42 @@ func TestNoWaitHappensWhenItIsSwitchedOffOrTheRequestIsCancelled(t *testing.T) {
 	}
 	_ = response
 	_ = err
+}
+
+func TestActingMakesTheCallThePersonsOwnAndLogsItAsTheirs(t *testing.T) {
+	clerk := uuid.New()
+	hasher := testHasher{}
+	store := &fakeStore{
+		permitted: []report.Key{report.SalesGoodsServices},
+		actors:    map[string]uuid.UUID{string(hasher.HashToken("line-user:Uclerk")): clerk},
+	}
+	service := newService(store, &fakeSnapshots{})
+	holder, err := service.Authenticate(context.Background(), "abcc_valid")
+	if err != nil || holder.RecipientID != principal.RecipientID || holder.HolderRecipientID != principal.RecipientID || holder.Acting {
+		t.Fatalf("a plain token is its holder's: %+v %v", holder, err)
+	}
+	acting, err := service.Acting(context.Background(), holder, "Uclerk")
+	if err != nil || acting.RecipientID != clerk || acting.HolderRecipientID != principal.RecipientID || !acting.Acting || acting.TenantID != principal.TenantID {
+		t.Fatalf("acting = %+v %v", acting, err)
+	}
+	if _, err := service.Context(context.Background(), acting); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.calls) == 0 || store.calls[len(store.calls)-1].RecipientID != clerk {
+		t.Fatalf("the call must be logged as the person's: %+v", store.calls)
+	}
+	if same, err := service.Acting(context.Background(), holder, "  "); err != nil || same.Acting {
+		t.Fatalf("no person named means the holder: %+v %v", same, err)
+	}
+	for _, bad := range []string{"Unobody", "x", strings.Repeat("U", 129)} {
+		if _, err := service.Acting(context.Background(), holder, bad); !errors.Is(err, ErrUnauthorized) {
+			t.Fatalf("%q must be refused like a bad token: %v", bad, err)
+		}
+	}
+	if _, err := service.Alerts(context.Background(), acting); !errors.Is(err, ErrAlertsHolderOnly) {
+		t.Fatalf("another person's alerts are not theirs to see: %v", err)
+	}
+	if _, err := service.SetAlert(context.Background(), acting, "sales_drop", AlertSetRequest{}, "r"); !errors.Is(err, ErrAlertsHolderOnly) {
+		t.Fatalf("nor to change: %v", err)
+	}
 }

@@ -116,7 +116,7 @@ func TestRecipientAIChatPermissionLifecycle(t *testing.T) {
 	}
 }
 
-func TestAIChatIsRefusedForARecipientWhoMaySeeLessThanTheTokenHolder(t *testing.T) {
+func TestAIChatMayBeGivenToARecipientWhoMaySeeLessThanTheTokenHolder(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("TEST_DATABASE_URL is not set")
@@ -161,14 +161,16 @@ func TestAIChatIsRefusedForARecipientWhoMaySeeLessThanTheTokenHolder(t *testing.
 	store := NewRecipientStore(pool)
 	actor := []byte("admin")
 
-	if _, err := store.SetAIChat(ctx, actor, "r1", tenantID, clerk, true, now); !errors.Is(err, recipient.ErrAIChatPermissionsNarrower) {
-		t.Fatalf("a clerk who sees less than the token holder must be refused: %v", err)
+	// Each person is answered with their own permissions (the assistant says who asks), so a clerk may be given the chat even though the
+	// assistant's token holder may read more.
+	if _, err := store.SetAIChat(ctx, actor, "r1", tenantID, clerk, true, now); err != nil {
+		t.Fatalf("a clerk who sees less than the token holder is allowed: %v", err)
 	}
 	if _, err := store.SetAIChat(ctx, actor, "r2", tenantID, equal, true, now); err != nil {
 		t.Fatalf("a recipient who sees at least as much is allowed: %v", err)
 	}
 	if _, err := store.SetAIChat(ctx, actor, "r3", tenantID, owner, true, now); err != nil {
-		t.Fatalf("the token holder is not compared with themselves: %v", err)
+		t.Fatalf("the token holder is allowed: %v", err)
 	}
 	if _, err := store.SetAIChat(ctx, actor, "r4", tenantID, clerk, false, now); err != nil {
 		t.Fatalf("switching the chat off is always allowed: %v", err)

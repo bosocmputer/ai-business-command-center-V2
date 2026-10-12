@@ -28,6 +28,8 @@ func (agentTestHasher) HashToken(token string) []byte {
 }
 
 type agentTestStore struct {
+	actors     map[string]uuid.UUID       // line user hash -> recipient
+	permitBy   map[uuid.UUID][]report.Key // when set, what each recipient may read
 	principal  agent.Principal
 	valid      string
 	permitted  []report.Key
@@ -55,8 +57,17 @@ func (store *agentTestStore) PreparingSince(context.Context, uuid.UUID, time.Tim
 	return 0, nil
 }
 func (store *agentTestStore) RecordCall(context.Context, agent.Call, time.Time) error { return nil }
-func (store *agentTestStore) PermittedReports(context.Context, agent.Principal, time.Time) ([]report.Key, error) {
+func (store *agentTestStore) PermittedReports(_ context.Context, principal agent.Principal, _ time.Time) ([]report.Key, error) {
+	if store.permitBy != nil {
+		return store.permitBy[principal.RecipientID], nil
+	}
 	return store.permitted, nil
+}
+func (store *agentTestStore) ResolveActor(_ context.Context, _ uuid.UUID, hash []byte) (uuid.UUID, error) {
+	if actor, ok := store.actors[string(hash)]; ok {
+		return actor, nil
+	}
+	return uuid.Nil, agent.ErrUnauthorized
 }
 func (store *agentTestStore) LatestDelivery(context.Context, agent.Principal, report.Key) (agent.Delivered, error) {
 	return agent.Delivered{}, agent.ErrNoData
@@ -583,5 +594,70 @@ func TestAgentAssistantConfigIsPrivateTaggedAndAnswersNotModified(t *testing.T) 
 	missing := agentGet(bare, "/api/v1/agent/reports/no_such_report", "abcc_token")
 	if got := agentGet(bare, "/api/v1/agent/assistant-config", "abcc_token"); got.Code != http.StatusNotFound || !bytes.Equal(got.Body.Bytes(), missing.Body.Bytes()) {
 		t.Fatalf("not switched on must answer like a missing report: %d", got.Code)
+	}
+}
+
+func TestAPersonWhoAsksInLineGetsTheirOwnPermissionsNotTheTokenHolders(t *testing.T) {
+	store := newAgentStore()
+	holder, clerk := store.principal.RecipientID, uuid.New()
+	store.actors = map[string]uuid.UUID{
+		string(agentTestHasher{}.HashToken("line-user:Uholder0000000000000000000000000")): holder,
+		string(agentTestHasher{}.HashToken("line-user:Uclerk00000000000000000000000000")): clerk,
+	}
+	store.permitBy = map[uuid.UUID][]report.Key{holder: {report.SalesGoodsServices, report.ARAging}, clerk: {report.SalesGoodsServices}}
+	handler := agentTestHandler(store, true)
+	ask := func(path, actor string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer abcc_token")
+		if actor != "" {
+			request.Header.Set("X-Acting-Line-User", actor)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	reportsIn := func(response *httptest.ResponseRecorder) int { return strings.Count(response.Body.String(), `"key":`) }
+	holderView, clerkView := ask("/api/v1/agent/context", "Uholder0000000000000000000000000"), ask("/api/v1/agent/context", "Uclerk00000000000000000000000000")
+	if holderView.Code != http.StatusOK || clerkView.Code != http.StatusOK || reportsIn(clerkView) >= reportsIn(holderView) || reportsIn(clerkView) != 1 {
+		t.Fatalf("the clerk must see only their own report: holder=%d clerk=%d", reportsIn(holderView), reportsIn(clerkView))
+	}
+	// A report the clerk may not read answers like a missing one, even though the token holder may read it.
+	if forbidden := ask("/api/v1/agent/reports/ar_aging", "Uclerk00000000000000000000000000"); forbidden.Code != http.StatusNotFound || !strings.Contains(forbidden.Body.String(), "ไม่มีข้อมูลเรื่องนี้ให้ดู") {
+		t.Fatalf("clerk asking for a report they may not read = %d %s", forbidden.Code, forbidden.Body.String())
+	}
+	// Without the header the call is the token holder's, as before (Telegram, background jobs).
+	if plain := ask("/api/v1/agent/context", ""); reportsIn(plain) != reportsIn(holderView) {
+		t.Fatalf("without an acting person the holder's own permissions apply")
+	}
+	// A person who is not a switched-on member of this shop is refused like a bad token, and nothing about them is said.
+	for _, actor := range []string{"Ustranger000000000000000000000000", "x", strings.Repeat("U", 200)} {
+		if response := ask("/api/v1/agent/context", actor); response.Code != http.StatusUnauthorized || strings.Contains(response.Body.String(), actor) {
+			t.Fatalf("actor %q = %d %s", actor, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestAlertsBelongToTheTokenHolderAndNotToAnotherPersonInTheSameShop(t *testing.T) {
+	store := newAgentStore()
+	clerk := uuid.New()
+	store.actors = map[string]uuid.UUID{
+		string(agentTestHasher{}.HashToken("line-user:Uclerk00000000000000000000000000")): clerk,
+		string(agentTestHasher{}.HashToken("line-user:Uholder0000000000000000000000000")): store.principal.RecipientID,
+	}
+	store.permitBy = map[uuid.UUID][]report.Key{clerk: {report.SalesGoodsServices}, store.principal.RecipientID: {report.SalesGoodsServices}}
+	handler := agentTestHandler(store, true)
+	ask := func(actor string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/agent/alerts", nil)
+		request.Header.Set("Authorization", "Bearer abcc_token")
+		request.Header.Set("X-Acting-Line-User", actor)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	if denied := ask("Uclerk00000000000000000000000000"); denied.Code != http.StatusForbidden || !strings.Contains(denied.Body.String(), "NOT_ALLOWED") || !strings.Contains(denied.Body.String(), "เจ้าของบัญชีเลขา") {
+		t.Fatalf("another person must not see the holder's alerts: %d %s", denied.Code, denied.Body.String())
+	}
+	if own := ask("Uholder0000000000000000000000000"); own.Code == http.StatusForbidden {
+		t.Fatalf("the token holder asking in LINE keeps their alerts: %d %s", own.Code, own.Body.String())
 	}
 }

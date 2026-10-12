@@ -4192,13 +4192,6 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
-            /** @description AI_CHAT_PERMISSIONS_NARROWER: the person may read fewer reports than the person whose token the assistant uses, so the chat is refused. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             422: components["responses"]["ValidationFailed"];
         };
     };

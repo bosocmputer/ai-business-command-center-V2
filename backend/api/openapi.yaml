@@ -399,7 +399,6 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Recipient'}
         '404': {$ref: '#/components/responses/NotFound'}
-        '409': {description: "AI_CHAT_PERMISSIONS_NARROWER: the person may read fewer reports than the person whose token the assistant uses, so the chat is refused."}
         '422': {$ref: '#/components/responses/ValidationFailed'}
   /api/v1/admin/tenants/{tenantId}/recipients/{recipientId}/agent-token:
     get:
