@@ -47,7 +47,7 @@ class PrewarmTests(unittest.TestCase):
             return {"status": "PREPARING"} if states[path] == 1 else {"status": "READY"}  # every report needs a live fetch
 
         clock = [1000.0]
-        with mock.patch.object(prewarm.time, "monotonic", lambda: clock[0]):
+        with mock.patch.object(prewarm, "MAX_PER_HOUR", 7), mock.patch.object(prewarm.time, "monotonic", lambda: clock[0]):
             def sleep(seconds):
                 clock[0] += seconds
             started = []
@@ -65,7 +65,7 @@ class PrewarmTests(unittest.TestCase):
         self.assertEqual(result["ready"], 14, result)
         for index, moment in enumerate(started):
             in_hour = [other for other in started[: index + 1] if moment - other < 3600]
-            self.assertLessEqual(len(in_hour), prewarm.MAX_PER_HOUR, "more than the cap in one hour")
+            self.assertLessEqual(len(in_hour), 7, "more than the cap in one hour")
 
     def run_main_with_sleep(self, answers, sleep):
         asked, out = [], []
@@ -79,10 +79,12 @@ class PrewarmTests(unittest.TestCase):
         return asked, json.loads(out[-1]), None
 
     def test_when_the_deadline_comes_first_the_rest_are_reported_not_tried(self):
-        starts = [1000.0] * prewarm.MAX_PER_HOUR
-        with mock.patch.object(prewarm.time, "monotonic", return_value=1010.0):
+        starts = [1000.0] * 7
+        with mock.patch.object(prewarm, "MAX_PER_HOUR", 7), mock.patch.object(prewarm.time, "monotonic", return_value=1010.0):
             self.assertFalse(prewarm.pace(starts, 1010.0 + 600))
             self.assertTrue(prewarm.pace([], 5000.0))
+        with mock.patch.object(prewarm, "MAX_PER_HOUR", 0):
+            self.assertTrue(prewarm.pace([1000.0] * 50, 1.0), "no cap when it is 0")
 
 
 if __name__ == "__main__":

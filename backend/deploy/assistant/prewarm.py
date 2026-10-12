@@ -6,10 +6,10 @@ either: their snapshots go stale, so they are fetched every morning too. Sales o
 and of today (an open day, refreshed by AI-BCC when asked after five minutes) come first: "ยอดขายเมื่อวาน" and "ยอดขายวันนี้" are what
 owners ask first (14 fetches in all).
 
-AI-BCC allows 10 live fetches an hour for a shop, and that budget is shared with the owner's own questions. This starts at
-most MAX_PER_HOUR (7) fetches in any hour, so a question in the morning still finds fetches to spare, and the rest wait for
-the hour to pass (all 14 are done in about an hour and a half). It asks in order, waits for each, and retries a refused one
-every five minutes until the budget frees, for at most MAX_SECONDS (two hours). It prints one JSON line (counts only) at the end.
+AI-BCC's hourly budget of live fetches for a shop (10 by default, lifted on the V2 server) is shared with the owner's own questions.
+With PREWARM_MAX_PER_HOUR set (for example 7 where the budget is 10) this starts at most that many in any hour, so a question in the morning
+still finds fetches to spare, and the rest wait for the hour to pass. It asks in order, waits for each, and retries a refused one every five
+minutes until the budget frees, for at most MAX_SECONDS (two hours). It prints one JSON line (counts only) at the end.
 Run by entrypoint.sh at 07:30 Bangkok. Environment: AIBCC_URL, AIBCC_TOKEN.
 """
 import json
@@ -22,7 +22,8 @@ from datetime import date, datetime, timedelta, timezone
 BASE = os.environ.get("AIBCC_URL", "http://api:8080").rstrip("/") + "/api/v1/agent"
 TOKEN = os.environ.get("AIBCC_TOKEN", "")
 MAX_SECONDS = int(os.environ.get("PREWARM_MAX_SECONDS", "7200"))
-MAX_PER_HOUR = int(os.environ.get("PREWARM_MAX_PER_HOUR", "7"))
+# 0 = no cap (the V2 server has lifted AI-BCC's hourly budget of reads); on a server with the default budget of 10 an hour set 7 so the owner keeps some.
+MAX_PER_HOUR = int(os.environ.get("PREWARM_MAX_PER_HOUR", "0"))
 POLL = float(os.environ.get("PREWARM_POLL_SECONDS", "10"))
 RETRY_BUDGET = float(os.environ.get("PREWARM_BUDGET_RETRY_SECONDS", "300"))
 ALWAYS = ["ar_aging", "customer_rfm", "purchase_frequency", "stock_balance", "stock_reorder", "ar_customer_movement"]
@@ -55,6 +56,8 @@ def month_range(today):
 
 def pace(starts, deadline):
     """Wait, if need be, until fewer than MAX_PER_HOUR live fetches were started in the last hour. False when the deadline comes first."""
+    if MAX_PER_HOUR <= 0:
+        return True
     while True:
         now = time.monotonic()
         recent = [moment for moment in starts if now - moment < 3600]

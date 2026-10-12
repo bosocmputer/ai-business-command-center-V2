@@ -141,13 +141,16 @@ while it answers `PREPARING`, for up to 100 seconds, and return the finished rep
 the answer. AI-BCC does not count those status checks against the 60 calls an hour (the first 240 an hour are free). If the
 report is still not ready after the wait, the assistant says so and asks the owner to try again in a minute or two.
 
-Reports "as of today" (receivables, stock) and the rolling 180-day customer reports are keyed to the date, so each day's
-first question would start a live fetch, and last month's snapshots go stale too (they are not kept for good). `prewarm.py`
-fetches all 12 every morning at 07:30 Bangkok, one after the other. AI-BCC allows 10 live fetches an hour by default (`AGENT_REFRESHES_PER_HOUR`; the V2 server has lifted it), so the last two
-are refused at first and it retries every five minutes until the budget frees, about an hour later, for at most two hours:
-so the owner's first questions are instant, and the last two reports are ready by about 08:40. It prints one JSON line to
-`docker logs` when it ends. Move the time with
+Sales of yesterday and of today, the reports "as of today" (receivables, stock) and the rolling 180-day customer reports are keyed to the date, so
+each day's first question would start a live fetch, and last month's snapshots go stale too (they are not kept for good). `prewarm.py` fetches all 14
+every morning at 07:30 Bangkok, one after the other, sales of yesterday and today first. AI-BCC's hourly budget of live fetches (`AGENT_REFRESHES_PER_HOUR`, 10
+by default) is shared with the owner's own questions; the V2 server has lifted it, and where it is not lifted set `PREWARM_MAX_PER_HOUR=7` so the
+prewarm starts at most 7 an hour and leaves the rest to the owner (a fetch the budget refuses is retried every five minutes, for at most two hours). Sales of today
+are refreshed by AI-BCC after five minutes, so the prewarm only saves the cold start. It prints one JSON line to `docker logs` when it ends. Move the time with
 `ASSISTANT_PREWARM_FROM_MINUTE` (minute of the UTC day).
+
+The owner can also ask for the latest figures in the chat ("ดึงข้อมูลล่าสุด"): the assistant then calls `get_report`/`compare` with `refresh=true`, which reads the
+report from the shop's system again even if the stored figures are fresh (see `docs/knowledge/04-security-operations.md`, "Latest figures on request").
 
 ## What is kept, for how long, and how to delete it
 
