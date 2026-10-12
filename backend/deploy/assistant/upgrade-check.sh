@@ -4,7 +4,7 @@
 # Runs a CANDIDATE Hermes image beside the live assistant, with a made-up Telegram token (so nothing can be sent) and a fresh empty memory, then
 # checks what an update must never break, and removes it. The live assistant is not touched; nobody outside is messaged.
 #   1. the gateway starts and reports healthy;
-#   2. no built-in tool is enabled on any channel (cli, api_server, telegram, webhook) except memory, which is on by decision;
+#   2. no built-in tool is enabled on any channel (cli, api_server, telegram, line, webhook) except memory, which is on by decision;
 #   2b. every skill that ships with Hermes is switched off except the agent's own manual (disable_skills.py), so no slash command
 #       can load an unreviewed procedure;
 #   2c. a reply can send a file to the chat only from the outbox (media_policy_check.py);
@@ -79,12 +79,12 @@ if [ "$ok" = 1 ]; then echo "ok"; else echo; fail "the gateway did not become he
 printf "2. no built-in tool enabled on any channel except memory ... "
 bad=""
 skipped=""
-for platform in cli api_server telegram webhook; do
+for platform in cli api_server telegram line webhook; do
   listing=$(docker exec "$NAME" /opt/hermes/bin/hermes tools list --platform "$platform" 2>&1 || true)
   # Lines look like "  ✓ enabled  memory  ..." / "  ✗ disabled  web  ...". Memory is on by decision (guarded by memory_guard.py).
   if ! echo "$listing" | grep -q "disabled"; then
     # The webhook channel only exists when an alert route is configured; the candidate has none (no destinations), so it may have
-    # nothing to list. The other three channels must always be readable.
+    # nothing to list. The other four channels must always be readable.
     if [ "$platform" = webhook ]; then skipped="$skipped webhook"; continue; fi
     bad="$bad $platform(unreadable)"; continue
   fi
