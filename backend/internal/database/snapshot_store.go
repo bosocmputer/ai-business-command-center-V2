@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
@@ -78,6 +79,10 @@ func (store *ReportStore) revalidate(ctx context.Context, tenantID uuid.UUID, re
 	}
 	if openUntil != nil && openUntil.After(now) {
 		return viewer.ReportRevalidation{Disposition: viewer.RevalidationCircuitOpen, Snapshot: optionalSnapshot(snapshot, err), RetryAfter: max(1, int(openUntil.Sub(now).Seconds()))}, nil
+	}
+	// The shop's system answered this report much more slowly than usual a moment ago (the shop is busy): do not add another read now.
+	if slow, wait := store.shopIsSlowNow(ctx, tenantID, reportKey, now); slow {
+		return viewer.ReportRevalidation{Disposition: viewer.RevalidationCircuitOpen, Snapshot: optionalSnapshot(snapshot, err), RetryAfter: int(wait.Seconds())}, nil
 	}
 	fingerprint := report.QueryPlanFingerprint(reportKey, report.ResultSummary)
 	executionKey := snapshotExecutionKey(tenantID, reportKey, period, definition.ParameterKind, definition.Version, dataSourceVersion, fingerprint, report.ResultSummary)
@@ -330,4 +335,62 @@ func optionalSnapshot(snapshot viewer.DashboardSnapshot, err error) *viewer.Dash
 		return nil
 	}
 	return &snapshot
+}
+
+// slowReadFactor, slowReadFloor and slowReadWindow say when a read counts as "much slower than usual": at least this many times the shop's own
+// median for the same report, at least this long in seconds, and finished within this window.
+const (
+	slowReadFactor = 3.0
+	slowReadFloor  = 8 * time.Second
+	slowReadWindow = 10 * time.Minute
+	slowReadWait   = 2 * time.Minute
+	slowReadSample = 8
+	slowReadMinRun = 4
+)
+
+// readsShowShopIsSlow looks at how long the shop's recent successful reads of one report took, newest first. The newest read is compared with the
+// median of the others, so a report that is always heavy (a stock report taking two minutes) is not mistaken for a shop that is struggling.
+func readsShowShopIsSlow(seconds []float64, finishedAt []time.Time, now time.Time) bool {
+	if len(seconds) < slowReadMinRun || len(seconds) != len(finishedAt) {
+		return false
+	}
+	newest := time.Duration(seconds[0] * float64(time.Second))
+	if newest < slowReadFloor || now.Sub(finishedAt[0]) > slowReadWindow {
+		return false
+	}
+	rest := append([]float64(nil), seconds[1:]...)
+	sort.Float64s(rest)
+	median := rest[len(rest)/2]
+	if len(rest)%2 == 0 {
+		median = (rest[len(rest)/2-1] + rest[len(rest)/2]) / 2
+	}
+	return seconds[0] >= slowReadFactor*median
+}
+
+func (store *ReportStore) shopIsSlowNow(ctx context.Context, tenantID uuid.UUID, reportKey report.Key, now time.Time) (bool, time.Duration) {
+	rows, err := store.pool.Query(ctx, `
+		select extract(epoch from (finished_at - started_at))::float8, finished_at
+		from report_runs
+		where tenant_id = $1 and report_key = $2 and status = 'SUCCEEDED' and started_at is not null and finished_at is not null
+		  and finished_at > $3
+		order by finished_at desc
+		limit $4`, tenantID, string(reportKey), now.Add(-24*time.Hour), slowReadSample)
+	if err != nil {
+		return false, 0 // a failure to look must never stop a refresh
+	}
+	defer rows.Close()
+	var seconds []float64
+	var finished []time.Time
+	for rows.Next() {
+		var duration float64
+		var at time.Time
+		if rows.Scan(&duration, &at) != nil {
+			return false, 0
+		}
+		seconds, finished = append(seconds, duration), append(finished, at)
+	}
+	if rows.Err() != nil || !readsShowShopIsSlow(seconds, finished, now) {
+		return false, 0
+	}
+	return true, slowReadWait
 }
