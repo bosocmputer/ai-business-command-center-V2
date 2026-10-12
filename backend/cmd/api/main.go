@@ -76,7 +76,8 @@ func main() {
 	viewerService := viewer.NewService(lineVerifier, recipientService, database.NewViewerStore(pool), sessionManager, time.Now)
 	viewerReportService := viewer.NewReportService(viewerService, database.NewReportStore(pool).ConfigureGenerationCache(cfg.GenerationCacheEnabled), time.Now).
 		ConfigureSnapshotFirst(cfg.SnapshotFirstEnabled, cfg.SnapshotFirstTenantIDs).
-		ConfigureStaleRevalidation(cfg.StaleRevalidationEnabled)
+		ConfigureStaleRevalidation(cfg.StaleRevalidationEnabled).
+		ConfigureReportAutoRefresh(cfg.ReportAutoRefreshEnabled)
 	assistantSettings := assistantcfg.NewService(database.NewAssistantSettingsStore(pool), secretBox, time.Now).ConfigureLineFrontGate(cfg.LineFrontGate).ConfigureSlowPush(cfg.LineSlowPush, lineQuotaLeft(database.NewQuotaStore(pool)))
 	agentStore := database.NewAgentStore(pool)
 	agentService := agent.NewService(agentStore, database.NewReportStore(pool), sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{CallsPerHour: cfg.AgentCallsPerHour, RefreshesPerHour: cfg.AgentRefreshesPerHour, StaleWait: time.Duration(cfg.AgentStaleWaitSeconds) * time.Second, MonthlyCallBudget: cfg.AgentMonthlyCallBudget}).ConfigureAlerts(agentStore).ConfigureMaster(database.NewMasterStore(pool)).ConfigureExports(viewerReportService).ConfigureAssistantConfig(assistantSettings)

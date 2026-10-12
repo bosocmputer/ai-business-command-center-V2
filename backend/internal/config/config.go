@@ -52,6 +52,7 @@ type Config struct {
 	SummaryQueryEnabled          bool
 	GenerationCacheEnabled       bool
 	StaleRevalidationEnabled     bool
+	ReportAutoRefreshEnabled     bool
 	HeavyChunkEnabled            bool
 	AgentAPIEnabled              bool
 	// Alerts the assistant sets up are checked once a day by the worker. They are off until an operator turns them on,
@@ -252,6 +253,13 @@ func Load(lookup LookupFunc) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	// A report page that opens on old or missing figures asks for them to be read again by itself. Separate from the dashboard-generation
+	// rollout above: it uses the same refresh path the assistant has used in production (refresh policy, one shared read per period,
+	// schedule guard, circuit breaker) and does not need generations.
+	reportAutoRefreshEnabled, err := boolValue(lookup, "REPORT_AUTO_REFRESH_ENABLED", false)
+	if err != nil {
+		return Config{}, err
+	}
 	// The assistant surface is off until an operator turns it on.
 	agentAPIEnabled, err := boolValue(lookup, "AGENT_API_ENABLED", false)
 	if err != nil {
@@ -404,6 +412,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		SummaryQueryEnabled:          summaryQueryEnabled,
 		GenerationCacheEnabled:       generationCacheEnabled,
 		StaleRevalidationEnabled:     staleRevalidationEnabled,
+		ReportAutoRefreshEnabled:     reportAutoRefreshEnabled,
 		HeavyChunkEnabled:            heavyChunkEnabled,
 		AgentAPIEnabled:              agentAPIEnabled,
 		AgentAlertsEnabled:           agentAlertsEnabled,

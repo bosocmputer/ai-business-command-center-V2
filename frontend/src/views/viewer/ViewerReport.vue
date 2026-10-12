@@ -251,7 +251,8 @@ async function autoRevalidate(selection: ReportPeriodSelection, context: number,
         autoRefresh.value = 'idle';
       } else if (step.kind === 'wait') {
         autoTimer = window.setTimeout(() => void follow(), step.waitMs);
-      } else autoRefresh.value = step.kind === 'blocked' ? 'blocked' : 'failed';
+      } else if (step.kind === 'unsupported') autoRefresh.value = 'idle';
+      else autoRefresh.value = step.kind === 'blocked' ? 'blocked' : 'failed';
     } catch (cause) {
       if (!isCancelled(cause) && isCurrent(context, selectedTenantId, selectedReportKey)) autoRefresh.value = 'failed';
     }

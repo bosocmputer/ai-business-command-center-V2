@@ -10,6 +10,7 @@ export type AutoRefreshStep =
   | { kind: 'fresh'; snapshot: DashboardSnapshot }
   | { kind: 'wait'; waitMs: number }
   | { kind: 'blocked'; retryAfterSeconds: number }
+  | { kind: 'unsupported' }
   | { kind: 'failed' };
 
 const FINISHED_WITHOUT_RESULT = new Set(['FAILED', 'CANCELLED', 'EXPIRED']);
@@ -21,6 +22,8 @@ export const AUTO_REFRESH_LIMIT_MS = 4 * 60_000;
 
 export function nextAutoRefreshStep(result: ReportRevalidation, hidden: boolean): AutoRefreshStep {
   const pollMs = hidden ? AUTO_REFRESH_POLL_HIDDEN_MS : AUTO_REFRESH_POLL_MS;
+  // The server has this feature switched off: keep the page as it was (old figures with the manual button) and say nothing.
+  if (result.legacyFallback) return { kind: 'unsupported' };
   switch (result.disposition) {
     case 'FRESH_CACHE':
       return result.snapshot ? { kind: 'fresh', snapshot: result.snapshot } : { kind: 'failed' };

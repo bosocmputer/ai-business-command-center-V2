@@ -179,6 +179,34 @@ func TestReportServiceSnapshotFirstFeatureFlagFallsBackWithoutEnqueue(t *testing
 	}
 }
 
+func TestReportAutoRefreshLetsOneReportAskForANewReadWithoutTheDashboardRolloutGates(t *testing.T) {
+	now := time.Date(2026, 7, 12, 8, 0, 0, 0, time.UTC)
+	recipientID, tenantID := uuid.New(), uuid.New()
+	access := &fakeReportAccess{allowed: true, tenants: []TenantAccess{{ID: tenantID, Timezone: "Asia/Bangkok", ReportKeys: []report.Key{report.SalesGoodsServices}}}}
+	input := CreateReportRunInput{PeriodPreset: report.MonthToDate}
+
+	// Without the switch the rollout gates decide, as before.
+	gated := &fakeViewerRunStore{}
+	service := NewReportService(access, gated, func() time.Time { return now }).ConfigureSnapshotFirst(false, nil).ConfigureStaleRevalidation(false)
+	revalidation, err := service.Revalidate(context.Background(), recipientID, tenantID, report.SalesGoodsServices, input)
+	if err != nil || !revalidation.LegacyFallback || gated.revalidationCalls != 0 {
+		t.Fatalf("gated Revalidate() = %+v, %v, store calls %d", revalidation, err, gated.revalidationCalls)
+	}
+
+	// With it, the store's refresh runs (and keeps its own guards), and the person is still checked first.
+	open := &fakeViewerRunStore{}
+	service = NewReportService(access, open, func() time.Time { return now }).ConfigureSnapshotFirst(false, nil).ConfigureStaleRevalidation(false).ConfigureReportAutoRefresh(true)
+	revalidation, err = service.Revalidate(context.Background(), recipientID, tenantID, report.SalesGoodsServices, input)
+	if err != nil || revalidation.LegacyFallback || open.revalidationCalls != 1 {
+		t.Fatalf("Revalidate() = %+v, %v, store calls %d", revalidation, err, open.revalidationCalls)
+	}
+	forbidden := &fakeReportAccess{allowed: false, tenants: access.tenants}
+	service = NewReportService(forbidden, &fakeViewerRunStore{}, func() time.Time { return now }).ConfigureReportAutoRefresh(true)
+	if _, err := service.Revalidate(context.Background(), recipientID, tenantID, report.SalesGoodsServices, input); !errors.Is(err, ErrReportForbidden) {
+		t.Fatalf("a report the person may not see must be refused, err = %v", err)
+	}
+}
+
 func TestReportServiceRejectsAmbiguousAndUnauthorizedInputs(t *testing.T) {
 	now := time.Date(2026, 7, 10, 8, 0, 0, 0, time.UTC)
 	recipientID, tenantID := uuid.New(), uuid.New()

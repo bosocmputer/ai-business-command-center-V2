@@ -32,6 +32,10 @@ describe('nextAutoRefreshStep', () => {
     }
   });
 
+  it('stays quiet when the server does not offer automatic refresh at all', () => {
+    expect(nextAutoRefreshStep(result({ disposition: 'DISABLED', legacyFallback: true }), false)).toEqual({ kind: 'unsupported' });
+  });
+
   it('says it is blocked when the server will not read now, with the wait it gave', () => {
     expect(nextAutoRefreshStep(result({ disposition: 'CIRCUIT_OPEN', retryAfter: 90 }), false)).toEqual({ kind: 'blocked', retryAfterSeconds: 90 });
     expect(nextAutoRefreshStep(result({ disposition: 'DISABLED', retryAfter: 0 }), false)).toEqual({ kind: 'blocked', retryAfterSeconds: 0 });

@@ -160,11 +160,19 @@ type ReportService struct {
 	now                      func() time.Time
 	snapshotFirstEnabled     bool
 	staleRevalidationEnabled bool
+	reportAutoRefresh        bool
 	snapshotFirstTenants     map[uuid.UUID]struct{}
 }
 
 func NewReportService(access ReportAccessControl, store ViewerRunStore, now func() time.Time) *ReportService {
 	return &ReportService{access: access, store: store, now: now, snapshotFirstEnabled: true, staleRevalidationEnabled: true}
+}
+
+// ConfigureReportAutoRefresh lets a single report page ask for a new read of old or missing figures (Revalidate) without the snapshot-first and
+// stale-revalidation rollout gates, which belong to the dashboard overview. The refresh itself keeps every guard of the store's RevalidateSnapshot.
+func (service *ReportService) ConfigureReportAutoRefresh(enabled bool) *ReportService {
+	service.reportAutoRefresh = enabled
+	return service
 }
 
 func (service *ReportService) ConfigureStaleRevalidation(enabled bool) *ReportService {
@@ -252,7 +260,7 @@ func (service *ReportService) Get(ctx context.Context, recipientID, tenantID uui
 }
 
 func (service *ReportService) Revalidate(ctx context.Context, recipientID, tenantID uuid.UUID, reportKey report.Key, input CreateReportRunInput) (ReportRevalidation, error) {
-	if !service.snapshotFirstAllowed(tenantID) {
+	if !service.reportAutoRefresh && !service.snapshotFirstAllowed(tenantID) {
 		if err := service.authorizeReport(ctx, recipientID, tenantID, reportKey); err != nil {
 			return ReportRevalidation{}, err
 		}
@@ -279,7 +287,7 @@ func (service *ReportService) Revalidate(ctx context.Context, recipientID, tenan
 	if !ok {
 		return ReportRevalidation{}, errors.New("viewer snapshot store is unavailable")
 	}
-	if !service.staleRevalidationEnabled {
+	if !service.reportAutoRefresh && !service.staleRevalidationEnabled {
 		snapshot, snapshotErr := store.GetExactSnapshotForPeriod(ctx, tenantID, reportKey, period, now)
 		if snapshotErr != nil && !errors.Is(snapshotErr, report.ErrRunNotFound) {
 			return ReportRevalidation{}, snapshotErr

@@ -33,6 +33,7 @@ x-app-environment: &app-environment
   SUMMARY_QUERY_ENABLED: ${SUMMARY_QUERY_ENABLED:-true}
   GENERATION_CACHE_ENABLED: ${GENERATION_CACHE_ENABLED:-false}
   STALE_REVALIDATION_ENABLED: ${STALE_REVALIDATION_ENABLED:-false}
+  REPORT_AUTO_REFRESH_ENABLED: ${REPORT_AUTO_REFRESH_ENABLED:-false}
   HEAVY_CHUNK_ENABLED: ${HEAVY_CHUNK_ENABLED:-false}
   AGENT_API_ENABLED: ${AGENT_API_ENABLED:-false}
   # Alerts the owner sets by talking to the assistant. Off; when on, a dry run (records, sends nothing) until sending is switched on.

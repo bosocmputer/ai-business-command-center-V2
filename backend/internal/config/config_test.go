@@ -146,6 +146,35 @@ func TestLoadEnablesBoundedSummaryQueriesByDefault(t *testing.T) {
 	}
 }
 
+func TestReportAutoRefreshIsOffByDefaultAndNeedsNoDashboardGenerationFlags(t *testing.T) {
+	secret := base64.StdEncoding.EncodeToString([]byte("01234567890123456789012345678901"))
+	values := map[string]string{
+		"DATABASE_URL":          "postgres://nextstep@localhost/nextstep?sslmode=disable",
+		"PUBLIC_BASE_URL":       "http://localhost:6324",
+		"ADMIN_PASSWORD_HASH":   "$argon2id$v=19$m=65536,t=3,p=2$c2FsdA$aGFzaA",
+		"SESSION_HMAC_KEY":      secret,
+		"ENCRYPTION_MASTER_KEY": secret,
+		"ENCRYPTION_KEY_ID":     "key-2026-01",
+		"SML_ALLOWED_CIDRS":     "10.0.0.0/8",
+	}
+	load := func() (Config, error) {
+		return Load(func(key string) (string, bool) { value, ok := values[key]; return value, ok })
+	}
+	cfg, err := load()
+	if err != nil || cfg.ReportAutoRefreshEnabled {
+		t.Fatalf("default: enabled=%v err=%v", cfg.ReportAutoRefreshEnabled, err)
+	}
+	values["REPORT_AUTO_REFRESH_ENABLED"] = "true"
+	cfg, err = load()
+	if err != nil || !cfg.ReportAutoRefreshEnabled || cfg.GenerationCacheEnabled || cfg.StaleRevalidationEnabled {
+		t.Fatalf("on: enabled=%v generation=%v stale=%v err=%v", cfg.ReportAutoRefreshEnabled, cfg.GenerationCacheEnabled, cfg.StaleRevalidationEnabled, err)
+	}
+	values["REPORT_AUTO_REFRESH_ENABLED"] = "maybe"
+	if _, err := load(); err == nil {
+		t.Fatal("a value that is not true or false must be refused")
+	}
+}
+
 func TestParseAllowedPortsAllowsWildcardForAnyPublicEndpointPort(t *testing.T) {
 	ports, err := parseAllowedPorts("*")
 	if err != nil {

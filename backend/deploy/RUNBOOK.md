@@ -208,6 +208,15 @@ test delivery succeeds.
   `SNAPSHOT_FIRST_TENANT_IDS` allowlist, then observe cache hit ratio, queue age,
   SML timeouts, and schedule latency before expanding the allowlist.
 
+### Report pages that read old figures again by themselves
+
+`REPORT_AUTO_REFRESH_ENABLED=true` (default `false`) lets a single report page ask for a new read when it opens on old, expired or missing figures
+(`POST /api/v1/viewer/tenants/{id}/reports/{key}/revalidations`). It does not need `SNAPSHOT_FIRST_ENABLED`, `GENERATION_CACHE_ENABLED` or
+`STALE_REVALIDATION_ENABLED` (those gate the dashboard overview). The read goes through the same path the assistant uses in production
+(`RevalidateSnapshot`): the shop's refresh policy (fast 5, standard 15, heavy 30 minutes), one shared read per report and period, no refresh close to a
+scheduled send, the tenant circuit breaker, and the runtime limits above (one active SML query per tenant). Watch queue age and SML timeouts after
+switching it on; to stop it set the flag to `false` and recreate `api` (pages then keep their old behaviour: old figures and the manual button).
+
 ### Summary generation and heavy-query rollout
 
 `SUMMARY_QUERY_ENABLED` defaults to `true` for every tenant because Overview,
