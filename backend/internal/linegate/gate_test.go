@@ -228,6 +228,16 @@ func TestSwitchWordShowsTheChoicesEvenWhenOneIsKept(t *testing.T) {
 	}
 }
 
+func TestSwitchWordWithOneShopIsAnsweredByTheGateAndNotPassedOn(t *testing.T) {
+	shops := shopsOf("A")
+	forwarder := &fakeForwarder{}
+	gate, replier := newGate(&fakeStore{recipient: uuid.New(), shops: shops, selected: map[uuid.UUID]uuid.UUID{}}, forwarder)
+	gate.Process(context.Background(), []byte(textEvent("Uone", "เปลี่ยนร้าน")))
+	if len(forwarder.sent) != 0 || len(replier.replies) != 1 || !strings.Contains(replyText(t, replier.replies[0]), "ร้านเดียว") {
+		t.Fatalf("sent=%d replies=%d", len(forwarder.sent), len(replier.replies))
+	}
+}
+
 func TestOtherPostbacksGoToTheShopLikeMessages(t *testing.T) {
 	shops := shopsOf("A")
 	forwarder := &fakeForwarder{}

@@ -160,6 +160,11 @@ func (gate *Gate) handle(ctx context.Context, destination string, raw json.RawMe
 		gate.reply(ctx, event, chooser(shops))
 		return
 	}
+	// The menu's "change shop" button is there for everyone: with only one shop it is answered here instead of reaching the assistant.
+	if isMessage && event.Message.Type == "text" && len(shops) == 1 && switchWords[strings.TrimSpace(event.Message.Text)] {
+		gate.reply(ctx, event, text(fmt.Sprintf("คุณใช้เลขา AI ของ %s ร้านเดียวครับ ถามได้เลย", shopLabel(shops[0].Name))))
+		return
+	}
 	target, ok := shops[0], true
 	if len(shops) > 1 {
 		target, ok = gate.selected(ctx, recipientID, shops)
