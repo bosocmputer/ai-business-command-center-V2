@@ -31,6 +31,11 @@ func TestResolveComparisonPeriodUsesBusinessEquivalentPeriods(t *testing.T) {
 			want: Period{Preset: Custom, DateFrom: "2026-02-01", DateTo: "2026-02-28"},
 		},
 		{
+			name: "a whole 30 day month compares with the whole 31 day month before",
+			in:   Period{Preset: MonthToDate, DateFrom: "2026-09-01", DateTo: "2026-09-30"},
+			want: Period{Preset: Custom, DateFrom: "2026-08-01", DateTo: "2026-08-31"},
+		},
+		{
 			name: "custom compares the immediately preceding equal range",
 			in:   Period{Preset: Custom, DateFrom: "2026-07-01", DateTo: "2026-07-10"},
 			want: Period{Preset: Custom, DateFrom: "2026-06-21", DateTo: "2026-06-30"},

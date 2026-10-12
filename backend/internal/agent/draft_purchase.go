@@ -15,6 +15,7 @@ const (
 	MessageNothingToOrder     = "ตอนนี้ไม่มีสินค้าถึงจุดสั่งซื้อ จึงไม่มีรายการให้ร่างสั่งซื้อ"
 	MessagePurchaseNoSupplier = "รายงานไม่มีข้อมูลผู้จำหน่ายของสินค้า ร่างนี้จึงเขียนถึง “ผู้จำหน่าย” กว้าง ๆ เจ้าของเลือกผู้จำหน่ายและแก้ชื่อเอง"
 	MessagePurchaseQuantity   = "จำนวนในร่างคือจำนวนที่ขาดจากจุดสั่งซื้อ (จุดสั่งซื้อ − คงเหลือ) ไม่ใช่จำนวนที่แนะนำให้สั่ง เจ้าของปรับจำนวนก่อนส่ง"
+	MessagePurchaseReorderSet = "ร่างนี้นับเฉพาะสินค้าที่ร้านตั้งจุดสั่งซื้อไว้ใน SML สินค้าที่ไม่ได้ตั้งจุดสั่งซื้อจะไม่ถูกนับ ถ้าอยากให้ครอบคลุมสินค้าอื่น ต้องตั้งจุดสั่งซื้อของสินค้านั้นใน SML ก่อน"
 	MessagePurchaseOnOrder    = "รายการที่มียอดค้างรับจากใบสั่งซื้อเดิม อาจไม่ต้องสั่งเพิ่ม ให้ตรวจก่อนส่ง"
 )
 
@@ -92,7 +93,7 @@ func (service *Service) DraftPurchaseOrder(ctx context.Context, principal Princi
 	response.Status = "READY"
 	response.ItemsBelowPoint = max(response.ItemsBelowPoint, len(items))
 	response.Draft = purchaseDraft(principal.ShopName, items, locationOf(principal), now)
-	response.Notes = []string{MessageDraftNote, MessagePurchaseNoSupplier, MessagePurchaseQuantity}
+	response.Notes = []string{MessageDraftNote, MessagePurchaseNoSupplier, MessagePurchaseQuantity, MessagePurchaseReorderSet}
 	for _, item := range items {
 		if onOrder, ok := new(big.Rat).SetString(item.OnOrderQty); ok && onOrder.Sign() > 0 {
 			response.Notes = append(response.Notes, MessagePurchaseOnOrder)

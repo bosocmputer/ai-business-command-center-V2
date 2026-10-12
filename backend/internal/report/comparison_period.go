@@ -30,6 +30,10 @@ func ResolveComparisonPeriod(period Period) (Period, error) {
 		if targetDay > priorMonthEnd.Day() {
 			targetDay = priorMonthEnd.Day()
 		}
+		// A whole month (the range ends on its last day) is compared with the whole month before, even when that one is longer.
+		if to.AddDate(0, 0, 1).Day() == 1 {
+			targetDay = priorMonthEnd.Day()
+		}
 		comparisonTo = time.Date(priorMonthEnd.Year(), priorMonthEnd.Month(), targetDay, 0, 0, 0, 0, time.UTC)
 	case Yesterday, TodayToNow, AsOfRun:
 		if !from.Equal(to) {

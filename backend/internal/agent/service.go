@@ -792,6 +792,12 @@ func resolvePeriod(definition report.Definition, location *time.Location, now ti
 	if err != nil || period.DateTo > today {
 		return report.Period{}, ErrInvalidPeriod
 	}
+	// A range that starts on the 1st and stays inside one month is "the month so far" (or the whole month) to an owner, so its
+	// built-in comparison must be the same days of the month before. A plain custom range would compare with the equal-length
+	// range just before it (1-12 Oct against 19-30 Sep), which no owner expects.
+	if definition.ParameterKind == report.DateRange && strings.HasSuffix(period.DateFrom, "-01") && period.DateFrom[:7] == period.DateTo[:7] {
+		period.Preset = report.MonthToDate
+	}
 	return period, nil
 }
 
