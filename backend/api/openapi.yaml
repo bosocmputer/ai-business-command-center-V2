@@ -472,6 +472,7 @@ paths:
         - {name: reportKey, in: path, required: true, schema: {type: string}}
         - {name: dateFrom, in: query, schema: {type: string, format: date}}
         - {name: dateTo, in: query, schema: {type: string, format: date}}
+        - {name: refresh, in: query, schema: {type: boolean}, description: "Read the report from the shop's system again even if the stored numbers are fresh (the owner asked for the latest). Counts against the shop's hourly budget of reads; figures read in the last minute are returned as they are."}
       responses:
         '200': {description: "Report, PREPARING or UNAVAILABLE.", content: {application/json: {schema: {$ref: '#/components/schemas/AgentReport'}}}}
         '401': {$ref: '#/components/responses/AgentRefusal'}
@@ -491,6 +492,7 @@ paths:
         - {name: aTo, in: query, required: true, schema: {type: string, format: date}}
         - {name: bFrom, in: query, required: true, schema: {type: string, format: date}}
         - {name: bTo, in: query, required: true, schema: {type: string, format: date}}
+        - {name: refresh, in: query, schema: {type: boolean}, description: "Read both periods from the shop's system again even if the stored numbers are fresh."}
       responses:
         '200': {description: Comparison., content: {application/json: {schema: {$ref: '#/components/schemas/AgentCompare'}}}}
         '401': {$ref: '#/components/responses/AgentRefusal'}
@@ -2204,6 +2206,7 @@ components:
       type: object
       required: [reportKey, label, status]
       properties:
+        today: {type: string, format: date, description: "The shop's date at the moment of the answer; an assistant must not trust a date it learned in an earlier answer."}
         reportKey: {$ref: '#/components/schemas/ReportKey'}
         label: {type: string}
         status: {type: string, enum: [READY, PREPARING, UNAVAILABLE]}
@@ -2261,6 +2264,7 @@ components:
       type: object
       required: [reportKey, label, status]
       properties:
+        today: {type: string, format: date, description: "The shop's date at the moment of the answer."}
         reportKey: {$ref: '#/components/schemas/ReportKey'}
         label: {type: string}
         status: {type: string, enum: [READY, PREPARING, UNAVAILABLE]}

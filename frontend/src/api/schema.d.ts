@@ -1946,6 +1946,11 @@ export interface components {
             notes?: string[];
         };
         AgentReport: {
+            /**
+             * Format: date
+             * @description The shop's date at the moment of the answer; an assistant must not trust a date it learned in an earlier answer.
+             */
+            today?: string;
             reportKey: components["schemas"]["ReportKey"];
             label: string;
             /** @enum {string} */
@@ -1998,6 +2003,11 @@ export interface components {
             mode?: string;
         };
         AgentCompare: {
+            /**
+             * Format: date
+             * @description The shop's date at the moment of the answer.
+             */
+            today?: string;
             reportKey: components["schemas"]["ReportKey"];
             label: string;
             /** @enum {string} */
@@ -4313,6 +4323,8 @@ export interface operations {
             query?: {
                 dateFrom?: string;
                 dateTo?: string;
+                /** @description Read the report from the shop's system again even if the stored numbers are fresh (the owner asked for the latest). Counts against the shop's hourly budget of reads; figures read in the last minute are returned as they are. */
+                refresh?: boolean;
             };
             header?: never;
             path: {
@@ -4346,6 +4358,8 @@ export interface operations {
                 aTo: string;
                 bFrom: string;
                 bTo: string;
+                /** @description Read both periods from the shop's system again even if the stored numbers are fresh. */
+                refresh?: boolean;
             };
             header?: never;
             path?: never;

@@ -106,12 +106,12 @@ func registerAgentRoutes(router chi.Router, api AgentAPI, enabled bool) {
 		})
 		group.Get("/reports/{reportKey}", func(response http.ResponseWriter, request *http.Request) {
 			query := request.URL.Query()
-			result, err := api.Report(request.Context(), agentPrincipal(request), chi.URLParam(request, "reportKey"), query.Get("dateFrom"), query.Get("dateTo"))
+			result, err := api.Report(refreshContext(request), agentPrincipal(request), chi.URLParam(request, "reportKey"), query.Get("dateFrom"), query.Get("dateTo"))
 			respondAgent(response, result, err)
 		})
 		group.Get("/compare", func(response http.ResponseWriter, request *http.Request) {
 			query := request.URL.Query()
-			result, err := api.Compare(request.Context(), agentPrincipal(request), query.Get("reportKey"), query.Get("metric"), query.Get("aFrom"), query.Get("aTo"), query.Get("bFrom"), query.Get("bTo"))
+			result, err := api.Compare(refreshContext(request), agentPrincipal(request), query.Get("reportKey"), query.Get("metric"), query.Get("aFrom"), query.Get("aTo"), query.Get("bFrom"), query.Get("bTo"))
 			respondAgent(response, result, err)
 		})
 		group.Get("/deliveries/latest", func(response http.ResponseWriter, request *http.Request) {
@@ -347,4 +347,12 @@ func registerAgentAdminRoutes(router chi.Router, adminAuth AdminAuthenticator, a
 		response.Header().Set("Cache-Control", "no-store")
 		writeJSON(response, http.StatusOK, agentTokenStatus{Enabled: enabled, Info: agent.TokenInfo{Status: "NONE"}})
 	})
+}
+
+// refreshContext carries "the owner asked for the latest figures" (query refresh=1) into the service.
+func refreshContext(request *http.Request) context.Context {
+	if value := strings.ToLower(request.URL.Query().Get("refresh")); value == "1" || value == "true" {
+		return agent.WithRefresh(request.Context())
+	}
+	return request.Context()
 }

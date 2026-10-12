@@ -37,6 +37,9 @@ type Config struct {
 	// wait (answer at once with the old numbers and the warning). StalePoll is how often the wait looks (1 second when 0).
 	StaleWait time.Duration
 	StalePoll time.Duration
+	// RefreshExtraWait is how much longer a question that asked for the latest waits for the new read (7 seconds when 0 and StaleWait is on;
+	// negative means no extra).
+	RefreshExtraWait time.Duration
 }
 
 func (config Config) withDefaults() Config {
@@ -54,6 +57,12 @@ func (config Config) withDefaults() Config {
 	}
 	if config.StalePoll <= 0 {
 		config.StalePoll = time.Second
+	}
+	switch {
+	case config.RefreshExtraWait < 0:
+		config.RefreshExtraWait = 0
+	case config.RefreshExtraWait == 0:
+		config.RefreshExtraWait = refreshExtraWait
 	}
 	return config
 }
@@ -305,7 +314,7 @@ func (service *Service) Report(ctx context.Context, principal Principal, rawKey,
 	}
 	snapshot := service.snapshot(ctx, principal, definition, period, now)
 	response := service.reportResponse(principal, definition, period, snapshot)
-	service.record(ctx, principal, ToolGetReport, string(definition.Key), period, outcomeOf(snapshot.state), started, snapshot.runID())
+	service.record(ctx, principal, ToolGetReport, string(definition.Key), period, snapshot.outcome(), started, snapshot.runID())
 	return response, nil
 }
 
@@ -338,7 +347,7 @@ func (service *Service) Compare(ctx context.Context, principal Principal, rawKey
 	for _, snapshot := range []snapshotResult{snapshotA, snapshotB} {
 		if snapshot.state != stateReady {
 			response.Status, response.Message, response.RetryAfterSeconds = snapshot.state.status(), snapshot.message(), snapshot.retryAfter
-			service.record(ctx, principal, ToolCompare, string(definition.Key), periodA, outcomeOf(snapshot.state), started, nil)
+			service.record(ctx, principal, ToolCompare, string(definition.Key), periodA, snapshot.outcome(), started, nil)
 			return response, nil
 		}
 	}
@@ -365,7 +374,14 @@ func (service *Service) Compare(ctx context.Context, principal Principal, rawKey
 	if finished := snapshotA.snapshot.SourceFinishedAt; finished != nil {
 		response.CollectedAt = finished.In(locationOf(principal)).Format(time.RFC3339)
 	}
-	service.record(ctx, principal, ToolCompare, string(definition.Key), periodA, OutcomeOK, started, snapshotA.runID())
+	for _, snapshot := range []snapshotResult{snapshotA, snapshotB} {
+		response.Warnings = append(response.Warnings, snapshot.refreshNotes()...)
+	}
+	outcome := OutcomeOK
+	if snapshotA.refreshStarted || snapshotB.refreshStarted {
+		outcome = OutcomeRefreshed
+	}
+	service.record(ctx, principal, ToolCompare, string(definition.Key), periodA, outcome, started, snapshotA.runID())
 	return response, nil
 }
 
@@ -484,6 +500,30 @@ type snapshotResult struct {
 	retryAfter int
 	// budgetUsed says the shop has had many fetches started this hour, so none more is started.
 	budgetUsed bool
+	// refreshStarted: the owner asked for the latest and a new read was started for it. refreshDeclined: they asked, and it could not be
+	// started, so figures that are still fresh are shown.
+	refreshStarted, refreshDeclined bool
+}
+
+// outcome is what the call is logged as. A question that started a new read at the owner's request is logged as such, so the read counts
+// against the shop's hourly budget of reads like any other.
+func (result snapshotResult) outcome() Outcome {
+	if result.refreshStarted {
+		return OutcomeRefreshed
+	}
+	return outcomeOf(result.state)
+}
+
+// refreshNotes says why the owner did not get a new read when they asked for one and the figures shown are still fresh.
+func (result snapshotResult) refreshNotes() []string {
+	switch {
+	case result.state != stateReady || !result.refreshDeclined:
+		return nil
+	case result.budgetUsed:
+		return []string{MessageRefreshBudget}
+	default:
+		return []string{MessageRefreshDeclined}
+	}
 }
 
 func (result snapshotResult) message() string {
@@ -511,15 +551,24 @@ func (result snapshotResult) runID() *uuid.UUID {
 // snapshot finds the stored numbers for a period and, when they are missing or old, asks the existing
 // revalidation path to fetch them in the background, within an hourly budget per shop.
 func (service *Service) snapshot(ctx context.Context, principal Principal, definition report.Definition, period report.Period, now time.Time) snapshotResult {
+	force := refreshRequested(ctx)
 	cached, err := service.snapshots.GetExactSnapshotForPeriod(ctx, principal.TenantID, definition.Key, period, now)
 	have := err == nil
 	if have && cached.FreshnessStatus == viewer.FreshnessFresh {
-		return snapshotResult{state: stateReady, snapshot: cached}
+		// An owner who asked for the latest gets a new read, unless the figures were read within the last minute: those are the latest.
+		if !force || cached.SourceFinishedAt == nil || now.Sub(*cached.SourceFinishedAt) < refreshMinAge {
+			return snapshotResult{state: stateReady, snapshot: cached}
+		}
 	}
 	if err != nil && !errors.Is(err, report.ErrRunNotFound) {
 		return snapshotResult{state: stateUnavailable}
 	}
+	// Figures that are still fresh are shown as they are when a refresh the owner asked for cannot be made now; only past-time ones are called stale.
+	stillFresh := have && cached.FreshnessStatus == viewer.FreshnessFresh
 	fallback := func(retryAfter int) snapshotResult {
+		if stillFresh {
+			return snapshotResult{state: stateReady, snapshot: cached, refreshDeclined: true}
+		}
 		if have && cached.FreshnessStatus != viewer.FreshnessExpired {
 			return snapshotResult{state: stateReady, snapshot: cached, stale: true, retryAfter: retryAfter}
 		}
@@ -531,7 +580,12 @@ func (service *Service) snapshot(ctx context.Context, principal Principal, defin
 		result.budgetUsed = true
 		return result
 	}
-	revalidation, err := service.snapshots.RevalidateSnapshot(ctx, principal.TenantID, definition.Key, period, now)
+	var revalidation viewer.ReportRevalidation
+	if force {
+		revalidation, err = service.snapshots.RefreshSnapshotNow(ctx, principal.TenantID, definition.Key, period, now)
+	} else {
+		revalidation, err = service.snapshots.RevalidateSnapshot(ctx, principal.TenantID, definition.Key, period, now)
+	}
 	if err != nil {
 		return fallback(60)
 	}
@@ -543,15 +597,42 @@ func (service *Service) snapshot(ctx context.Context, principal Principal, defin
 		}
 	case viewer.RevalidationMissingRefreshing, viewer.RevalidationStaleRefreshing, viewer.RevalidationJoined:
 		if revalidation.Snapshot != nil && revalidation.Snapshot.FreshnessStatus != viewer.FreshnessExpired {
-			if fresh, ok := service.waitForFresh(ctx, principal, definition, period); ok {
+			prior, extra := uuid.Nil, time.Duration(0)
+			if force {
+				prior, extra = revalidation.Snapshot.RunID, service.config.RefreshExtraWait
+			}
+			if fresh, ok := service.waitForFresh(ctx, principal, definition, period, prior, extra); ok {
+				fresh.refreshStarted = force
 				return fresh
 			}
-			return snapshotResult{state: stateReady, snapshot: *revalidation.Snapshot, stale: true, retryAfter: retry}
+			return snapshotResult{state: stateReady, snapshot: *revalidation.Snapshot, stale: true, retryAfter: retry, refreshStarted: force}
 		}
-		return snapshotResult{state: statePreparing, retryAfter: retry}
+		return snapshotResult{state: statePreparing, retryAfter: retry, refreshStarted: force}
 	}
 	return fallback(retry)
 }
+
+type refreshKey struct{}
+
+// WithRefresh marks a request as one where the owner asked for the latest figures: stored ones that are still fresh are read again.
+func WithRefresh(ctx context.Context) context.Context {
+	return context.WithValue(ctx, refreshKey{}, true)
+}
+
+func refreshRequested(ctx context.Context) bool {
+	asked, _ := ctx.Value(refreshKey{}).(bool)
+	return asked
+}
+
+const (
+	// refreshMinAge: figures read less than this long ago are already the latest.
+	refreshMinAge = time.Minute
+	// refreshExtraWait is how much longer a question that asked for the latest waits for the new read than one that met old figures.
+	refreshExtraWait = 7 * time.Second
+
+	MessageRefreshBudget   = "ดึงข้อมูลสดจากระบบร้านครบจำนวนที่ตั้งไว้ในชั่วโมงนี้แล้ว จึงแสดงตัวเลขที่ดึงไว้ล่าสุดแทน"
+	MessageRefreshDeclined = "ตอนนี้ดึงข้อมูลใหม่จากระบบร้านไม่ได้ (ระบบกำลังส่งรายงานตามเวลา หรือพักการเชื่อมต่อชั่วคราว) จึงแสดงตัวเลขที่ดึงไว้ล่าสุดแทน"
+)
 
 type freshDeadlineKey struct{}
 
@@ -562,11 +643,12 @@ func withFreshDeadline(ctx context.Context, deadline time.Time) context.Context 
 
 // waitForFresh looks every StalePoll for the refreshed numbers of a period while the refresh that was just started runs, until StaleWait is used up
 // (or the request's own deadline). It answers false when they did not come in time, and then the caller answers with the old ones.
-func (service *Service) waitForFresh(ctx context.Context, principal Principal, definition report.Definition, period report.Period) (snapshotResult, bool) {
+func (service *Service) waitForFresh(ctx context.Context, principal Principal, definition report.Definition, period report.Period, prior uuid.UUID, extra time.Duration) (snapshotResult, bool) {
 	if service.config.StaleWait <= 0 {
 		return snapshotResult{}, false
 	}
-	deadline := time.Now().Add(service.config.StaleWait)
+	// Never longer than 25 seconds: the assistant gives up on a call after 28 and the server after 30.
+	deadline := time.Now().Add(min(service.config.StaleWait+extra, 25*time.Second))
 	if limit, ok := ctx.Value(freshDeadlineKey{}).(time.Time); ok && limit.Before(deadline) {
 		deadline = limit
 	}
@@ -583,7 +665,8 @@ func (service *Service) waitForFresh(ctx context.Context, principal Principal, d
 		case <-timer.C:
 		}
 		snapshot, err := service.snapshots.GetExactSnapshotForPeriod(ctx, principal.TenantID, definition.Key, period, service.now())
-		if err == nil && snapshot.FreshnessStatus == viewer.FreshnessFresh {
+		// prior is the run the owner already had: only a different one is the new read (a fresh snapshot of the same run is the old figures).
+		if err == nil && snapshot.FreshnessStatus == viewer.FreshnessFresh && snapshot.RunID != prior {
 			return snapshotResult{state: stateReady, snapshot: snapshot}, true
 		}
 	}
@@ -600,6 +683,7 @@ func (service *Service) reportResponse(principal Principal, definition report.De
 		response.Freshness = "STALE"
 		response.Warnings = append(response.Warnings, MessageStale)
 	}
+	response.Warnings = append(response.Warnings, snapshot.refreshNotes()...)
 	if finished := snapshot.snapshot.SourceFinishedAt; finished != nil {
 		response.CollectedAt = finished.In(locationOf(principal)).Format(time.RFC3339)
 	}

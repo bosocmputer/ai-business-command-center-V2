@@ -81,7 +81,7 @@ func (store *AgentStore) PreparingSince(ctx context.Context, tenantID uuid.UUID,
 	var count int
 	err := store.pool.QueryRow(ctx, `
 		select count(distinct (report_key, period_from, period_to)) from agent_calls
-		where tenant_id = $1 and outcome = 'PREPARING' and created_at >= $2`, tenantID, since).Scan(&count)
+		where tenant_id = $1 and outcome in ('PREPARING', 'REFRESHED') and created_at >= $2`, tenantID, since).Scan(&count)
 	return count, err
 }
 

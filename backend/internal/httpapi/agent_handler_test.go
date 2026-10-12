@@ -89,6 +89,9 @@ type agentTestSnapshots struct{}
 func (agentTestSnapshots) GetExactSnapshotForPeriod(context.Context, uuid.UUID, report.Key, report.Period, time.Time) (viewer.DashboardSnapshot, error) {
 	return viewer.DashboardSnapshot{}, report.ErrRunNotFound
 }
+func (agentTestSnapshots) RefreshSnapshotNow(context.Context, uuid.UUID, report.Key, report.Period, time.Time) (viewer.ReportRevalidation, error) {
+	return viewer.ReportRevalidation{Disposition: viewer.RevalidationMissingRefreshing, RetryAfter: 60}, nil
+}
 func (agentTestSnapshots) RevalidateSnapshot(context.Context, uuid.UUID, report.Key, report.Period, time.Time) (viewer.ReportRevalidation, error) {
 	return viewer.ReportRevalidation{Disposition: viewer.RevalidationMissingRefreshing, RetryAfter: 60}, nil
 }

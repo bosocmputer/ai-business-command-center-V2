@@ -23,6 +23,20 @@ const (
 )
 
 func (store *ReportStore) RevalidateSnapshot(ctx context.Context, tenantID uuid.UUID, reportKey report.Key, period report.Period, now time.Time) (viewer.ReportRevalidation, error) {
+	return store.revalidate(ctx, tenantID, reportKey, period, now, false)
+}
+
+// forcedRefreshBucket is the time within which two people asking for "the latest" of the same report and period share one read.
+const forcedRefreshBucket = 2 * time.Minute
+
+// RefreshSnapshotNow starts a new read of a report and period from the shop's system even though the stored numbers are still fresh (an owner
+// asked for the latest). The guards are the same as for any background refresh (the shop's refresh policy, the schedule guard, the circuit
+// breaker); asks within two minutes share one read.
+func (store *ReportStore) RefreshSnapshotNow(ctx context.Context, tenantID uuid.UUID, reportKey report.Key, period report.Period, now time.Time) (viewer.ReportRevalidation, error) {
+	return store.revalidate(ctx, tenantID, reportKey, period, now, true)
+}
+
+func (store *ReportStore) revalidate(ctx context.Context, tenantID uuid.UUID, reportKey report.Key, period report.Period, now time.Time, force bool) (viewer.ReportRevalidation, error) {
 	definition, ok := report.DefinitionFor(reportKey)
 	if !ok {
 		return viewer.ReportRevalidation{}, report.ErrRunNotFound
@@ -40,7 +54,7 @@ func (store *ReportStore) RevalidateSnapshot(ctx context.Context, tenantID uuid.
 	if err != nil && !errors.Is(err, report.ErrRunNotFound) {
 		return viewer.ReportRevalidation{}, err
 	}
-	if err == nil && snapshot.FreshnessStatus == viewer.FreshnessFresh {
+	if err == nil && snapshot.FreshnessStatus == viewer.FreshnessFresh && !force {
 		return viewer.ReportRevalidation{Disposition: viewer.RevalidationFreshCache, Snapshot: &snapshot}, nil
 	}
 	if !enabled {
@@ -69,6 +83,9 @@ func (store *ReportStore) RevalidateSnapshot(ctx context.Context, tenantID uuid.
 	executionKey := snapshotExecutionKey(tenantID, reportKey, period, definition.ParameterKind, definition.Version, dataSourceVersion, fingerprint, report.ResultSummary)
 	bucket := now.Unix() / max(1, int64(interval.Seconds()))
 	idempotencyKey := "background-" + executionKey[:24] + fmt.Sprintf("-%d", bucket)
+	if force {
+		idempotencyKey = "forced-" + executionKey[:24] + fmt.Sprintf("-%d", now.Unix()/int64(forcedRefreshBucket.Seconds()))
+	}
 	run, enqueueErr := store.Enqueue(ctx, report.EnqueueInput{
 		TenantID: tenantID, ReportKey: reportKey, Source: report.SourceBackground,
 		ResultKind: report.ResultSummary, Priority: backgroundPriority(definition.RefreshClass), ExecutionKey: executionKey,

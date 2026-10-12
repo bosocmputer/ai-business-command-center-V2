@@ -84,19 +84,23 @@ def context() -> str:
 
 
 @mcp.tool()
-def get_report(report_key: str, date_from: str = "", date_to: str = "") -> str:
+def get_report(report_key: str, date_from: str = "", date_to: str = "", refresh: bool = False) -> str:
     """Fetch one report as numbers. report_key comes from context(). Dates are YYYY-MM-DD.
     DATE_RANGE reports use date_from..date_to (default: this month so far). AS_OF_DATE reports use date_to (default: today).
-    If the report has to be fetched live this call waits up to about 100 seconds and returns the finished report: just wait."""
-    return call_waiting("/reports/" + urllib.parse.quote(report_key, safe=""), {"dateFrom": date_from, "dateTo": date_to})
+    If the report has to be fetched live this call waits up to about 100 seconds and returns the finished report: just wait.
+    refresh=true reads the figures from the shop's system again now, even if they are recent. Use it ONLY when the owner explicitly asks for the
+    latest figures (for example "ดึงข้อมูลล่าสุด", "อัปเดตข้อมูลใหม่", "ขอตัวเลขสด ณ ตอนนี้"); never for an ordinary question. A read takes a few seconds to
+    a minute and the shop may have only a few reads an hour: if the answer says it could not read again, tell the owner and show the figures it gave."""
+    return call_waiting("/reports/" + urllib.parse.quote(report_key, safe=""), {"dateFrom": date_from, "dateTo": date_to, "refresh": "1" if refresh else ""})
 
 
 @mcp.tool()
-def compare(report_key: str, metric: str, a_from: str, a_to: str, b_from: str, b_to: str) -> str:
+def compare(report_key: str, metric: str, a_from: str, a_to: str, b_from: str, b_to: str, refresh: bool = False) -> str:
     """Compare one number (metric = a kpi key from get_report, e.g. total_amount) between period A and period B.
     The server computes the difference and percent: never compute them yourself. Only for reports with supportsCompare.
-    If a period has to be fetched live this call waits up to about 100 seconds and returns the finished comparison."""
-    return call_waiting("/compare", {"reportKey": report_key, "metric": metric, "aFrom": a_from, "aTo": a_to, "bFrom": b_from, "bTo": b_to})
+    If a period has to be fetched live this call waits up to about 100 seconds and returns the finished comparison.
+    refresh=true reads both periods from the shop's system again now: only when the owner explicitly asks for the latest figures."""
+    return call_waiting("/compare", {"reportKey": report_key, "metric": metric, "aFrom": a_from, "aTo": a_to, "bFrom": b_from, "bTo": b_to, "refresh": "1" if refresh else ""})
 
 
 @mcp.tool()

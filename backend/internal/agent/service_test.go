@@ -84,6 +84,7 @@ type fakeSnapshots struct {
 	exact        map[string]viewer.DashboardSnapshot // key: reportKey|from|to
 	revalidation viewer.ReportRevalidation
 	revalidated  int
+	refreshed    int
 	gets         int
 	// afterGet, when set, runs after every look at a stored snapshot (a test uses it to let the refresh "finish").
 	afterGet func(gets int)
@@ -103,6 +104,10 @@ func (snapshots *fakeSnapshots) GetExactSnapshotForPeriod(_ context.Context, _ u
 		return snapshot, nil
 	}
 	return viewer.DashboardSnapshot{}, report.ErrRunNotFound
+}
+func (snapshots *fakeSnapshots) RefreshSnapshotNow(ctx context.Context, tenantID uuid.UUID, key report.Key, period report.Period, at time.Time) (viewer.ReportRevalidation, error) {
+	snapshots.refreshed++
+	return snapshots.RevalidateSnapshot(ctx, tenantID, key, period, at)
 }
 func (snapshots *fakeSnapshots) RevalidateSnapshot(context.Context, uuid.UUID, report.Key, report.Period, time.Time) (viewer.ReportRevalidation, error) {
 	snapshots.revalidated++
@@ -615,5 +620,84 @@ func TestEveryReportAnswerCarriesTheShopsDateOfTheMoment(t *testing.T) {
 	preparing, err := newService(&fakeStore{permitted: []report.Key{report.SalesGoodsServices}}, &fakeSnapshots{revalidation: viewer.ReportRevalidation{Disposition: viewer.RevalidationMissingRefreshing}}).Report(context.Background(), principal, "sales_goods_services", "2026-09-01", "2026-09-30")
 	if err != nil || preparing.Status != "PREPARING" || preparing.Today != "2026-10-01" {
 		t.Fatalf("a preparing answer must say today: %+v %v", preparing, err)
+	}
+}
+
+func freshSales(period report.Period, total string, minutesAgo int) viewer.DashboardSnapshot {
+	snapshot := fresh(salesDashboard(period, total))
+	snapshot.SourceFinishedAt = finished(minutesAgo)
+	return snapshot
+}
+
+func forcedSetup(period report.Period, minutesAgo int) (*fakeStore, *fakeSnapshots, viewer.DashboardSnapshot) {
+	old := freshSales(period, "150.00", minutesAgo)
+	refreshing := old
+	refreshing.FreshnessStatus = viewer.FreshnessRefreshing
+	store := &fakeStore{permitted: []report.Key{report.SalesGoodsServices}}
+	snapshots := &fakeSnapshots{
+		exact:        map[string]viewer.DashboardSnapshot{snapshotKey(report.SalesGoodsServices, period): old},
+		revalidation: viewer.ReportRevalidation{Disposition: viewer.RevalidationStaleRefreshing, Snapshot: &refreshing},
+	}
+	return store, snapshots, old
+}
+
+func TestAnOwnerWhoAsksForTheLatestGetsANewReadEvenWhenTheStoredFiguresAreFresh(t *testing.T) {
+	period := report.Period{DateFrom: "2026-09-01", DateTo: "2026-09-30"}
+	store, snapshots, _ := forcedSetup(period, 4)
+	snapshots.afterGet = func(gets int) {
+		if gets == 3 { // the new read lands: a different run
+			snapshots.exact[snapshotKey(report.SalesGoodsServices, period)] = freshSales(period, "200.00", 0)
+		}
+	}
+	service := newServiceWith(store, snapshots, Config{StaleWait: time.Second, StalePoll: 5 * time.Millisecond, RefreshExtraWait: -1})
+	response, err := service.Report(WithRefresh(context.Background()), principal, "sales_goods_services", "2026-09-01", "2026-09-30")
+	if err != nil || response.Freshness != "FRESH" || response.KPIs[0].Value != "200.00" || snapshots.refreshed != 1 {
+		t.Fatalf("response = %+v err = %v refreshed = %d", response, err, snapshots.refreshed)
+	}
+	if got := store.calls[len(store.calls)-1].Outcome; got != OutcomeRefreshed {
+		t.Fatalf("a new read at the owner's request is logged as one so it counts against the budget: %s", got)
+	}
+}
+
+func TestWithoutTheAskFreshFiguresAreNotReadAgain(t *testing.T) {
+	period := report.Period{DateFrom: "2026-09-01", DateTo: "2026-09-30"}
+	store, snapshots, _ := forcedSetup(period, 4)
+	response, err := newServiceWith(store, snapshots, Config{StaleWait: time.Second}).Report(context.Background(), principal, "sales_goods_services", "2026-09-01", "2026-09-30")
+	if err != nil || response.KPIs[0].Value != "150.00" || snapshots.refreshed != 0 || snapshots.revalidated != 0 {
+		t.Fatalf("response = %+v err = %v refreshed = %d revalidated = %d", response, err, snapshots.refreshed, snapshots.revalidated)
+	}
+}
+
+func TestFiguresReadWithinTheLastMinuteAreTheLatestAlready(t *testing.T) {
+	period := report.Period{DateFrom: "2026-09-01", DateTo: "2026-09-30"}
+	store, snapshots, _ := forcedSetup(period, 0)
+	response, err := newServiceWith(store, snapshots, Config{StaleWait: time.Second}).Report(WithRefresh(context.Background()), principal, "sales_goods_services", "2026-09-01", "2026-09-30")
+	if err != nil || snapshots.refreshed != 0 || response.Freshness != "FRESH" {
+		t.Fatalf("no new read for figures just read: %+v %v refreshed=%d", response, err, snapshots.refreshed)
+	}
+}
+
+func TestAskingForTheLatestWhenTheHourlyReadsAreUsedShowsTheFreshFiguresAndSaysSo(t *testing.T) {
+	period := report.Period{DateFrom: "2026-09-01", DateTo: "2026-09-30"}
+	store, snapshots, _ := forcedSetup(period, 4)
+	store.preparing = 10
+	response, err := newServiceWith(store, snapshots, Config{StaleWait: time.Second}).Report(WithRefresh(context.Background()), principal, "sales_goods_services", "2026-09-01", "2026-09-30")
+	if err != nil || response.Freshness != "FRESH" || snapshots.refreshed != 0 || !strings.Contains(strings.Join(response.Warnings, "|"), MessageRefreshBudget) {
+		t.Fatalf("response = %+v err = %v", response, err)
+	}
+	if strings.Contains(strings.Join(response.Warnings, "|"), MessageStale) {
+		t.Fatal("figures that are still fresh must not be called old")
+	}
+}
+
+func TestANewReadThatDoesNotFinishInTimeLeavesTheOldFiguresWithTheStaleNote(t *testing.T) {
+	period := report.Period{DateFrom: "2026-09-01", DateTo: "2026-09-30"}
+	store, snapshots, _ := forcedSetup(period, 4)
+	response, err := newServiceWith(store, snapshots, Config{StaleWait: 30 * time.Millisecond, StalePoll: 5 * time.Millisecond, RefreshExtraWait: -1}).Report(WithRefresh(context.Background()), principal, "sales_goods_services", "2026-09-01", "2026-09-30")
+	if err != nil || response.Freshness != "STALE" || response.KPIs[0].Value != "150.00" || snapshots.refreshed != 1 {
+		t.Fatalf("response = %+v err = %v", response, err)
+	}
+	if got := store.calls[len(store.calls)-1].Outcome; got != OutcomeRefreshed {
+		t.Fatalf("the read was started, so it counts: %s", got)
 	}
 }

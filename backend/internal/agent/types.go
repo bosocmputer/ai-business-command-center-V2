@@ -30,8 +30,10 @@ const (
 type Outcome string
 
 const (
-	OutcomeOK            Outcome = "OK"
-	OutcomePreparing     Outcome = "PREPARING"
+	OutcomeOK        Outcome = "OK"
+	OutcomePreparing Outcome = "PREPARING"
+	// OutcomeRefreshed: the question asked for the latest figures and a new read from the shop's system was started for it.
+	OutcomeRefreshed     Outcome = "REFRESHED"
 	OutcomeUnavailable   Outcome = "UNAVAILABLE"
 	OutcomeNoData        Outcome = "NO_DATA"
 	OutcomeInvalidPeriod Outcome = "INVALID_PERIOD"
@@ -153,6 +155,8 @@ type Store interface {
 type Snapshots interface {
 	GetExactSnapshotForPeriod(ctx context.Context, tenantID uuid.UUID, key report.Key, period report.Period, now time.Time) (viewer.DashboardSnapshot, error)
 	RevalidateSnapshot(ctx context.Context, tenantID uuid.UUID, key report.Key, period report.Period, now time.Time) (viewer.ReportRevalidation, error)
+	// RefreshSnapshotNow reads again even when the stored numbers are fresh (the owner asked for the latest).
+	RefreshSnapshotNow(ctx context.Context, tenantID uuid.UUID, key report.Key, period report.Period, now time.Time) (viewer.ReportRevalidation, error)
 }
 
 type TokenHasher interface{ HashToken(token string) []byte }

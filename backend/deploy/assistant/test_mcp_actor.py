@@ -35,9 +35,11 @@ def install_fake_mcp():
 
 class Capture(http.server.BaseHTTPRequestHandler):
     seen = []
+    paths = []
 
     def do_GET(self):
         Capture.seen.append(dict(self.headers))
+        Capture.paths.append(self.path)
         body = json.dumps({"status": "READY"}).encode()
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
@@ -56,6 +58,7 @@ class McpActorTests(unittest.TestCase):
         self.addCleanup(self.server.shutdown)
         self.addCleanup(self.server.server_close)
         Capture.seen = []
+        Capture.paths = []
         self.dir = tempfile.mkdtemp()
         self.db = os.path.join(self.dir, "state.db")
         db = sqlite3.connect(self.db)
@@ -102,6 +105,15 @@ class McpActorTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"AIBCC_ACTING": ""}):
             self.shim.call("/context")
         self.assertNotIn("X-Acting-Line-User", Capture.seen[1])
+
+    def test_refresh_is_asked_only_when_the_tool_is_told_to(self):
+        self.session("t", "telegram", "12345")
+        self.shim.get_report("sales_goods_services", "2026-10-12", "2026-10-12")
+        self.shim.get_report("sales_goods_services", "2026-10-12", "2026-10-12", refresh=True)
+        self.shim.compare("sales_goods_services", "total_amount", "2026-10-01", "2026-10-12", "2026-09-01", "2026-09-12", refresh=True)
+        self.assertNotIn("refresh=", Capture.paths[0])
+        self.assertIn("refresh=1", Capture.paths[1])
+        self.assertIn("refresh=1", Capture.paths[2])
 
 
 if __name__ == "__main__":
