@@ -4,6 +4,8 @@
 # If the gateway exits on its own, so does this script, with the same status, and compose restarts the container.
 set -u
 HERMES=/opt/hermes/bin/hermes
+# pypatch/sitecustomize.py (loaded by Python itself) drops the technical model lines from the reply to /new; nothing in the image is changed.
+export PYTHONPATH="/assistant/pypatch${PYTHONPATH:+:$PYTHONPATH}"
 MAINT_HOUR="${MAINTENANCE_HOUR_UTC:-21}"
 # Settings from AI-BCC (model, the shop's OpenRouter key, Telegram and LINE secrets) instead of files on the server, when
 # ASSISTANT_CONFIG_PULL=on. The shell lines it prints either export a secret or unset it; a shop that must not run gets everything unset, so no

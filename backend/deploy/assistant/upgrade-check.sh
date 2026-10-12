@@ -8,6 +8,7 @@
 #   2b. every skill that ships with Hermes is switched off except the agent's own manual (disable_skills.py), so no slash command
 #       can load an unreviewed procedure;
 #   2c. a reply can send a file to the chat only from the outbox (media_policy_check.py);
+#   2d. the /new reply carries no technical lines about the model (pypatch/sitecustomize.py, reset_notice_check.py);
 #   3. the MCP shim exposes exactly the tools this repository defines;
 #   4. real questions (assistant/example_check.py) pass against the real Agent API.
 # It uses the live token, so it spends the hourly call quota (about 3 per question): keep the question list short.
@@ -104,6 +105,10 @@ else echo "ok ($skills_total skills, none enabled but hermes-agent)"; fi
 printf "2c. only the outbox can be sent to a chat ... "
 media=$(docker exec -i "$NAME" "$PY" - < assistant/media_policy_check.py 2>&1 || true)
 if echo "$media" | grep -q '^FAIL' || ! echo "$media" | grep -q '^PASS'; then echo; echo "$media" | grep -E '^(PASS|FAIL)|Error' | sed 's/^/    /' | head -10; fail "a file outside the outbox can be sent, or the check could not run"; else echo "ok ($(echo "$media" | grep -c '^PASS') paths)"; fi
+
+printf "2d. the /new reply carries no model lines ... "
+reset_check=$(docker exec -e PYTHONPATH=/assistant/pypatch "$NAME" "$PY" /assistant/reset_notice_check.py 2>&1 | tail -1 || true)
+if [ "$reset_check" = ok ]; then echo ok; else echo; fail "the /new reply would show technical lines (a different Hermes?): $reset_check"; fi
 
 printf "3. the shim exposes every tool of this repository ... "
 want=$(grep -c '^@mcp.tool()' assistant/aibcc_mcp.py)
