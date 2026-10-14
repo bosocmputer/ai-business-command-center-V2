@@ -138,6 +138,10 @@ cd backend/deploy
 ./assistant/alerts.sh test <id>     # one labelled test message to one Telegram id from the allowed list
 ```
 
+### Where alerts reach the owner (per shop, 14 Oct 2026)
+
+The admin chooses per shop (shop page, tab "เลขา AI", card "การดูแลเจ้าของร้าน"): **Telegram** (default, through this assistant), **LINE** (one text message per alert, uses the shared channel's push quota, keeps 40 messages in reserve) or **none**; whether the assistant's morning digest is sent; an optional **weekly summary** by LINE (counts of use only, off by default); and whether the operator is told when the owner goes quiet (and after how many days). A shop that already receives report cards in LINE may switch the digest off to avoid two similar messages.
+
 ## Slow reports: waiting and the morning prewarm
 
 A report that has to be fetched live from the shop's system takes 15 to 60 seconds (measured 15-58 s on 2026-10-05). The
