@@ -137,6 +137,20 @@ func TestAlertRulesLifecycleTargetsEventsAndRetention(t *testing.T) {
 		t.Fatalf("only the short code is kept: %q %v", lastError, err)
 	}
 
+	// A rule that spoke remembers it (so it stays quiet about the same thing) until the problem is gone.
+	if targets, _ = store.AlertTargets(ctx, now); targetFor(targets, agent.AlertAROverdue).LastFiredAt == nil || targetFor(targets, agent.AlertAROverdue).LastFiredValue == nil {
+		t.Fatal("a fired rule keeps when and what it said")
+	}
+	if err := store.ClearAlertFired(ctx, overdue.RuleID); err != nil {
+		t.Fatal(err)
+	}
+	if targets, _ = store.AlertTargets(ctx, now); targetFor(targets, agent.AlertAROverdue).LastFiredAt != nil || targetFor(targets, agent.AlertAROverdue).LastFiredValue != nil {
+		t.Fatal("after the problem is gone the rule forgets that it spoke")
+	}
+	if err := store.ClearAlertFired(ctx, overdue.RuleID); err != nil {
+		t.Fatalf("clearing a rule that never spoke is harmless: %v", err)
+	}
+
 	// Dry-run events are never offered for delivery.
 	if _, created, _ := store.RecordAlertFire(ctx, targetFor(targets, agent.AlertSalesDrop), "2026-10-08", "45", "40", "ซ้อม", agent.AlertEventDryRun, now); !created {
 		t.Fatal("dry run record")

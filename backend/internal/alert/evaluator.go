@@ -24,6 +24,8 @@ type Source interface {
 type Store interface {
 	AlertTargets(ctx context.Context, now time.Time) ([]agent.AlertTarget, error)
 	MarkAlertChecked(ctx context.Context, ruleID uuid.UUID, on, status string) error
+	// ClearAlertFired forgets that a rule spoke, so the next time its problem appears it speaks as the first time.
+	ClearAlertFired(ctx context.Context, ruleID uuid.UUID) error
 	RecordAlertFire(ctx context.Context, target agent.AlertTarget, on, value, threshold, message, status string, now time.Time) (agent.AlertEvent, bool, error)
 	UnsentAlerts(ctx context.Context, now time.Time) ([]agent.AlertEvent, error)
 	MarkAlertDelivery(ctx context.Context, id uuid.UUID, delivered bool, errorCode string, now time.Time) error
@@ -95,6 +97,10 @@ func (evaluator *Evaluator) RunOnce(ctx context.Context) Summary {
 			summary.NotReady++
 			_ = evaluator.store.MarkAlertChecked(ctx, target.RuleID, today, agent.AlertCheckNotReady)
 			continue
+		}
+		// The problem is gone (the figure is back under the threshold, or yesterday had no fall): the next time it appears it is new.
+		if !result.fired && target.LastFiredAt != nil {
+			_ = evaluator.store.ClearAlertFired(ctx, target.RuleID)
 		}
 		// Record first, mark the day checked second: a crash between the two repeats the check, and the unique
 		// (rule, day) record makes the repeat harmless, while the other order could lose an alert for the day.

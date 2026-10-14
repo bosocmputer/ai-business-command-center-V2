@@ -22,6 +22,7 @@ type fakeStore struct {
 	status  map[uuid.UUID]string
 	events  []agent.AlertEvent
 	fired   map[string]bool // ruleID|day
+	cleared []uuid.UUID
 }
 
 func newFakeStore(targets ...agent.AlertTarget) *fakeStore {
@@ -41,6 +42,10 @@ func (store *fakeStore) MarkAlertChecked(_ context.Context, id uuid.UUID, on, st
 	if status == agent.AlertCheckOK || status == agent.AlertCheckNoAccess {
 		store.checked[id] = on
 	}
+	return nil
+}
+func (store *fakeStore) ClearAlertFired(_ context.Context, id uuid.UUID) error {
+	store.cleared = append(store.cleared, id)
 	return nil
 }
 func (store *fakeStore) RecordAlertFire(_ context.Context, target agent.AlertTarget, on, _, _, message, status string, _ time.Time) (agent.AlertEvent, bool, error) {
@@ -225,7 +230,7 @@ func TestTheCheckWaitsForMorningAndGivesUpAfterTheWindow(t *testing.T) {
 	}
 }
 
-func TestAStillTrueRuleStaysQuietForThreeDaysUnlessItGotWorse(t *testing.T) {
+func TestAStillTrueRuleStaysQuietUnlessItGotWorse(t *testing.T) {
 	item := target(agent.AlertAROverdue, "500000")
 	yesterday := nineAM.Add(-24 * time.Hour)
 	item.LastFiredAt, item.LastFiredValue = &yesterday, rat("600000")
@@ -238,6 +243,80 @@ func TestAStillTrueRuleStaysQuietForThreeDaysUnlessItGotWorse(t *testing.T) {
 	store = newFakeStore(item)
 	if summary := newEvaluator(store, source, &fakeSender{}, false, nineAM).RunOnce(context.Background()); summary.Fired != 1 {
 		t.Fatalf("10%% worse speaks again: %+v", summary)
+	}
+}
+
+func TestAStillTrueRuleThatDidNotChangeStaysQuietForTwoWeeksAndThenRemindsOnce(t *testing.T) {
+	item := target(agent.AlertAROverdue, "100000")
+	source := &fakeSource{reports: map[string]agent.ReportResponse{"ar_aging": ready("ar_aging", collected, map[string]string{"overdue_amount": "298505"})}}
+	for _, days := range []int{1, 3, 13} {
+		spoke := nineAM.Add(-time.Duration(days) * 24 * time.Hour)
+		item.LastFiredAt, item.LastFiredValue = &spoke, rat("298505")
+		store := newFakeStore(item)
+		if summary := newEvaluator(store, source, &fakeSender{}, false, nineAM).RunOnce(context.Background()); summary.Fired != 0 || summary.Checked != 1 || len(store.cleared) != 0 {
+			t.Fatalf("the same figure %d days after the last alert must stay quiet and keep its memory: %+v cleared=%v", days, summary, store.cleared)
+		}
+	}
+	spoke := nineAM.Add(-14 * 24 * time.Hour)
+	item.LastFiredAt, item.LastFiredValue = &spoke, rat("298505")
+	if summary := newEvaluator(newFakeStore(item), source, &fakeSender{}, false, nineAM).RunOnce(context.Background()); summary.Fired != 1 {
+		t.Fatalf("a reminder after two weeks: %+v", summary)
+	}
+}
+
+func TestARuleThatIsBackUnderItsThresholdForgetsItSpokeSoTheNextTimeIsNew(t *testing.T) {
+	item := target(agent.AlertAROverdue, "500000")
+	spoke := nineAM.Add(-24 * time.Hour)
+	item.LastFiredAt, item.LastFiredValue = &spoke, rat("600000")
+	source := &fakeSource{reports: map[string]agent.ReportResponse{"ar_aging": ready("ar_aging", collected, map[string]string{"overdue_amount": "400000"})}}
+	store := newFakeStore(item)
+	if summary := newEvaluator(store, source, &fakeSender{}, false, nineAM).RunOnce(context.Background()); summary.Fired != 0 || len(store.cleared) != 1 || store.cleared[0] != item.RuleID {
+		t.Fatalf("under the threshold: %+v cleared=%v", summary, store.cleared)
+	}
+	// Once forgotten, crossing the threshold again speaks at once even though it is only a little over.
+	back := target(agent.AlertAROverdue, "500000")
+	back.RuleID = item.RuleID
+	source.reports["ar_aging"] = ready("ar_aging", collected, map[string]string{"overdue_amount": "510000"})
+	if summary := newEvaluator(newFakeStore(back), source, &fakeSender{}, false, nineAM).RunOnce(context.Background()); summary.Fired != 1 {
+		t.Fatalf("back over the threshold after being cleared: %+v", summary)
+	}
+}
+
+func TestAReportThatCannotBeReadNeverMakesARuleForgetItSpoke(t *testing.T) {
+	item := target(agent.AlertAROverdue, "500000")
+	spoke := nineAM.Add(-24 * time.Hour)
+	item.LastFiredAt, item.LastFiredValue = &spoke, rat("600000")
+	store := newFakeStore(item)
+	notReady := &fakeSource{reports: map[string]agent.ReportResponse{"ar_aging": {Status: "PREPARING"}}}
+	newEvaluator(store, notReady, &fakeSender{}, false, nineAM).RunOnce(context.Background())
+	failing := &fakeSource{err: errors.New("boom")}
+	newEvaluator(newFakeStore(item), failing, &fakeSender{}, false, nineAM).RunOnce(context.Background())
+	if len(store.cleared) != 0 {
+		t.Fatalf("a report that was not ready is not a recovery: cleared=%v", store.cleared)
+	}
+}
+
+func TestAFallThatGoesOnIsQuietUntilItIsWorseAndAClosedDayEndsIt(t *testing.T) {
+	item := target(agent.AlertReceiptsDrop, "30")
+	yesterday := nineAM.Add(-24 * time.Hour)
+	item.LastFiredAt, item.LastFiredValue = &yesterday, rat("40")
+	open := map[string]agent.CompareResponse{"document_count": {Status: "READY", A: side("5"), B: side("20"), CollectedAt: collected}}
+	source := &fakeSource{byMetric: open, compare: agent.CompareResponse{Status: "READY", A: side("58000.00"), B: side("100000.00"), CollectedAt: collected}} // a 42% fall
+	if summary := newEvaluator(newFakeStore(item), source, &fakeSender{}, false, nineAM).RunOnce(context.Background()); summary.Fired != 0 {
+		t.Fatalf("42%% against 40%% the day before is the same problem: %+v", summary)
+	}
+	source.compare = agent.CompareResponse{Status: "READY", A: side("50000.00"), B: side("100000.00"), CollectedAt: collected} // 50%, more than 10% worse than 40%
+	if summary := newEvaluator(newFakeStore(item), source, &fakeSender{}, false, nineAM).RunOnce(context.Background()); summary.Fired != 1 {
+		t.Fatalf("a fall that got worse speaks: %+v", summary)
+	}
+	closed := &fakeSource{
+		compare:  agent.CompareResponse{Status: "READY", A: side("0.00"), B: side("100000.00"), CollectedAt: collected},
+		byMetric: map[string]agent.CompareResponse{"document_count": {Status: "READY", A: side("0"), B: side("20"), CollectedAt: collected}},
+	}
+	store := newFakeStore(item)
+	newEvaluator(store, closed, &fakeSender{}, false, nineAM).RunOnce(context.Background())
+	if len(store.cleared) != 1 {
+		t.Fatalf("a closed day ends the problem: cleared=%v", store.cleared)
 	}
 }
 

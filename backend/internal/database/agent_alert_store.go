@@ -163,6 +163,14 @@ func (store *AgentStore) RecordAlertFire(ctx context.Context, target agent.Alert
 	return event, true, nil
 }
 
+// ClearAlertFired forgets that a rule spoke (the problem it spoke about is gone).
+func (store *AgentStore) ClearAlertFired(ctx context.Context, ruleID uuid.UUID) error {
+	if _, err := store.pool.Exec(ctx, `update agent_alert_rules set last_fired_at = null, last_fired_value = null where id = $1 and last_fired_at is not null`, ruleID); err != nil {
+		return fmt.Errorf("clear alert fire: %w", err)
+	}
+	return nil
+}
+
 // UnsentAlerts are events still to be delivered: new ones and ones that failed, up to five tries within six hours.
 func (store *AgentStore) UnsentAlerts(ctx context.Context, now time.Time) ([]agent.AlertEvent, error) {
 	rows, err := store.pool.Query(ctx, `

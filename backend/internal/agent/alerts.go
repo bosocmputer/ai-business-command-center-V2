@@ -46,8 +46,8 @@ type AlertRuleDef struct {
 	Report      report.Key
 	Unit        AlertUnit
 	Min, Max    int64
-	// Cooldown is how long a rule that is still true stays quiet after it fired, unless it got 10% worse. A rule about one
-	// day (yesterday's sales) has none: each day stands alone.
+	// Cooldown is how long a rule that is still true stays quiet after it fired, unless it got 10% worse. The drop rules compare one day with the same weekday a week before, so
+	// a fall that goes on is quiet until it is worse; the morning digest has none (a summary every day is what it is for).
 	Cooldown time.Duration
 	// Switch rules have no threshold: they are on or off, and the stored threshold is the fixed placeholder "1".
 	// They may be set when the recipient can read any one of AnyOf (the others are left out of the message).
@@ -70,15 +70,20 @@ func (def AlertRuleDef) available(permitted []report.Key) bool {
 	return false
 }
 
-const alertCooldown = 3 * 24 * time.Hour
+// An alert speaks once about a problem. It speaks again only when the figure got 10% worse than the last time, when the problem went away
+// and came back, or as a reminder after these intervals while it stays the same (a balance changes slowly, a daily fall is a new day each time).
+const (
+	alertCooldown     = 14 * 24 * time.Hour
+	dropAlertCooldown = 7 * 24 * time.Hour
+)
 
 var alertCatalog = []AlertRuleDef{
 	{Key: AlertAROverdue, Label: "ยอดลูกหนี้เลยกำหนด", Description: "เตือนเมื่อยอดลูกหนี้ที่เลยกำหนดชำระรวมกันเกินจำนวนเงินที่ตั้ง (บาท) ตรวจทุกเช้า", Report: report.ARAging, Unit: AlertUnitBaht, Min: 1, Max: 10_000_000_000, Cooldown: alertCooldown},
 	{Key: AlertAROverYear, Label: "ยอดลูกหนี้ค้างเกิน 1 ปี", Description: "เตือนเมื่อยอดลูกหนี้ที่ออกใบมาเกิน 1 ปีรวมกันเกินจำนวนเงินที่ตั้ง (บาท) ตรวจทุกเช้า", Report: report.ARAging, Unit: AlertUnitBaht, Min: 1, Max: 10_000_000_000, Cooldown: alertCooldown},
 	{Key: AlertStockReorder, Label: "สินค้าถึงจุดสั่งซื้อ", Description: "เตือนเมื่อมีสินค้าถึงจุดสั่งซื้อตั้งแต่จำนวนรายการที่ตั้ง ตรวจทุกเช้า", Report: report.StockReorder, Unit: AlertUnitCount, Min: 1, Max: 100_000, Cooldown: alertCooldown},
-	{Key: AlertSalesDrop, Label: "ยอดขายเมื่อวานตก", Description: "เตือนเมื่อยอดขายเมื่อวานต่ำกว่าวันเดียวกันของสัปดาห์ก่อนตั้งแต่เปอร์เซ็นต์ที่ตั้ง ตรวจทุกเช้า", Report: report.SalesGoodsServices, Unit: AlertUnitPercent, Min: 1, Max: 99},
-	{Key: AlertReceiptsDrop, Label: "เงินเข้าเมื่อวานตก", Description: "เตือนเมื่อยอดรับเงินเมื่อวานต่ำกว่าวันเดียวกันของสัปดาห์ก่อนตั้งแต่เปอร์เซ็นต์ที่ตั้ง (ไม่เตือนถ้าเมื่อวานไม่มีเอกสารรับเงินเลย เพราะร้านอาจปิด) ตรวจทุกเช้า", Report: report.CashBankReceipts, Unit: AlertUnitPercent, Min: 1, Max: 99},
-	{Key: AlertMarginDrop, Label: "อัตรากำไรขั้นต้นเมื่อวานลด", Description: "เตือนเมื่ออัตรากำไรขั้นต้นเมื่อวานต่ำกว่าวันเดียวกันของสัปดาห์ก่อนตั้งแต่จำนวนจุดเปอร์เซ็นต์ที่ตั้ง (เช่น จาก 25% เหลือ 20% คือลด 5 จุด) ไม่เตือนถ้าเมื่อวานไม่มียอดขาย ตรวจทุกเช้า", Report: report.GrossProfitByProduct, Unit: AlertUnitPoints, Min: 1, Max: 50},
+	{Key: AlertSalesDrop, Label: "ยอดขายเมื่อวานตก", Description: "เตือนเมื่อยอดขายเมื่อวานต่ำกว่าวันเดียวกันของสัปดาห์ก่อนตั้งแต่เปอร์เซ็นต์ที่ตั้ง ตรวจทุกเช้า", Report: report.SalesGoodsServices, Unit: AlertUnitPercent, Min: 1, Max: 99, Cooldown: dropAlertCooldown},
+	{Key: AlertReceiptsDrop, Label: "เงินเข้าเมื่อวานตก", Description: "เตือนเมื่อยอดรับเงินเมื่อวานต่ำกว่าวันเดียวกันของสัปดาห์ก่อนตั้งแต่เปอร์เซ็นต์ที่ตั้ง (ไม่เตือนถ้าเมื่อวานไม่มีเอกสารรับเงินเลย เพราะร้านอาจปิด) ตรวจทุกเช้า", Report: report.CashBankReceipts, Unit: AlertUnitPercent, Min: 1, Max: 99, Cooldown: dropAlertCooldown},
+	{Key: AlertMarginDrop, Label: "อัตรากำไรขั้นต้นเมื่อวานลด", Description: "เตือนเมื่ออัตรากำไรขั้นต้นเมื่อวานต่ำกว่าวันเดียวกันของสัปดาห์ก่อนตั้งแต่จำนวนจุดเปอร์เซ็นต์ที่ตั้ง (เช่น จาก 25% เหลือ 20% คือลด 5 จุด) ไม่เตือนถ้าเมื่อวานไม่มียอดขาย ตรวจทุกเช้า", Report: report.GrossProfitByProduct, Unit: AlertUnitPoints, Min: 1, Max: 50, Cooldown: dropAlertCooldown},
 	{Key: AlertMorningDigest, Label: "สรุปเช้า", Description: "ส่งสรุปสั้นๆ ทุกเช้า: ยอดขายเมื่อวานเทียบวันเดียวกันของสัปดาห์ก่อน ยอดลูกหนี้เลยกำหนด และจำนวนสินค้าถึงจุดสั่งซื้อ (เฉพาะรายงานที่มีสิทธิ์ดู) ไม่ต้องระบุเกณฑ์", Unit: AlertUnitSwitch, Min: 1, Max: 1, Switch: true,
 		AnyOf: []report.Key{report.SalesGoodsServices, report.ARAging, report.StockReorder}},
 }
@@ -222,7 +227,7 @@ type AlertSetRequest struct {
 const (
 	MessageAlertSet      = "ตั้งการเตือนแล้ว ระบบตรวจทุกเช้าและจะแจ้งเมื่อเงื่อนไขเป็นจริง"
 	MessageAlertOff      = "ปิดการเตือนนี้แล้ว"
-	MessageAlertsNote    = "การเตือนส่งเป็นข้อความในแชตนี้ ตรวจวันละครั้งตอนเช้า และไม่เตือนซ้ำเรื่องเดิมภายใน 3 วันถ้าตัวเลขไม่แย่ลงเกิน 10%"
+	MessageAlertsNote    = "การเตือนส่งเป็นข้อความในแชตนี้ ตรวจวันละครั้งตอนเช้า เตือนเรื่องเดิมครั้งเดียว จะเตือนอีกเมื่อแย่ลงเกิน 10% หรือกลับมาเป็นอีกหลังหายไป หรือเป็นการทวนเมื่อครบ 14 วัน (ยอดค้าง ของใกล้หมด) หรือ 7 วัน (ยอดตก กำไรลด)"
 	MessageAlertNeedsSet = "ต้องระบุเกณฑ์ก่อนจึงจะเปิดการเตือนนี้ได้"
 	MessageDigestOn      = "เปิดสรุปเช้าแล้ว ระบบจะส่งสรุปในแชตนี้ทุกเช้า"
 	MessageDigestOff     = "ปิดสรุปเช้าแล้ว"

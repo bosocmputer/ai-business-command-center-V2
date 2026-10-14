@@ -189,6 +189,7 @@ func TestAlertToolsAreAbsentUntilConfigured(t *testing.T) {
 func TestAnAlertThatIsStillTrueStaysQuietUnlessItGotWorse(t *testing.T) {
 	def, _ := AlertRuleFor("ar_overdue")
 	sales, _ := AlertRuleFor("sales_drop")
+	digest, _ := AlertRuleFor("morning_digest")
 	now := time.Date(2026, 10, 8, 2, 0, 0, 0, time.UTC)
 	rat := func(text string) *big.Rat { value, _ := new(big.Rat).SetString(text); return value }
 	day := func(days int) *time.Time { value := now.Add(-time.Duration(days) * 24 * time.Hour); return &value }
@@ -204,9 +205,16 @@ func TestAnAlertThatIsStillTrueStaysQuietUnlessItGotWorse(t *testing.T) {
 		{"spoke yesterday, 9% worse", def, AlertTarget{LastFiredAt: day(1), LastFiredValue: rat("1000")}, "1090", false},
 		{"spoke yesterday, 10% worse", def, AlertTarget{LastFiredAt: day(1), LastFiredValue: rat("1000")}, "1100", true},
 		{"spoke yesterday, better", def, AlertTarget{LastFiredAt: day(1), LastFiredValue: rat("1000")}, "900", false},
-		{"spoke three days ago", def, AlertTarget{LastFiredAt: day(3), LastFiredValue: rat("1000")}, "1000", true},
+		{"spoke three days ago, same figure: not worth saying again", def, AlertTarget{LastFiredAt: day(3), LastFiredValue: rat("1000")}, "1000", false},
+		{"spoke thirteen days ago, same figure", def, AlertTarget{LastFiredAt: day(13), LastFiredValue: rat("1000")}, "1000", false},
+		{"spoke fourteen days ago, same figure: a reminder", def, AlertTarget{LastFiredAt: day(14), LastFiredValue: rat("1000")}, "1000", true},
+		{"spoke three days ago, 10% worse", def, AlertTarget{LastFiredAt: day(3), LastFiredValue: rat("1000")}, "1100", true},
 		{"spoke but no figure was kept", def, AlertTarget{LastFiredAt: day(1)}, "1000", false},
-		{"one-day rules have no cooldown", sales, AlertTarget{LastFiredAt: day(1), LastFiredValue: rat("50")}, "45", true},
+		{"a fall that goes on, a little worse: quiet", sales, AlertTarget{LastFiredAt: day(1), LastFiredValue: rat("50")}, "52", false},
+		{"a fall that goes on, 10% worse: speaks", sales, AlertTarget{LastFiredAt: day(1), LastFiredValue: rat("50")}, "55", true},
+		{"a fall that goes on for six days, same: quiet", sales, AlertTarget{LastFiredAt: day(6), LastFiredValue: rat("50")}, "50", false},
+		{"a fall that goes on for a week: a reminder", sales, AlertTarget{LastFiredAt: day(7), LastFiredValue: rat("50")}, "50", true},
+		{"the morning digest has no cooldown", digest, AlertTarget{LastFiredAt: day(1), LastFiredValue: rat("3")}, "3", true},
 	}
 	for _, c := range cases {
 		if got := ShouldFireAgain(c.def, c.target, rat(c.value), now); got != c.want {
