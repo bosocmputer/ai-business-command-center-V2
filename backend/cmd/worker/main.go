@@ -31,6 +31,7 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/schedule"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/secret"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/sml"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/weekly"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/worker"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -170,6 +171,14 @@ func main() {
 		go alertLoop(ctx, logger, evaluator)
 		logger.Info("agent alerts started", "dryRun", cfg.AgentAlertDryRun, "routes", len(cfg.AgentAlertWebhookRoutes))
 	}
+	if cfg.LineMessagingAccessToken != "" {
+		weeklySender := &alert.LineSender{
+			Pusher: line.NewMessagingClient(cfg.LineMessagingAccessToken, line.DefaultPushEndpoint, 30*time.Second), Recipients: recipientService,
+			Left: quota.MessagesLeft(database.NewQuotaStore(pool)), Now: time.Now,
+		}
+		go weeklyLoop(ctx, weekly.NewNotifier(database.NewWeeklyStore(pool), weeklySender, time.Now, logger))
+		logger.Info("weekly summaries started")
+	}
 	if cfg.OperatorNoticeMode != "off" {
 		go inactivityLoop(ctx, logger, buildInactivityNotifier(cfg, pool, recipientService, logger))
 		logger.Info("owner inactivity notices started", "mode", cfg.OperatorNoticeMode)
@@ -227,6 +236,20 @@ func buildInactivityNotifier(cfg config.Config, pool *pgxpool.Pool, recipientSer
 }
 
 // inactivityLoop looks once an hour; the notifier itself waits for the morning and tells about each owner once per quiet spell.
+// weeklyLoop looks for owners whose weekly summary has come due every quarter hour; most passes find nobody.
+func weeklyLoop(ctx context.Context, notifier *weekly.Notifier) {
+	for ctx.Err() == nil {
+		notifier.RunOnce(ctx)
+		timer := time.NewTimer(15 * time.Minute)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
 func inactivityLoop(ctx context.Context, logger *slog.Logger, notifier *inactivity.Notifier) {
 	for ctx.Err() == nil {
 		notifier.RunOnce(ctx)

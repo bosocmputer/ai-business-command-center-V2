@@ -60,6 +60,11 @@ type LineSender struct {
 }
 
 func (sender *LineSender) Send(ctx context.Context, event agent.AlertEvent) error {
+	return sender.SendText(ctx, event.Recipient, event.ID, event.Message)
+}
+
+// SendText pushes one text message to a recipient under the same quota guard; retryKey makes a repeat of the same message harmless.
+func (sender *LineSender) SendText(ctx context.Context, recipientID, retryKey uuid.UUID, message string) error {
 	left, known := sender.Left(ctx, sender.Now())
 	if !known {
 		return &SendError{Code: "QUOTA_UNKNOWN"}
@@ -67,19 +72,19 @@ func (sender *LineSender) Send(ctx context.Context, event agent.AlertEvent) erro
 	if left <= LineReserve {
 		return &SendError{Code: "QUOTA_LOW"}
 	}
-	lineUserID, err := sender.Recipients.OutboundLineUserID(ctx, event.Recipient)
+	lineUserID, err := sender.Recipients.OutboundLineUserID(ctx, recipientID)
 	if err != nil {
 		return &SendError{Code: "RECIPIENT_UNAVAILABLE"}
 	}
-	text := []rune(event.Message)
+	text := []rune(message)
 	if len(text) > maxLineText {
 		text = text[:maxLineText]
 	}
-	message, err := json.Marshal(map[string]string{"type": "text", "text": string(text)})
+	payload, err := json.Marshal(map[string]string{"type": "text", "text": string(text)})
 	if err != nil {
 		return &SendError{Code: "ENCODE_FAILED"}
 	}
-	result := sender.Pusher.Push(ctx, lineUserID, event.ID, message)
+	result := sender.Pusher.Push(ctx, lineUserID, retryKey, payload)
 	if result.Outcome == line.PushAccepted {
 		return nil
 	}
