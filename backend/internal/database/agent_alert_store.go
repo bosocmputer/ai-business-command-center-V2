@@ -91,7 +91,8 @@ func (store *AgentStore) UpsertAlert(ctx context.Context, principal agent.Princi
 }
 
 // AlertTargets lists every enabled rule whose owner can still use the assistant: the token is live, the shop is active,
-// the recipient and their membership are active and they have been given the assistant.
+// the recipient and their membership are active and they have been given the assistant. A shop whose admin chose no alerts is skipped, and
+// so is the morning digest of a shop that switched the digest off (tenant_engagement_settings).
 func (store *AgentStore) AlertTargets(ctx context.Context, now time.Time) ([]agent.AlertTarget, error) {
 	rows, err := store.pool.Query(ctx, `
 		select r.id, r.rule_key, r.threshold::text, coalesce(to_char(r.last_checked_on, 'YYYY-MM-DD'), ''), r.last_fired_at, r.last_fired_value::text,
@@ -101,7 +102,9 @@ func (store *AgentStore) AlertTargets(ctx context.Context, now time.Time) ([]age
 		join tenants t on t.id = r.tenant_id and t.status = 'ACTIVE' and t.access_ends_at > $1
 		join line_recipients lr on lr.id = r.recipient_id and lr.status = 'ACTIVE'
 		join tenant_memberships m on m.tenant_id = r.tenant_id and m.recipient_id = r.recipient_id and m.status = 'ACTIVE' and m.ai_chat_enabled
-		where r.enabled order by r.created_at`, now)
+		left join tenant_engagement_settings e on e.tenant_id = r.tenant_id
+		where r.enabled and coalesce(e.alert_channel, 'TELEGRAM') <> 'OFF' and (r.rule_key <> 'morning_digest' or coalesce(e.digest_enabled, true))
+		order by r.created_at`, now)
 	if err != nil {
 		return nil, fmt.Errorf("list alert targets: %w", err)
 	}
@@ -171,13 +174,17 @@ func (store *AgentStore) ClearAlertFired(ctx context.Context, ruleID uuid.UUID) 
 	return nil
 }
 
-// UnsentAlerts are events still to be delivered: new ones and ones that failed, up to five tries within six hours.
+// UnsentAlerts are events still to be delivered: new ones and ones that failed, up to five tries within six hours. Each carries the channel the
+// shop's admin chose; a shop switched to no alerts since the event was made has its events left undelivered.
 func (store *AgentStore) UnsentAlerts(ctx context.Context, now time.Time) ([]agent.AlertEvent, error) {
 	rows, err := store.pool.Query(ctx, `
-		select id, rule_id, tenant_id, recipient_id, rule_key, to_char(fired_on, 'YYYY-MM-DD'), message, status, attempts
-		from agent_alert_events
-		where status in ('PENDING', 'FAILED') and attempts < 5 and created_at > $1::timestamptz - interval '6 hours'
-		order by created_at limit 50`, now)
+		select v.id, v.rule_id, v.tenant_id, v.recipient_id, v.rule_key, to_char(v.fired_on, 'YYYY-MM-DD'), v.message, v.status, v.attempts,
+		       coalesce(e.alert_channel, 'TELEGRAM')
+		from agent_alert_events v
+		left join tenant_engagement_settings e on e.tenant_id = v.tenant_id
+		where v.status in ('PENDING', 'FAILED') and v.attempts < 5 and v.created_at > $1::timestamptz - interval '6 hours'
+		  and coalesce(e.alert_channel, 'TELEGRAM') <> 'OFF'
+		order by v.created_at limit 50`, now)
 	if err != nil {
 		return nil, fmt.Errorf("list unsent alerts: %w", err)
 	}
@@ -185,7 +192,7 @@ func (store *AgentStore) UnsentAlerts(ctx context.Context, now time.Time) ([]age
 	events := make([]agent.AlertEvent, 0)
 	for rows.Next() {
 		var event agent.AlertEvent
-		if err := rows.Scan(&event.ID, &event.RuleID, &event.TenantID, &event.Recipient, &event.Rule, &event.FiredOn, &event.Message, &event.Status, &event.Attempts); err != nil {
+		if err := rows.Scan(&event.ID, &event.RuleID, &event.TenantID, &event.Recipient, &event.Rule, &event.FiredOn, &event.Message, &event.Status, &event.Attempts, &event.Channel); err != nil {
 			return nil, err
 		}
 		events = append(events, event)

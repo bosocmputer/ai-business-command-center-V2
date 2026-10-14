@@ -408,6 +408,8 @@ type AlertEvent struct {
 	Message   string
 	Status    string
 	Attempts  int
+	// Channel is where the shop's admin chose to deliver alerts (TELEGRAM, LINE or OFF), read when the event is listed for delivery.
+	Channel string
 }
 
 const (

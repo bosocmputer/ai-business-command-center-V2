@@ -220,6 +220,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tenants/{tenantId}/engagement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getTenantEngagement"];
+        put: operations["replaceTenantEngagement"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tenants/{tenantId}/sml-connection/test": {
         parameters: {
             query?: never;
@@ -2286,6 +2304,25 @@ export interface components {
             heavyIntervalMinutes: 30 | 60 | 120 | null;
             version: number;
         };
+        TenantEngagement: {
+            /**
+             * @description Where the assistant's alerts reach the owner.
+             * @enum {string}
+             */
+            alertChannel: "TELEGRAM" | "LINE" | "OFF";
+            /** @description Whether the assistant sends its own morning digest. */
+            digestEnabled: boolean;
+            weeklySummaryEnabled: boolean;
+            /** @description 1 is Monday and 7 is Sunday. */
+            weeklySummaryWeekday: number;
+            /** @description Hour of day in the shop's local time. */
+            weeklySummaryHour: number;
+            /** @description Whether the operator is told when the owner stops using the assistant. */
+            inactivityNoticeEnabled: boolean;
+            inactivityQuietDays: number;
+            /** @description 0 until the admin has saved something for the shop. */
+            version: number;
+        };
         SMLConnectionInput: {
             /**
              * Format: uri
@@ -4028,6 +4065,60 @@ export interface operations {
                     "application/json": components["schemas"]["DashboardRefreshPolicy"];
                 };
             };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getTenantEngagement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description How the shop's owner is looked after. A shop the admin never set gets the defaults at version 0. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantEngagement"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    replaceTenantEngagement: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": components["parameters"]["CSRFToken"];
+            };
+            path: {
+                tenantId: components["parameters"]["TenantID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantEngagement"];
+            };
+        };
+        responses: {
+            /** @description Engagement settings replaced with optimistic concurrency; the change is audited. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantEngagement"];
+                };
+            };
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
         };

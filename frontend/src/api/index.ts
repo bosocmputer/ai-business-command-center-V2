@@ -5,7 +5,7 @@ import type {
   FlexPreview, FlexPreviewInput, LineQuotaStatus, MonitorHistory, MonitorSample, ReportMode, ReportModeItem, ReportModeMeasurement, NotificationExecution, ReportKey, ReportRowPage, ReportRowQueryInput, ReportRowQueryPage, ReportRun, ReportRunDetail, ReportRunPage, Schedule, ScheduleInput, SchedulePage, SchedulePatch,
   SMLConnectionInput, SMLConnectionStatus, SMLConnectionTestResult, Tenant, TenantInput, TenantPage, TenantPatch,
   DashboardRefresh, DashboardRefreshInput, DashboardRefreshResult, ExecutiveOverview, ReportDashboard, ViewerMe, ViewerTenant,
-  DashboardRefreshPolicy, DashboardRefreshPolicyInput, ReportRevalidation, OverviewRevalidation, DashboardSnapshot,
+  DashboardRefreshPolicy, DashboardRefreshPolicyInput, TenantEngagement, ReportRevalidation, OverviewRevalidation, DashboardSnapshot,
   DeliveryContext, DeliveryReportContext, PermissionDependencies, ScheduleRecipientOptions, ScheduleRecipientOptionsInput,
   OperationalIncident, OperationalIncidentDetail, OperationalIncidentPage, OperationalIncidentStatus, OperationalIncidentSeverity, OperationalIncidentOccurrencePage, IncidentDiagnosis, RecipientQueryInput, RecipientQueryResult
   , TenantsTableQueryInput, TenantsTableQueryResult, SchedulesTableQueryInput, SchedulesTableQueryResult, ReportRunsTableQueryInput, ReportRunsTableQueryResult,
@@ -27,6 +27,8 @@ export const adminApi = {
   updateTenant: (tenantId: string, input: TenantPatch) => apiRequest<Tenant>(`${api}/admin/tenants/${tenantId}`, { method: 'PATCH', scope: 'admin', body: input }),
   archiveTenant: (tenantId: string, version: number) => apiRequest<void>(`${api}/admin/tenants/${tenantId}${queryString({ version })}`, { method: 'DELETE', scope: 'admin' }),
   getDashboardRefreshPolicy: (tenantId: string, signal?: AbortSignal) => apiRequest<DashboardRefreshPolicy>(`${api}/admin/tenants/${tenantId}/dashboard-refresh-policy`, { signal }),
+  getTenantEngagement: (tenantId: string, signal?: AbortSignal) => apiRequest<TenantEngagement>(`${api}/admin/tenants/${tenantId}/engagement`, { signal }),
+  updateTenantEngagement: (tenantId: string, input: TenantEngagement) => apiRequest<TenantEngagement>(`${api}/admin/tenants/${tenantId}/engagement`, { method: 'PUT', scope: 'admin', body: input }),
   updateDashboardRefreshPolicy: (tenantId: string, input: DashboardRefreshPolicyInput) => apiRequest<DashboardRefreshPolicy>(`${api}/admin/tenants/${tenantId}/dashboard-refresh-policy`, { method: 'PUT', scope: 'admin', body: input }),
   getSML: (tenantId: string) => apiRequest<SMLConnectionStatus>(`${api}/admin/tenants/${tenantId}/sml-connection`),
   replaceSML: (tenantId: string, input: SMLConnectionInput) => apiRequest<SMLConnectionStatus>(`${api}/admin/tenants/${tenantId}/sml-connection`, { method: 'PUT', scope: 'admin', body: input }),

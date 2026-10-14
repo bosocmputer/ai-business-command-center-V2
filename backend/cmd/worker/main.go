@@ -156,7 +156,14 @@ func main() {
 		source := agent.NewService(agentStore, reportStore, sessionManager, rand.Reader, agent.Alias(sessionManager), time.Now, agent.Config{CallsPerHour: cfg.AgentCallsPerHour, RefreshesPerHour: cfg.AgentRefreshesPerHour})
 		var sender alert.Sender
 		if !cfg.AgentAlertDryRun {
-			sender = &alert.WebhookSender{BaseURL: cfg.AgentAlertWebhookURL, Secret: cfg.AgentAlertWebhookSecret, Routes: cfg.AgentAlertWebhookRoutes}
+			routed := alert.RoutedSender{Telegram: &alert.WebhookSender{BaseURL: cfg.AgentAlertWebhookURL, Secret: cfg.AgentAlertWebhookSecret, Routes: cfg.AgentAlertWebhookRoutes}}
+			if cfg.LineMessagingAccessToken != "" {
+				routed.Line = &alert.LineSender{
+					Pusher: line.NewMessagingClient(cfg.LineMessagingAccessToken, line.DefaultPushEndpoint, 30*time.Second), Recipients: recipientService,
+					Left: quota.MessagesLeft(database.NewQuotaStore(pool)), Now: time.Now,
+				}
+			}
+			sender = routed
 		}
 		evaluator := alert.NewEvaluator(agentStore, source, sender, cfg.AgentAlertDryRun, time.Now, logger)
 		evaluator.StartMinute, evaluator.Window = cfg.AgentAlertStartMinute, time.Duration(cfg.AgentAlertWindowMinutes)*time.Minute

@@ -280,6 +280,32 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/DashboardRefreshPolicy'}}}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+  /api/v1/admin/tenants/{tenantId}/engagement:
+    parameters: [{$ref: '#/components/parameters/TenantID'}]
+    get:
+      tags: [Admin configuration]
+      operationId: getTenantEngagement
+      security: [{AdminSession: []}]
+      responses:
+        '200':
+          description: How the shop's owner is looked after. A shop the admin never set gets the defaults at version 0.
+          content: {application/json: {schema: {$ref: '#/components/schemas/TenantEngagement'}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Admin configuration]
+      operationId: replaceTenantEngagement
+      security: [{AdminSession: []}]
+      parameters: [{$ref: '#/components/parameters/CSRFToken'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/TenantEngagement'}}}
+      responses:
+        '200':
+          description: Engagement settings replaced with optimistic concurrency; the change is audited.
+          content: {application/json: {schema: {$ref: '#/components/schemas/TenantEngagement'}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /api/v1/admin/tenants/{tenantId}/sml-connection/test:
     post:
       tags: [Admin configuration]
@@ -2576,6 +2602,19 @@ components:
         standardIntervalMinutes: {type: integer, enum: [15, 30, 60], nullable: true}
         heavyIntervalMinutes: {type: integer, enum: [30, 60, 120], nullable: true}
         version: {type: integer, minimum: 0}
+    TenantEngagement:
+      type: object
+      additionalProperties: false
+      required: [alertChannel, digestEnabled, weeklySummaryEnabled, weeklySummaryWeekday, weeklySummaryHour, inactivityNoticeEnabled, inactivityQuietDays, version]
+      properties:
+        alertChannel: {type: string, enum: [TELEGRAM, LINE, OFF], description: Where the assistant's alerts reach the owner.}
+        digestEnabled: {type: boolean, description: Whether the assistant sends its own morning digest.}
+        weeklySummaryEnabled: {type: boolean}
+        weeklySummaryWeekday: {type: integer, minimum: 1, maximum: 7, description: 1 is Monday and 7 is Sunday.}
+        weeklySummaryHour: {type: integer, minimum: 0, maximum: 23, description: Hour of day in the shop's local time.}
+        inactivityNoticeEnabled: {type: boolean, description: Whether the operator is told when the owner stops using the assistant.}
+        inactivityQuietDays: {type: integer, minimum: 2, maximum: 60}
+        version: {type: integer, minimum: 0, description: 0 until the admin has saved something for the shop.}
     SMLConnectionInput:
       type: object
       additionalProperties: false

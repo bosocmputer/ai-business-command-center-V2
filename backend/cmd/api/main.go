@@ -16,6 +16,7 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/auth"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/config"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/database"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/engagement"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/executionmode"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/httpapi"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/line"
@@ -141,6 +142,7 @@ func main() {
 			Agent:                 agentService,
 			AgentEnabled:          cfg.AgentAPIEnabled,
 			RefreshPolicies:       refreshPolicyService,
+			Engagement:            engagement.NewService(database.NewEngagementStore(pool), time.Now),
 			LineWebhook:           lineWebhookService,
 			LineWebhookForwardURL: cfg.LineWebhookForwardURL,
 			LineFrontGate:         lineFrontGate,
@@ -188,19 +190,5 @@ func main() {
 
 // lineQuotaLeft gives how many messages the shared channel may still send this month, from the figures the worker keeps in step with LINE.
 func lineQuotaLeft(store *database.QuotaStore) assistantcfg.LineQuota {
-	return func(ctx context.Context, now time.Time) (int, bool) {
-		status, err := store.Get(ctx, now)
-		if err != nil {
-			return 0, false
-		}
-		switch status.State {
-		case quota.StateUnlimited:
-			return 1 << 30, true
-		case quota.StateReady:
-			if status.ProviderLimit != nil && status.ProviderConsumed != nil {
-				return *status.ProviderLimit - *status.ProviderConsumed, true
-			}
-		}
-		return 0, false
-	}
+	return quota.MessagesLeft(store)
 }

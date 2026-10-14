@@ -101,6 +101,7 @@ export type DashboardRefreshFailure = components['schemas']['DashboardRefreshFai
 export type DashboardRefreshResult = components['schemas']['DashboardRefreshResult'];
 export type DashboardRefreshPolicy = components['schemas']['DashboardRefreshPolicy'];
 export type DashboardRefreshPolicyInput = components['schemas']['DashboardRefreshPolicyInput'];
+export type TenantEngagement = components['schemas']['TenantEngagement'];
 export type ReportRevalidation = components['schemas']['ReportRevalidation'];
 export type OverviewRevalidation = components['schemas']['OverviewRevalidation'];
 export type FreshnessStatus = NonNullable<DashboardSnapshot['freshnessStatus']>;

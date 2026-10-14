@@ -13,6 +13,7 @@ import { statusLabel } from '@/utils/status';
 import SakaiTableHeader from '@/components/table/SakaiTableHeader.vue';
 import ReportModesPanel from '@/components/admin/ReportModesPanel.vue';
 import AssistantSettingsPanel from '@/components/admin/AssistantSettingsPanel.vue';
+import EngagementPanel from '@/components/admin/EngagementPanel.vue';
 import { useServerTable } from '@/composables/useServerTable';
 import { useSakaiFilterMenu } from '@/composables/useSakaiFilterMenu';
 import { normalizeScheduleTableRow, toRecipientQueryInput, type RecipientTableFilters } from '@/utils/adminTableFilters';
@@ -709,7 +710,7 @@ onBeforeUnmount(() => {
           </DataTable>
         </TabPanel>
         <TabPanel value="modes"><ReportModesPanel :tenant-id="tenantId" /></TabPanel>
-        <TabPanel value="assistant"><AssistantSettingsPanel :tenant-id="tenantId" /></TabPanel>
+        <TabPanel value="assistant"><AssistantSettingsPanel :tenant-id="tenantId" /><EngagementPanel :tenant-id="tenantId" /></TabPanel>
       </TabPanels>
     </Tabs></div>
   </template>

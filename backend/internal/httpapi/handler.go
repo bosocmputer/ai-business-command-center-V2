@@ -58,6 +58,7 @@ type Dependencies struct {
 	Agent              AgentAPI
 	AgentEnabled       bool
 	RefreshPolicies    RefreshPolicyAPI
+	Engagement         EngagementAPI
 	LineWebhook        LineWebhookAPI
 	// LineWebhookForwardURL passes a verified LINE webhook on (to the assistant); empty means not.
 	LineWebhookForwardURL string
@@ -132,6 +133,9 @@ func NewHandler(dependencies Dependencies) http.Handler {
 		registerAdminReportRoutes(router, dependencies.AdminAuth)
 		if dependencies.Tenants != nil {
 			registerTenantRoutes(router, dependencies.AdminAuth, dependencies.Tenants)
+		}
+		if dependencies.Engagement != nil {
+			registerEngagementRoutes(router, dependencies.AdminAuth, dependencies.Engagement)
 		}
 		if dependencies.RefreshPolicies != nil {
 			registerRefreshPolicyRoutes(router, dependencies.AdminAuth, dependencies.RefreshPolicies)

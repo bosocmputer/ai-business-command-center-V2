@@ -12,6 +12,8 @@ import (
 
 // InactivityStore finds the owners the operator should hear about. Only people the shop has invited to talk to the assistant are watched
 // (the "AI chat" switch), so staff who only receive cards do not fill the operator's chat.
+// A shop's own choices (tenant_engagement_settings) win over the worker's: a shop whose admin switched the notice off is never listed, and one
+// that chose its own number of quiet days is judged by it. A shop with nothing chosen uses the worker's quiet period.
 type InactivityStore struct{ pool *pgxpool.Pool }
 
 func NewInactivityStore(pool *pgxpool.Pool) *InactivityStore { return &InactivityStore{pool: pool} }
@@ -24,17 +26,19 @@ func (store *InactivityStore) Candidates(ctx context.Context, now time.Time, qui
 		with last_use as (
 		  select tenant_id, recipient_id, max(occurred_at) as last_at from report_view_events group by 1, 2
 		), watched as (
-		  select m.tenant_id, m.recipient_id, t.name as shop, greatest(m.created_at, coalesce(m.ai_chat_updated_at, m.created_at)) as joined
+		  select m.tenant_id, m.recipient_id, t.name as shop, greatest(m.created_at, coalesce(m.ai_chat_updated_at, m.created_at)) as joined,
+		         coalesce(e.inactivity_quiet_days::double precision * 86400, $2::double precision) as quiet_secs
 		  from tenant_memberships m
 		  join line_recipients r on r.id = m.recipient_id and r.status = 'ACTIVE'
 		  join tenants t on t.id = m.tenant_id and t.status = 'ACTIVE' and t.access_ends_at > $1
-		  where m.status = 'ACTIVE' and m.ai_chat_enabled
+		  left join tenant_engagement_settings e on e.tenant_id = m.tenant_id
+		  where m.status = 'ACTIVE' and m.ai_chat_enabled and coalesce(e.inactivity_notice_enabled, true)
 		)
 		select w.tenant_id, w.recipient_id, w.shop, 'INACTIVE', u.last_at, w.joined
 		from watched w
 		join last_use u on u.tenant_id = w.tenant_id and u.recipient_id = w.recipient_id
 		left join owner_inactivity_notices n on n.tenant_id = w.tenant_id and n.recipient_id = w.recipient_id and n.kind = 'INACTIVE'
-		where u.last_at < $1::timestamptz - make_interval(secs => $2)
+		where u.last_at < $1::timestamptz - make_interval(secs => w.quiet_secs)
 		  and u.last_at > $1::timestamptz - make_interval(secs => $4)
 		  and (n.notified_at is null or n.notified_at < u.last_at)
 		union all

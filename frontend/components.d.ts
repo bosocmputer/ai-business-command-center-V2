@@ -29,6 +29,7 @@ declare module 'vue' {
     DataTable: typeof import('primevue/datatable')['default']
     DatePicker: typeof import('primevue/datepicker')['default']
     Dialog: typeof import('primevue/dialog')['default']
+    EngagementPanel: typeof import('./src/components/admin/EngagementPanel.vue')['default']
     ExecutiveChart: typeof import('./src/components/dashboard/ExecutiveChart.vue')['default']
     IconField: typeof import('primevue/iconfield')['default']
     IncidentDiagnosisPanel: typeof import('./src/components/operations/IncidentDiagnosisPanel.vue')['default']
