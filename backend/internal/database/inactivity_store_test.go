@@ -94,6 +94,16 @@ func TestInactivityStoreFindsOnlyInvitedOwnersWhoWentQuietAndRemembersWhomItTold
 	if err := store.MarkNotified(ctx, byRecipient[quietOwner], now); err != nil {
 		t.Fatalf("telling twice must not fail: %v", err)
 	}
+	only := func(candidates []inactivity.Candidate, id uuid.UUID) []inactivity.Candidate {
+		var out []inactivity.Candidate
+		for _, candidate := range candidates {
+			if candidate.RecipientID == id {
+				out = append(out, candidate)
+			}
+		}
+		return out
+	}
+	// The others in the shop keep ageing too, so what is checked below is the one owner who was told.
 	if again, _ := store.Candidates(ctx, now.Add(day), 5*day, 7*day); len(again) != 0 {
 		t.Fatalf("already told: %+v", again)
 	}
@@ -101,11 +111,13 @@ func TestInactivityStoreFindsOnlyInvitedOwnersWhoWentQuietAndRemembersWhomItTold
 	if _, err := pool.Exec(ctx, `insert into report_view_events (tenant_id, recipient_id, kind, occurred_at, expires_at) values ($1, $2, 'LINE_MENU', $3, $4)`, tenantID, quietOwner, back, back.Add(365*day)); err != nil {
 		t.Fatal(err)
 	}
-	if again, _ := store.Candidates(ctx, back.Add(3*day), 5*day, 7*day); len(again) != 0 {
-		t.Fatalf("only three days quiet: %+v", again)
+	three, _ := store.Candidates(ctx, back.Add(3*day), 5*day, 7*day)
+	if len(only(three, quietOwner)) != 0 {
+		t.Fatalf("only three days quiet: %+v", only(three, quietOwner))
 	}
-	later, _ := store.Candidates(ctx, back.Add(6*day), 5*day, 7*day)
-	if len(later) != 1 || later[0].RecipientID != quietOwner || later[0].Kind != inactivity.Inactive {
-		t.Fatalf("quiet again after coming back: %+v", later)
+	six, _ := store.Candidates(ctx, back.Add(6*day), 5*day, 7*day)
+	again := only(six, quietOwner)
+	if len(again) != 1 || again[0].Kind != inactivity.Inactive || again[0].LastActivity == nil || !again[0].LastActivity.Equal(back) {
+		t.Fatalf("quiet again after coming back: %+v", again)
 	}
 }
