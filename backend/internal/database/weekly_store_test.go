@@ -47,7 +47,7 @@ func TestWeeklyStoreListsOnlyDueOwnersOfShopsThatSwitchedItOnAndCountsTheirWeek(
 	}
 	event("CARD_OPEN", now.Add(-1*day))
 	event("LINE_MENU", now.Add(-2*day))
-	event("LINE_MESSAGE", now.Add(-2*day)) // a message is not a card or a report: not counted here
+	event("LINE_MESSAGE", now.Add(-2*day)) // a message and a menu button both count as asking
 	event("CARD_OPEN", now.Add(-9*day))    // older than a week: not counted
 
 	store := NewWeeklyStore(pool)
@@ -83,7 +83,7 @@ func TestWeeklyStoreListsOnlyDueOwnersOfShopsThatSwitchedItOnAndCountsTheirWeek(
 		t.Fatal(err)
 	}
 	list := dueOf(now)
-	if len(list) != 1 || list[0].RecipientID != owner || list[0].LocalDay != "2026-10-19" || list[0].Opened != 2 || list[0].Fetched != 0 || list[0].Alerts != 0 {
+	if len(list) != 1 || list[0].RecipientID != owner || list[0].LocalDay != "2026-10-19" || list[0].Opened != 1 || list[0].Asked != 2 || list[0].Alerts != 0 {
 		t.Fatalf("due = %+v", list)
 	}
 	if len(dueOf(now.Add(day))) != 0 {

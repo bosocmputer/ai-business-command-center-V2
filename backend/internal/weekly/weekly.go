@@ -19,12 +19,12 @@ type Due struct {
 	RecipientID uuid.UUID
 	Shop        string
 	LocalDay    string // the shop's date, the key that keeps a summary from going out twice
-	Fetched     int    // times the assistant fetched figures for the owner
-	Opened      int    // cards and reports opened, menu buttons pressed
+	Asked       int    // messages to the assistant and menu buttons pressed in LINE
+	Opened      int    // cards and reports opened
 	Alerts      int    // alerts sent to the owner
 }
 
-func (due Due) Total() int { return due.Fetched + due.Opened + due.Alerts }
+func (due Due) Total() int { return due.Asked + due.Opened + due.Alerts }
 
 type Store interface {
 	// Due lists the owners of shops whose chosen weekday and hour has come and who have not had today's summary.
@@ -99,11 +99,20 @@ func (notifier *Notifier) RunOnce(ctx context.Context) Summary {
 	return summary
 }
 
+// shopLabel puts "ร้าน" before a name that does not already start with it.
+func shopLabel(name string) string {
+	name = strings.TrimSpace(name)
+	if strings.HasPrefix(name, "ร้าน") {
+		return name
+	}
+	return "ร้าน " + name
+}
+
 // Message is what the owner reads: the shop, three counts at most (a zero is left out) and an invitation to ask.
 func Message(due Due) string {
-	lines := []string{fmt.Sprintf("📊 สรุปสัปดาห์ของเลขา AI (ร้าน %s)", strings.TrimSpace(due.Shop)), "7 วันที่ผ่านมา"}
-	if due.Fetched > 0 {
-		lines = append(lines, fmt.Sprintf("• เลขาดึงตัวเลขให้คุณ %d ครั้ง", due.Fetched))
+	lines := []string{fmt.Sprintf("📊 สรุปสัปดาห์ของเลขา AI (%s)", shopLabel(due.Shop)), "7 วันที่ผ่านมา"}
+	if due.Asked > 0 {
+		lines = append(lines, fmt.Sprintf("• คุณคุยกับเลขาหรือกดเมนูใน LINE %d ครั้ง", due.Asked))
 	}
 	if due.Opened > 0 {
 		lines = append(lines, fmt.Sprintf("• เปิดการ์ดและรายงาน %d ครั้ง", due.Opened))

@@ -52,8 +52,8 @@ func notifier(store *storeFake, sender *senderFake) *Notifier {
 	return NewNotifier(store, sender, time.Now, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
-func due(fetched, opened, alerts int) Due {
-	return Due{TenantID: uuid.New(), RecipientID: uuid.New(), Shop: "ร้านทดสอบ", LocalDay: "2026-10-19", Fetched: fetched, Opened: opened, Alerts: alerts}
+func due(asked, opened, alerts int) Due {
+	return Due{TenantID: uuid.New(), RecipientID: uuid.New(), Shop: "ร้านทดสอบ", LocalDay: "2026-10-19", Asked: asked, Opened: opened, Alerts: alerts}
 }
 
 func TestAWeekWithNothingToCountSendsNothing(t *testing.T) {
@@ -93,7 +93,7 @@ func TestAFailedSendIsGivenBackSoTheNextPassTriesAgain(t *testing.T) {
 
 func TestMessageStatesOnlyCountsAndLeavesOutZeros(t *testing.T) {
 	text := Message(due(5, 0, 2))
-	for _, want := range []string{"ร้านทดสอบ", "ดึงตัวเลขให้คุณ 5 ครั้ง", "แจ้งเตือนที่ส่งให้ 2 เรื่อง"} {
+	for _, want := range []string{"ร้านทดสอบ", "คุยกับเลขาหรือกดเมนูใน LINE 5 ครั้ง", "แจ้งเตือนที่ส่งให้ 2 เรื่อง"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %q", want, text)
 		}
@@ -109,5 +109,13 @@ func TestRetryKeyDiffersByDay(t *testing.T) {
 	b.LocalDay = "2026-10-26"
 	if RetryKey(a) == RetryKey(b) || RetryKey(a) != RetryKey(a) {
 		t.Fatal("same owner/day must repeat the key, another day must change it")
+	}
+}
+
+func TestShopNameIsNotPrefixedTwice(t *testing.T) {
+	for name, want := range map[string]string{"ร้าน กระบี่เบญจมินทร์": "ร้าน กระบี่เบญจมินทร์", "สินทวีคอนกรีต": "ร้าน สินทวีคอนกรีต"} {
+		if got := shopLabel(name); got != want {
+			t.Fatalf("%q -> %q", name, got)
+		}
 	}
 }

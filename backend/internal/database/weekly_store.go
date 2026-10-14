@@ -32,10 +32,10 @@ func (store *WeeklyStore) Due(ctx context.Context, now time.Time) ([]weekly.Due,
 		    and not exists (select 1 from owner_weekly_summaries w where w.tenant_id = l.tenant_id and w.recipient_id = m.recipient_id and w.sent_on = l.local_now::date)
 		)
 		select d.tenant_id, d.recipient_id, d.shop, to_char(d.local_day, 'YYYY-MM-DD'),
-		  (select count(*) from agent_calls c where c.tenant_id = d.tenant_id and c.recipient_id = d.recipient_id
-		     and c.tool in ('get_report', 'compare') and c.outcome = 'OK' and c.created_at > $1::timestamptz - interval '7 days'),
 		  (select count(*) from report_view_events v where v.tenant_id = d.tenant_id and v.recipient_id = d.recipient_id
-		     and v.kind in ('CARD_OPEN', 'REPORT_VIEW', 'OVERVIEW_VIEW', 'LINE_MENU') and v.occurred_at > $1::timestamptz - interval '7 days'),
+		     and v.kind in ('LINE_MESSAGE', 'LINE_MENU') and v.occurred_at > $1::timestamptz - interval '7 days'),
+		  (select count(*) from report_view_events v where v.tenant_id = d.tenant_id and v.recipient_id = d.recipient_id
+		     and v.kind in ('CARD_OPEN', 'REPORT_VIEW', 'OVERVIEW_VIEW') and v.occurred_at > $1::timestamptz - interval '7 days'),
 		  (select count(*) from agent_alert_events a where a.tenant_id = d.tenant_id and a.recipient_id = d.recipient_id
 		     and a.status = 'SENT' and a.sent_at > $1::timestamptz - interval '7 days')
 		from due d order by d.shop, d.recipient_id`, now)
@@ -46,7 +46,7 @@ func (store *WeeklyStore) Due(ctx context.Context, now time.Time) ([]weekly.Due,
 	list := make([]weekly.Due, 0)
 	for rows.Next() {
 		var due weekly.Due
-		if err := rows.Scan(&due.TenantID, &due.RecipientID, &due.Shop, &due.LocalDay, &due.Fetched, &due.Opened, &due.Alerts); err != nil {
+		if err := rows.Scan(&due.TenantID, &due.RecipientID, &due.Shop, &due.LocalDay, &due.Asked, &due.Opened, &due.Alerts); err != nil {
 			return nil, fmt.Errorf("read weekly summary: %w", err)
 		}
 		list = append(list, due)
