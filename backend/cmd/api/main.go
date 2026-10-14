@@ -108,7 +108,7 @@ func main() {
 			client := line.NewMessagingClient(cfg.LineMessagingAccessToken, line.DefaultPushEndpoint, 10*time.Second)
 			gateReplier, gateLoader = client, client
 		}
-		lineFrontGate = linegate.New(cfg.LineMessagingChannelSecret, database.NewLineGateStore(pool), sessionManager, gateReplier, gateForwarder, logger, time.Now).WithLoader(gateLoader).WithCards(linegate.NewCardMaker(agentService, cfg.PublicBaseURL))
+		lineFrontGate = linegate.New(cfg.LineMessagingChannelSecret, database.NewLineGateStore(pool), sessionManager, gateReplier, gateForwarder, logger, time.Now).WithLoader(gateLoader).WithCards(linegate.NewCardMaker(agentService, cfg.PublicBaseURL)).WithActivity(database.NewViewEventStore(pool, logger))
 	}
 	flexPreviewService := line.NewFlexPreviewService(tenantService, cfg.PublicBaseURL, time.Now).
 		ConfigureSmartPeriods(cfg.SmartSchedulePeriodsEnabled, cfg.SmartSchedulePeriodTenantIDs, periodObserver)

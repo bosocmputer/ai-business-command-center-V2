@@ -524,3 +524,36 @@ func TestAgentHourlyLimitsDefaultAndCanBeRaisedButNotZeroedByAccident(t *testing
 		}
 	}
 }
+
+func TestOperatorNoticeIsOffByDefaultAndRefusesAnUnknownMode(t *testing.T) {
+	secret := base64.StdEncoding.EncodeToString([]byte("01234567890123456789012345678901"))
+	values := map[string]string{
+		"DATABASE_URL":          "postgres://nextstep@localhost/nextstep?sslmode=disable",
+		"PUBLIC_BASE_URL":       "http://localhost:6324",
+		"ADMIN_PASSWORD_HASH":   "$argon2id$v=19$m=65536,t=3,p=2$c2FsdA$aGFzaA",
+		"SESSION_HMAC_KEY":      secret,
+		"ENCRYPTION_MASTER_KEY": secret,
+		"ENCRYPTION_KEY_ID":     "key-2026-01",
+		"SML_ALLOWED_CIDRS":     "10.0.0.0/8",
+	}
+	load := func() (Config, error) {
+		return Load(func(key string) (string, bool) { value, ok := values[key]; return value, ok })
+	}
+	cfg, err := load()
+	if err != nil || cfg.OperatorNoticeMode != "off" || cfg.InactivityQuietDays != 5 || cfg.InactivityNeverDays != 7 {
+		t.Fatalf("defaults: %+v %v", cfg, err)
+	}
+	values["OPERATOR_NOTICE_MODE"], values["INACTIVITY_QUIET_DAYS"] = "SEND", "3"
+	cfg, err = load()
+	if err != nil || cfg.OperatorNoticeMode != "send" || cfg.InactivityQuietDays != 3 {
+		t.Fatalf("send: %+v %v", cfg, err)
+	}
+	values["OPERATOR_NOTICE_MODE"] = "loud"
+	if _, err := load(); err == nil {
+		t.Fatal("an unknown mode must be refused")
+	}
+	values["OPERATOR_NOTICE_MODE"], values["INACTIVITY_QUIET_DAYS"] = "observe", "1"
+	if _, err := load(); err == nil {
+		t.Fatal("one quiet day is too short to mean anything")
+	}
+}

@@ -34,6 +34,10 @@ x-app-environment: &app-environment
   GENERATION_CACHE_ENABLED: ${GENERATION_CACHE_ENABLED:-false}
   STALE_REVALIDATION_ENABLED: ${STALE_REVALIDATION_ENABLED:-false}
   REPORT_AUTO_REFRESH_ENABLED: ${REPORT_AUTO_REFRESH_ENABLED:-false}
+  # Tell the operator's Telegram chat when an owner who was invited to the assistant stops using it (off, observe = look only, send).
+  OPERATOR_NOTICE_MODE: ${OPERATOR_NOTICE_MODE:-off}
+  INACTIVITY_QUIET_DAYS: ${INACTIVITY_QUIET_DAYS:-5}
+  INACTIVITY_NEVER_DAYS: ${INACTIVITY_NEVER_DAYS:-7}
   HEAVY_CHUNK_ENABLED: ${HEAVY_CHUNK_ENABLED:-false}
   AGENT_API_ENABLED: ${AGENT_API_ENABLED:-false}
   # Alerts the owner sets by talking to the assistant. Off; when on, a dry run (records, sends nothing) until sending is switched on.
@@ -154,6 +158,9 @@ services:
       context: ..
     command: ["/app/worker"]
     environment: *app-environment
+    # The operator's Telegram chat (the sentinel's own files), read-only, for the notices about owners who stopped using the assistant.
+    volumes:
+      - ./secrets/telegram:/run/secrets/telegram:ro
     restart: unless-stopped
     depends_on:
       migrate:

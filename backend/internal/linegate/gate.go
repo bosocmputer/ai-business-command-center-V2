@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/line"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/viewevent"
 	"github.com/google/uuid"
 )
 
@@ -82,6 +83,7 @@ type Gate struct {
 	forwarder Forwarder
 	loader    Loader
 	cards     Cards
+	activity  viewevent.Recorder
 	logger    *slog.Logger
 	now       func() time.Time
 	slots     chan struct{}
@@ -94,6 +96,13 @@ func New(channelSecret string, store Store, tokens hasher, replier Replier, forw
 // WithLoader makes the gate show the loading animation while a message is on its way to the assistant.
 func (gate *Gate) WithLoader(loader Loader) *Gate {
 	gate.loader = loader
+	return gate
+}
+
+// WithActivity records, for every message or menu button a person sends to a shop's assistant, that they used it (an internal event with
+// no words and no figures), so the operator can tell when an owner stops using it.
+func (gate *Gate) WithActivity(recorder viewevent.Recorder) *Gate {
+	gate.activity = recorder
 	return gate
 }
 
@@ -181,6 +190,13 @@ func (gate *Gate) handle(ctx context.Context, destination string, raw json.RawMe
 			}
 			return
 		}
+	}
+	if isMessage && gate.activity != nil {
+		kind := viewevent.LineMessage
+		if _, button := quickActions[strings.TrimSpace(event.Message.Text)]; button && event.Message.Type == "text" {
+			kind = viewevent.LineMenu
+		}
+		gate.activity.Record(viewevent.Event{TenantID: target.TenantID, RecipientID: recipientID, Kind: kind, At: now})
 	}
 	if gate.cards != nil && isMessage && event.Message.Type == "text" {
 		if action, ok := quickActions[strings.TrimSpace(event.Message.Text)]; ok {

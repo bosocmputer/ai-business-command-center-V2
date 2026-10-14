@@ -12,6 +12,7 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/agent"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/line"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/viewevent"
 	"github.com/google/uuid"
 )
 
@@ -204,5 +205,41 @@ func TestTheChatButtonOffersASwitchOnlyToAPersonWithSeveralShops(t *testing.T) {
 	one, many := string(chatInvitation(Shop{Name: "A"}, false)), string(chatInvitation(Shop{Name: "A"}, true))
 	if strings.Contains(one, "เปลี่ยนร้าน") || !strings.Contains(many, "เปลี่ยนร้าน") {
 		t.Fatalf("one shop: %s\nseveral: %s", one, many)
+	}
+}
+
+type fakeActivity struct{ events []viewevent.Event }
+
+func (recorder *fakeActivity) Record(event viewevent.Event) {
+	recorder.events = append(recorder.events, event)
+}
+
+func TestWhatAPersonSendsToAnAssistantIsRecordedAsUseWithNoWords(t *testing.T) {
+	shops := shopsOf("A")
+	store := &fakeStore{recipient: uuid.New(), shops: shops, selected: map[uuid.UUID]uuid.UUID{}}
+	activity := &fakeActivity{}
+	gate, _ := newGate(store, &fakeForwarder{})
+	gate.WithCards(&fakeCards{messages: []json.RawMessage{json.RawMessage(`{"type":"text","text":"x"}`)}}).WithActivity(activity)
+	gate.Process(context.Background(), []byte(textEvent("Uone", "ยอดขายเมื่อวานเท่าไหร่")))
+	gate.Process(context.Background(), []byte(textEvent("Uone", TextToday)))
+	if len(activity.events) != 2 {
+		t.Fatalf("events = %+v", activity.events)
+	}
+	for index, want := range []viewevent.Kind{viewevent.LineMessage, viewevent.LineMenu} {
+		event := activity.events[index]
+		if event.Kind != want || event.TenantID != shops[0].TenantID || event.RecipientID != store.recipient || event.ReportKey != "" || event.At.IsZero() {
+			t.Fatalf("event %d = %+v, want kind %s", index, event, want)
+		}
+	}
+}
+
+func TestNothingIsRecordedForAStrangerOrBeforeAShopIsChosen(t *testing.T) {
+	activity := &fakeActivity{}
+	stranger, _ := newGate(&fakeStore{selected: map[uuid.UUID]uuid.UUID{}}, &fakeForwarder{})
+	stranger.WithActivity(activity).Process(context.Background(), []byte(textEvent("Ustranger", "hello")))
+	undecided, _ := newGate(&fakeStore{recipient: uuid.New(), shops: shopsOf("A", "B"), selected: map[uuid.UUID]uuid.UUID{}}, &fakeForwarder{})
+	undecided.WithActivity(activity).Process(context.Background(), []byte(textEvent("Umany", "ยอดขาย")))
+	if len(activity.events) != 0 {
+		t.Fatalf("events = %+v", activity.events)
 	}
 }

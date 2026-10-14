@@ -53,8 +53,14 @@ type Config struct {
 	GenerationCacheEnabled       bool
 	StaleRevalidationEnabled     bool
 	ReportAutoRefreshEnabled     bool
-	HeavyChunkEnabled            bool
-	AgentAPIEnabled              bool
+	// OperatorNoticeMode: whether the worker tells the operator's own Telegram chat about owners who stopped using the assistant.
+	OperatorNoticeMode        string
+	OperatorTelegramTokenFile string
+	OperatorTelegramChatFile  string
+	InactivityQuietDays       int
+	InactivityNeverDays       int
+	HeavyChunkEnabled         bool
+	AgentAPIEnabled           bool
 	// Alerts the assistant sets up are checked once a day by the worker. They are off until an operator turns them on,
 	// and then only record what they would have said (dry run) until sending is switched on too.
 	AgentAlertsEnabled bool
@@ -260,6 +266,18 @@ func Load(lookup LookupFunc) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	operatorNoticeMode := strings.ToLower(valueOrDefault(lookup, "OPERATOR_NOTICE_MODE", "off"))
+	if operatorNoticeMode != "off" && operatorNoticeMode != "observe" && operatorNoticeMode != "send" {
+		return Config{}, errors.New("OPERATOR_NOTICE_MODE must be off, observe, or send")
+	}
+	inactivityQuietDays, err := intValue(lookup, "INACTIVITY_QUIET_DAYS", 5, 2, 60)
+	if err != nil {
+		return Config{}, err
+	}
+	inactivityNeverDays, err := intValue(lookup, "INACTIVITY_NEVER_DAYS", 7, 2, 90)
+	if err != nil {
+		return Config{}, err
+	}
 	// The assistant surface is off until an operator turns it on.
 	agentAPIEnabled, err := boolValue(lookup, "AGENT_API_ENABLED", false)
 	if err != nil {
@@ -413,6 +431,11 @@ func Load(lookup LookupFunc) (Config, error) {
 		GenerationCacheEnabled:       generationCacheEnabled,
 		StaleRevalidationEnabled:     staleRevalidationEnabled,
 		ReportAutoRefreshEnabled:     reportAutoRefreshEnabled,
+		OperatorNoticeMode:           operatorNoticeMode,
+		OperatorTelegramTokenFile:    valueOrDefault(lookup, "OPERATOR_TELEGRAM_TOKEN_FILE", "/run/secrets/telegram/bot-token"),
+		OperatorTelegramChatFile:     valueOrDefault(lookup, "OPERATOR_TELEGRAM_CHAT_ID_FILE", "/run/secrets/telegram/chat-id"),
+		InactivityQuietDays:          inactivityQuietDays,
+		InactivityNeverDays:          inactivityNeverDays,
 		HeavyChunkEnabled:            heavyChunkEnabled,
 		AgentAPIEnabled:              agentAPIEnabled,
 		AgentAlertsEnabled:           agentAlertsEnabled,

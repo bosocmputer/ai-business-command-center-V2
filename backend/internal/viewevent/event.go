@@ -18,6 +18,9 @@ const (
 	OverviewView Kind = "OVERVIEW_VIEW"
 	// RefreshRequest is the viewer asking for fresh data.
 	RefreshRequest Kind = "REFRESH_REQUEST"
+	// LineMessage is a message sent to the assistant in LINE, LineMenu a menu button pressed there. Both count as use.
+	LineMessage Kind = "LINE_MESSAGE"
+	LineMenu    Kind = "LINE_MENU"
 )
 
 // Retention is how long events are kept. It matches the audit log.
@@ -37,7 +40,7 @@ type Event struct {
 
 func (kind Kind) Valid() bool {
 	switch kind {
-	case CardOpen, ReportView, OverviewView, RefreshRequest:
+	case CardOpen, ReportView, OverviewView, RefreshRequest, LineMessage, LineMenu:
 		return true
 	}
 	return false

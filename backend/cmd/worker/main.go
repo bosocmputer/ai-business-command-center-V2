@@ -19,9 +19,11 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/config"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/database"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/delivery"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/inactivity"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/line"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/master"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/notification"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/operatornotice"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/quota"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/recipient"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
@@ -30,6 +32,7 @@ import (
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/secret"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/sml"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/worker"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -160,6 +163,10 @@ func main() {
 		go alertLoop(ctx, logger, evaluator)
 		logger.Info("agent alerts started", "dryRun", cfg.AgentAlertDryRun, "routes", len(cfg.AgentAlertWebhookRoutes))
 	}
+	if cfg.OperatorNoticeMode != "off" {
+		go inactivityLoop(ctx, logger, buildInactivityNotifier(cfg, pool, recipientService, logger))
+		logger.Info("owner inactivity notices started", "mode", cfg.OperatorNoticeMode)
+	}
 	if cfg.LineMessagingAccessToken != "" {
 		quotaID := workerID + "-quota"
 		go heartbeatLoop(ctx, logger, pool, quotaID, "DELIVERY", hostname, map[string]any{"stage": "quota-sync"})
@@ -170,6 +177,60 @@ func main() {
 	}
 	<-ctx.Done()
 	logger.Info("report worker stopping", "workerId", workerID)
+}
+
+// recipientNames reads the name an operator knows a recipient by (it is stored sealed).
+type recipientNames struct {
+	store   *database.RecipientStore
+	service *recipient.Service
+}
+
+func (names recipientNames) DisplayName(ctx context.Context, recipientID uuid.UUID) string {
+	stored, err := names.store.GetByID(ctx, recipientID)
+	if err != nil {
+		return ""
+	}
+	name, err := names.service.DisplayName(stored)
+	if err != nil {
+		return ""
+	}
+	return name
+}
+
+// buildInactivityNotifier tells the operator's own Telegram chat (the sentinel's bot and chat, read from the same secret files) about owners who
+// stopped using the assistant. In "observe" mode it only looks and counts; a missing or invalid Telegram file in "send" mode keeps it observing.
+func buildInactivityNotifier(cfg config.Config, pool *pgxpool.Pool, recipientService *recipient.Service, logger *slog.Logger) *inactivity.Notifier {
+	mode := inactivity.Mode(cfg.OperatorNoticeMode)
+	var sender inactivity.Sender
+	if mode == inactivity.ModeSend {
+		token, tokenErr := os.ReadFile(cfg.OperatorTelegramTokenFile)
+		chat, chatErr := os.ReadFile(cfg.OperatorTelegramChatFile)
+		telegram, err := operatornotice.NewTelegram(string(token), string(chat), "", nil)
+		if tokenErr != nil || chatErr != nil || err != nil {
+			logger.Error("operator Telegram is not usable, inactivity notices only look", "safeErrorCode", "OPERATOR_TELEGRAM_UNAVAILABLE")
+			mode = inactivity.ModeObserve
+		} else {
+			sender = telegram
+		}
+	}
+	notifier := inactivity.NewNotifier(database.NewInactivityStore(pool), recipientNames{store: database.NewRecipientStore(pool), service: recipientService}, sender, mode, time.Now, logger)
+	notifier.Quiet = time.Duration(cfg.InactivityQuietDays) * 24 * time.Hour
+	notifier.Never = time.Duration(cfg.InactivityNeverDays) * 24 * time.Hour
+	return notifier
+}
+
+// inactivityLoop looks once an hour; the notifier itself waits for the morning and tells about each owner once per quiet spell.
+func inactivityLoop(ctx context.Context, logger *slog.Logger, notifier *inactivity.Notifier) {
+	for ctx.Err() == nil {
+		notifier.RunOnce(ctx)
+		timer := time.NewTimer(time.Hour)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
 }
 
 // masterLoop looks for shops whose master data is due every five minutes. A copy is made once a day, so most passes do nothing.
