@@ -156,7 +156,9 @@ services:
     command: ["/app/worker"]
     environment: *app-environment
     # The operator's Telegram chat (the sentinel's own files), read-only, for the notices about owners who stopped using the assistant.
+    # A volumes list here replaces the one from app-security, so the database certificate is listed again.
     volumes:
+      - ./secrets/postgres/root.crt:/run/secrets/postgres-root.crt:ro
       - ./secrets/telegram:/run/secrets/telegram:ro
     restart: unless-stopped
     depends_on:
