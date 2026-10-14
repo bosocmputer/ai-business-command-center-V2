@@ -21,9 +21,12 @@ const (
 	AlertAROverdue    AlertRuleKey = "ar_overdue"
 	AlertAROverYear   AlertRuleKey = "ar_over_year"
 	AlertStockReorder AlertRuleKey = "stock_reorder"
-	AlertSalesDrop    AlertRuleKey = "sales_drop"
-	AlertReceiptsDrop AlertRuleKey = "receipts_drop"
-	AlertMarginDrop   AlertRuleKey = "margin_drop"
+	// AlertCustomersQuiet watches the number of customers who used to buy again and again and have gone quiet for much longer than their usual
+	// rhythm (the purchase frequency report's own measure).
+	AlertCustomersQuiet AlertRuleKey = "customers_quiet"
+	AlertSalesDrop      AlertRuleKey = "sales_drop"
+	AlertReceiptsDrop   AlertRuleKey = "receipts_drop"
+	AlertMarginDrop     AlertRuleKey = "margin_drop"
 	// AlertMorningDigest is not a threshold: it is a switch for a short daily summary of the other three figures.
 	AlertMorningDigest AlertRuleKey = "morning_digest"
 )
@@ -81,6 +84,7 @@ var alertCatalog = []AlertRuleDef{
 	{Key: AlertAROverdue, Label: "ยอดลูกหนี้เลยกำหนด", Description: "เตือนเมื่อยอดลูกหนี้ที่เลยกำหนดชำระรวมกันเกินจำนวนเงินที่ตั้ง (บาท) ตรวจทุกเช้า", Report: report.ARAging, Unit: AlertUnitBaht, Min: 1, Max: 10_000_000_000, Cooldown: alertCooldown},
 	{Key: AlertAROverYear, Label: "ยอดลูกหนี้ค้างเกิน 1 ปี", Description: "เตือนเมื่อยอดลูกหนี้ที่ออกใบมาเกิน 1 ปีรวมกันเกินจำนวนเงินที่ตั้ง (บาท) ตรวจทุกเช้า", Report: report.ARAging, Unit: AlertUnitBaht, Min: 1, Max: 10_000_000_000, Cooldown: alertCooldown},
 	{Key: AlertStockReorder, Label: "สินค้าถึงจุดสั่งซื้อ", Description: "เตือนเมื่อมีสินค้าถึงจุดสั่งซื้อตั้งแต่จำนวนรายการที่ตั้ง ตรวจทุกเช้า", Report: report.StockReorder, Unit: AlertUnitCount, Min: 1, Max: 100_000, Cooldown: alertCooldown},
+	{Key: AlertCustomersQuiet, Label: "ลูกค้าประจำเงียบเกินรอบ", Description: "เตือนเมื่อจำนวนลูกค้าที่เคยซื้อซ้ำแต่เงียบไปนานเกินรอบการซื้อปกติของเขา (ดูจากรายงานรอบการซื้อ ช่วง 180 วันล่าสุด) มีถึงจำนวนรายที่ตั้ง ตรวจทุกเช้า", Report: report.PurchaseFrequency, Unit: AlertUnitCount, Min: 1, Max: 100_000, Cooldown: alertCooldown},
 	{Key: AlertSalesDrop, Label: "ยอดขายเมื่อวานตก", Description: "เตือนเมื่อยอดขายเมื่อวานต่ำกว่าวันเดียวกันของสัปดาห์ก่อนตั้งแต่เปอร์เซ็นต์ที่ตั้ง ตรวจทุกเช้า", Report: report.SalesGoodsServices, Unit: AlertUnitPercent, Min: 1, Max: 99, Cooldown: dropAlertCooldown},
 	{Key: AlertReceiptsDrop, Label: "เงินเข้าเมื่อวานตก", Description: "เตือนเมื่อยอดรับเงินเมื่อวานต่ำกว่าวันเดียวกันของสัปดาห์ก่อนตั้งแต่เปอร์เซ็นต์ที่ตั้ง (ไม่เตือนถ้าเมื่อวานไม่มีเอกสารรับเงินเลย เพราะร้านอาจปิด) ตรวจทุกเช้า", Report: report.CashBankReceipts, Unit: AlertUnitPercent, Min: 1, Max: 99, Cooldown: dropAlertCooldown},
 	{Key: AlertMarginDrop, Label: "อัตรากำไรขั้นต้นเมื่อวานลด", Description: "เตือนเมื่ออัตรากำไรขั้นต้นเมื่อวานต่ำกว่าวันเดียวกันของสัปดาห์ก่อนตั้งแต่จำนวนจุดเปอร์เซ็นต์ที่ตั้ง (เช่น จาก 25% เหลือ 20% คือลด 5 จุด) ไม่เตือนถ้าเมื่อวานไม่มียอดขาย ตรวจทุกเช้า", Report: report.GrossProfitByProduct, Unit: AlertUnitPoints, Min: 1, Max: 50, Cooldown: dropAlertCooldown},
@@ -143,7 +147,7 @@ func stripUnitWords(text string, unit AlertUnit) string {
 	case AlertUnitBaht:
 		words = []string{"บาท", "฿"}
 	case AlertUnitCount:
-		words = []string{"รายการ"}
+		words = []string{"รายการ", "ราย", "คน"}
 	case AlertUnitPercent:
 		words = []string{"เปอร์เซ็นต์", "เปอร์เซนต์", "%"}
 	case AlertUnitPoints:

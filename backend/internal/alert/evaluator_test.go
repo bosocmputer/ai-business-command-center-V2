@@ -246,6 +246,29 @@ func TestAStillTrueRuleStaysQuietUnlessItGotWorse(t *testing.T) {
 	}
 }
 
+func TestCustomersQuietSpeaksAboveTheThresholdWithTheCountAndWhatTheyUsedToBuy(t *testing.T) {
+	item := target(agent.AlertCustomersQuiet, "50")
+	source := &fakeSource{reports: map[string]agent.ReportResponse{"purchase_frequency": ready("purchase_frequency", collected, map[string]string{"overdue_count": "85", "overdue_amount": "7283995.30"})}}
+	sender := &fakeSender{}
+	summary := newEvaluator(newFakeStore(item), source, sender, false, nineAM).RunOnce(context.Background())
+	if summary.Fired != 1 || len(sender.sent) != 1 {
+		t.Fatalf("summary = %+v", summary)
+	}
+	message := sender.sent[0].Message
+	for _, want := range []string{"85 ราย", "ตั้งแต่ 50 ราย", "7,283,995.30 บาท", "ลูกค้ารายไหนเงียบเกินรอบเยอะสุด"} {
+		if !strings.Contains(message, want) {
+			t.Errorf("message lacks %q:\n%s", want, message)
+		}
+	}
+	if len(source.requests) != 1 || source.requests[0] != "purchase_frequency" {
+		t.Fatalf("requests = %v", source.requests)
+	}
+	below := target(agent.AlertCustomersQuiet, "100")
+	if summary := newEvaluator(newFakeStore(below), source, &fakeSender{}, false, nineAM).RunOnce(context.Background()); summary.Fired != 0 || summary.Checked != 1 {
+		t.Fatalf("under the threshold: %+v", summary)
+	}
+}
+
 func TestAStillTrueRuleThatDidNotChangeStaysQuietForTwoWeeksAndThenRemindsOnce(t *testing.T) {
 	item := target(agent.AlertAROverdue, "100000")
 	source := &fakeSource{reports: map[string]agent.ReportResponse{"ar_aging": ready("ar_aging", collected, map[string]string{"overdue_amount": "298505"})}}

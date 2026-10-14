@@ -192,6 +192,15 @@ func (evaluator *Evaluator) evaluate(ctx context.Context, target agent.AlertTarg
 		return evaluator.stateRule(ctx, target, def, "reorder_item_count", location, func(value *big.Rat) string {
 			return fmt.Sprintf("⚠️ แจ้งเตือน: มีสินค้าถึงจุดสั่งซื้อ %s รายการ (คุณตั้งเตือนไว้ตั้งแต่ %s รายการ)", whole(value), whole(target.Threshold))
 		}, "สินค้าอะไรใกล้หมดสต็อกบ้าง")
+	case agent.AlertCustomersQuiet:
+		return evaluator.stateRuleWithNote(ctx, target, def, "overdue_count", location, func(value *big.Rat) string {
+			return fmt.Sprintf("⚠️ แจ้งเตือน: มีลูกค้าเงียบเกินรอบการซื้อปกติ %s ราย (คุณตั้งเตือนไว้ตั้งแต่ %s ราย)", whole(value), whole(target.Threshold))
+		}, "ลูกค้ารายไหนเงียบเกินรอบเยอะสุด", func(response agent.ReportResponse) string {
+			if amount, ok := kpi(response, "overdue_amount"); ok && amount.Sign() > 0 {
+				return fmt.Sprintf("\n(ยอดที่ลูกค้ากลุ่มนี้เคยซื้อรวม %s บาท)", baht(amount))
+			}
+			return ""
+		})
 	case agent.AlertSalesDrop, agent.AlertReceiptsDrop, agent.AlertMarginDrop:
 		return evaluator.weekdayDrop(ctx, target, def, local, location, dropSpecs[def.Key])
 	case agent.AlertMorningDigest:

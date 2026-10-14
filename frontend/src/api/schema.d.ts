@@ -1609,7 +1609,7 @@ export interface components {
         };
         AgentAlert: {
             /** @enum {string} */
-            rule: "ar_overdue" | "ar_over_year" | "stock_reorder" | "sales_drop" | "receipts_drop" | "margin_drop" | "morning_digest";
+            rule: "ar_overdue" | "ar_over_year" | "stock_reorder" | "customers_quiet" | "sales_drop" | "receipts_drop" | "margin_drop" | "morning_digest";
             /** @description What the owner calls it. */
             label: string;
             /** @description What is watched, in plain Thai. */
@@ -4435,7 +4435,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                ruleKey: "ar_overdue" | "ar_over_year" | "stock_reorder" | "sales_drop" | "receipts_drop" | "margin_drop" | "morning_digest";
+                ruleKey: "ar_overdue" | "ar_over_year" | "stock_reorder" | "customers_quiet" | "sales_drop" | "receipts_drop" | "margin_drop" | "morning_digest";
             };
             cookie?: never;
         };
