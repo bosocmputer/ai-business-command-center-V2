@@ -110,9 +110,14 @@ through `alert_set`. AI-BCC's worker checks the rules once a day after 08:15 and
 through the assistant's webhook (a route per person in `ALERT_CHAT_IDS`, default everyone allowed to chat, at most five).
 The text is written by AI-BCC from its own figures; no model touches it, and the owner can answer it in the same chat.
 
-Four rules to begin with: overdue receivables, receivables over a year, items at the reorder point (all quiet for three
-days unless 10% worse) and yesterday's sales down against the same weekday a week earlier. Thresholds are the owner's;
-nothing is guessed for them.
+Four rules to begin with: overdue receivables, receivables over a year, items at the reorder point and yesterday's sales down against
+the same weekday a week earlier (later also cash received down and gross margin down). Thresholds are the owner's; nothing is guessed for them.
+
+A rule speaks once about a problem (changed 14 Oct 2026; before, the balance rules repeated every three days with the same figure). It
+speaks again when the figure is at least 10% worse than the last time it spoke, when the problem went away (the figure is back under the
+threshold, or yesterday had no fall) and came back, or as a reminder after 14 days (receivables, reorder point) or 7 days (the daily
+falls) while it stays the same. A check that could not read its report never counts as "the problem went away". The morning digest has no
+such rule: it is a summary and goes out every day.
 
 A fifth rule, `morning_digest` ("send me a summary every morning"), has no threshold: one short message a day with yesterday's
 sales against the same weekday last week, overdue receivables and the reorder count, limited to the reports that person
