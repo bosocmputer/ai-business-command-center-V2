@@ -299,18 +299,18 @@ func (evaluator *Evaluator) weekdayDrop(ctx context.Context, target agent.AlertT
 var dropSpecs = map[agent.AlertRuleKey]dropSpec{
 	agent.AlertSalesDrop: {metric: "total_amount", guard: "document_count", followUp: "ยอดขายเมื่อวานเป็นอย่างไรบ้าง",
 		headline: func(weekday, date string, yesterday, before, drop, threshold *big.Rat) string {
-			return fmt.Sprintf("⚠️ แจ้งเตือน: ยอดขายเมื่อวาน (วัน%s ที่ %s) %s บาท ต่ำกว่าวัน%sสัปดาห์ก่อน (%s บาท) อยู่ %s%% (คุณตั้งเตือนไว้ที่ %s%%)",
-				weekday, date, baht(yesterday), weekday, baht(before), percent(drop), whole(threshold))
+			return fmt.Sprintf("⚠️ แจ้งเตือน: ยอดขายเมื่อวาน (วัน%s ที่ %s) %s บาท ลดลง %s%% จากวัน%sสัปดาห์ก่อน (%s บาท) (คุณตั้งเตือนไว้ที่ %s%%)",
+				weekday, date, baht(yesterday), percent(drop), weekday, baht(before), whole(threshold))
 		}},
 	agent.AlertReceiptsDrop: {metric: "total_amount", guard: "document_count", followUp: "เงินเข้าเมื่อวานเป็นอย่างไรบ้าง",
 		headline: func(weekday, date string, yesterday, before, drop, threshold *big.Rat) string {
-			return fmt.Sprintf("⚠️ แจ้งเตือน: เงินเข้าเมื่อวาน (วัน%s ที่ %s) %s บาท ต่ำกว่าวัน%sสัปดาห์ก่อน (%s บาท) อยู่ %s%% (คุณตั้งเตือนไว้ที่ %s%%)",
-				weekday, date, baht(yesterday), weekday, baht(before), percent(drop), whole(threshold))
+			return fmt.Sprintf("⚠️ แจ้งเตือน: เงินเข้าเมื่อวาน (วัน%s ที่ %s) %s บาท ลดลง %s%% จากวัน%sสัปดาห์ก่อน (%s บาท) (คุณตั้งเตือนไว้ที่ %s%%)",
+				weekday, date, baht(yesterday), percent(drop), weekday, baht(before), whole(threshold))
 		}},
 	agent.AlertMarginDrop: {metric: "gross_margin_percent", guard: "net_amount", points: true, followUp: "กำไรขั้นต้นเมื่อวานเป็นอย่างไรบ้าง",
 		headline: func(weekday, date string, yesterday, before, drop, threshold *big.Rat) string {
-			return fmt.Sprintf("⚠️ แจ้งเตือน: อัตรากำไรขั้นต้นเมื่อวาน (วัน%s ที่ %s) อยู่ที่ %s%% ต่ำกว่าวัน%sสัปดาห์ก่อน (%s%%) อยู่ %s จุด (คุณตั้งเตือนไว้ที่ %s จุด)",
-				weekday, date, percent(yesterday), weekday, percent(before), percent(drop), whole(threshold))
+			return fmt.Sprintf("⚠️ แจ้งเตือน: อัตรากำไรขั้นต้นเมื่อวาน (วัน%s ที่ %s) อยู่ที่ %s%% ลดลง %s จุดจากวัน%sสัปดาห์ก่อน (%s%%) (คุณตั้งเตือนไว้ที่ %s จุด)",
+				weekday, date, percent(yesterday), percent(drop), weekday, percent(before), whole(threshold))
 		}},
 }
 
@@ -345,11 +345,11 @@ func (evaluator *Evaluator) digest(ctx context.Context, target agent.AlertTarget
 			line = fmt.Sprintf("• ยอดขายเมื่อวาน (วัน%s ที่ %s): ไม่มียอดขายเลย (ร้านอาจปิดทำการ)", weekday, thaiDate(yesterday))
 		} else if weekBefore.Sign() > 0 {
 			change := new(big.Rat).Quo(new(big.Rat).Mul(new(big.Rat).Sub(yesterdayTotal, weekBefore), big.NewRat(100, 1)), weekBefore)
-			direction := "สูงกว่า"
+			direction := "เพิ่มขึ้น"
 			if change.Sign() < 0 {
-				direction, change = "ต่ำกว่า", new(big.Rat).Neg(change)
+				direction, change = "ลดลง", new(big.Rat).Neg(change)
 			}
-			line += fmt.Sprintf(" %sวัน%sสัปดาห์ก่อน (%s บาท) อยู่ %s%%", direction, weekday, baht(weekBefore), percent(change))
+			line += fmt.Sprintf(" %s %s%% จากวัน%sสัปดาห์ก่อน (%s บาท)", direction, percent(change), weekday, baht(weekBefore))
 		} else {
 			line += fmt.Sprintf(" (วัน%sสัปดาห์ก่อนไม่มียอดขาย จึงไม่เทียบ)", weekday)
 		}

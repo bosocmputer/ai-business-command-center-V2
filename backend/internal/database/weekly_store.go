@@ -37,7 +37,7 @@ func (store *WeeklyStore) Due(ctx context.Context, now time.Time) ([]weekly.Due,
 		  (select count(*) from report_view_events v where v.tenant_id = d.tenant_id and v.recipient_id = d.recipient_id
 		     and v.kind in ('CARD_OPEN', 'REPORT_VIEW', 'OVERVIEW_VIEW') and v.occurred_at > $1::timestamptz - interval '7 days'),
 		  (select count(*) from agent_alert_events a where a.tenant_id = d.tenant_id and a.recipient_id = d.recipient_id
-		     and a.status = 'SENT' and a.sent_at > $1::timestamptz - interval '7 days')
+		     and a.status = 'SENT' and a.rule_key <> 'morning_digest' and a.sent_at > $1::timestamptz - interval '7 days')
 		from due d order by d.shop, d.recipient_id`, now)
 	if err != nil {
 		return nil, fmt.Errorf("list weekly summaries: %w", err)

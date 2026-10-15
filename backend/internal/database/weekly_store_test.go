@@ -50,6 +50,16 @@ func TestWeeklyStoreListsOnlyDueOwnersOfShopsThatSwitchedItOnAndCountsTheirWeek(
 	event("LINE_MESSAGE", now.Add(-2*day)) // a message and a menu button both count as asking
 	event("CARD_OPEN", now.Add(-9*day))    // older than a week: not counted
 
+	// A sent morning digest and a sent alert in the week, and an alert that only failed: only the real alert that arrived counts.
+	for index, event := range []struct{ rule, status string }{{"morning_digest", "SENT"}, {"receipts_drop", "SENT"}, {"ar_overdue", "FAILED"}} {
+		var ruleID uuid.UUID
+		if err := pool.QueryRow(ctx, `insert into agent_alert_rules (tenant_id, recipient_id, rule_key, threshold) values ($1, $2, $3, 1) returning id`, tenantID, owner, event.rule).Scan(&ruleID); err != nil {
+			t.Fatal(err)
+		}
+		exec(`insert into agent_alert_events (rule_id, tenant_id, recipient_id, rule_key, fired_on, value, threshold, message, status, sent_at, created_at)
+		      values ($1, $2, $3, $4, $5::date, 1, 1, 'x', $6, $7, $7)`, ruleID, tenantID, owner, event.rule, now.Add(-time.Duration(index+1)*day), event.status, now.Add(-time.Duration(index+1)*day))
+	}
+
 	store := NewWeeklyStore(pool)
 	dueOf := func(at time.Time) []weekly.Due {
 		t.Helper()
@@ -83,7 +93,7 @@ func TestWeeklyStoreListsOnlyDueOwnersOfShopsThatSwitchedItOnAndCountsTheirWeek(
 		t.Fatal(err)
 	}
 	list := dueOf(now)
-	if len(list) != 1 || list[0].RecipientID != owner || list[0].LocalDay != "2026-10-19" || list[0].Opened != 1 || list[0].Asked != 2 || list[0].Alerts != 0 {
+	if len(list) != 1 || list[0].RecipientID != owner || list[0].LocalDay != "2026-10-19" || list[0].Opened != 1 || list[0].Asked != 2 || list[0].Alerts != 1 {
 		t.Fatalf("due = %+v", list)
 	}
 	if len(dueOf(now.Add(day))) != 0 {

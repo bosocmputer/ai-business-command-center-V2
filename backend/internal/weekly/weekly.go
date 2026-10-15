@@ -21,7 +21,7 @@ type Due struct {
 	LocalDay    string // the shop's date, the key that keeps a summary from going out twice
 	Asked       int    // messages to the assistant and menu buttons pressed in LINE
 	Opened      int    // cards and reports opened
-	Alerts      int    // alerts sent to the owner
+	Alerts      int    // alerts sent to the owner (the morning digest is not an alert: it is sent every day)
 }
 
 func (due Due) Total() int { return due.Asked + due.Opened + due.Alerts }

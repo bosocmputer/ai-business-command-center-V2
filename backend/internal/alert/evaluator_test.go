@@ -472,7 +472,7 @@ func TestTheMorningDigestSummarisesThreeFiguresOnceADay(t *testing.T) {
 		t.Fatalf("summary = %+v", summary)
 	}
 	message := sender.sent[0].Message
-	for _, want := range []string{"สรุปเช้าวันพฤหัสบดี ที่ 8 ต.ค. 2569", "ยอดขายเมื่อวาน (วันพุธ ที่ 7 ต.ค. 2569): 60,000.00 บาท ต่ำกว่าวันพุธสัปดาห์ก่อน (100,000.00 บาท) อยู่ 40%",
+	for _, want := range []string{"สรุปเช้าวันพฤหัสบดี ที่ 8 ต.ค. 2569", "ยอดขายเมื่อวาน (วันพุธ ที่ 7 ต.ค. 2569): 60,000.00 บาท ลดลง 40% จากวันพุธสัปดาห์ก่อน (100,000.00 บาท)",
 		"ลูกหนี้เลยกำหนด: 641,200.50 บาท", "สินค้าถึงจุดสั่งซื้อ: 4 รายการ", "ข้อมูล ณ 8 ต.ค. 2569 เวลา 07:31 น.", "ปิดสรุปเช้า"} {
 		if !strings.Contains(message, want) {
 			t.Errorf("message lacks %q:\n%s", want, message)
@@ -592,7 +592,7 @@ func TestReceiptsDropAndMarginDropSpeakInTheirOwnWords(t *testing.T) {
 	if summary := newEvaluator(newFakeStore(receipts), source, sender, false, nineAM).RunOnce(context.Background()); summary.Fired != 1 {
 		t.Fatalf("receipts: %+v", summary)
 	}
-	for _, want := range []string{"เงินเข้าเมื่อวาน (วันพุธ ที่ 7 ต.ค. 2569) 50,000.00 บาท", "ต่ำกว่าวันพุธสัปดาห์ก่อน (100,000.00 บาท) อยู่ 50%", "ตั้งเตือนไว้ที่ 30%", "ปิดเตือนเงินเข้าเมื่อวานตก"} {
+	for _, want := range []string{"เงินเข้าเมื่อวาน (วันพุธ ที่ 7 ต.ค. 2569) 50,000.00 บาท", "ลดลง 50% จากวันพุธสัปดาห์ก่อน (100,000.00 บาท)", "ตั้งเตือนไว้ที่ 30%", "ปิดเตือนเงินเข้าเมื่อวานตก"} {
 		if !strings.Contains(sender.sent[0].Message, want) {
 			t.Errorf("message lacks %q:\n%s", want, sender.sent[0].Message)
 		}
@@ -607,7 +607,7 @@ func TestReceiptsDropAndMarginDropSpeakInTheirOwnWords(t *testing.T) {
 	if summary := newEvaluator(newFakeStore(margin), source, sender, false, nineAM).RunOnce(context.Background()); summary.Fired != 1 {
 		t.Fatalf("margin: %+v", summary)
 	}
-	for _, want := range []string{"อัตรากำไรขั้นต้นเมื่อวาน", "อยู่ที่ 18.5%", "สัปดาห์ก่อน (25%)", "อยู่ 6.5 จุด", "ตั้งเตือนไว้ที่ 5 จุด"} {
+	for _, want := range []string{"อัตรากำไรขั้นต้นเมื่อวาน", "อยู่ที่ 18.5%", "ลดลง 6.5 จุดจากวัน", "สัปดาห์ก่อน (25%)", "ตั้งเตือนไว้ที่ 5 จุด"} {
 		if !strings.Contains(sender.sent[0].Message, want) {
 			t.Errorf("margin message lacks %q:\n%s", want, sender.sent[0].Message)
 		}
@@ -624,7 +624,7 @@ func TestTheDigestSaysWhenYesterdayHadNoSalesInsteadOfAHundredPercentFall(t *tes
 	source.compare = agent.CompareResponse{Status: "READY", A: side("0.00"), B: side("100000.00"), CollectedAt: collected}
 	sender := &fakeSender{}
 	newEvaluator(newFakeStore(target(agent.AlertMorningDigest, "1")), source, sender, false, nineAM).RunOnce(context.Background())
-	if message := sender.sent[0].Message; !strings.Contains(message, "ไม่มียอดขายเลย (ร้านอาจปิดทำการ)") || strings.Contains(message, "ต่ำกว่า") {
+	if message := sender.sent[0].Message; !strings.Contains(message, "ไม่มียอดขายเลย (ร้านอาจปิดทำการ)") || strings.Contains(message, "ลดลง") {
 		t.Errorf("digest:\n%s", message)
 	}
 }
