@@ -154,6 +154,13 @@ func (store *RetentionStore) Run(ctx context.Context, policy retention.Policy, n
 		)`, now, policy.BatchSize); err != nil {
 		return retention.Counts{}, err
 	}
+	// The record that keeps a weekly summary from going out twice holds only a date per owner and week: it is not needed after a year.
+	if _, err = execRetention(ctx, tx, `
+		delete from owner_weekly_summaries where ctid in (
+		  select ctid from owner_weekly_summaries where created_at <= $1::timestamptz - interval '365 days' limit $2
+		)`, now, policy.BatchSize); err != nil {
+		return retention.Counts{}, err
+	}
 	if counts.AccessLinks, err = execRetention(ctx, tx, `
 		delete from delivery_access_links where reference_hash in (
 		  select reference_hash from delivery_access_links where expires_at <= $1 order by expires_at limit $2

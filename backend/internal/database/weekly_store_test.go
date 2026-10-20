@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/engagement"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/retention"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/weekly"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -111,5 +112,42 @@ func TestWeeklyStoreListsOnlyDueOwnersOfShopsThatSwitchedItOnAndCountsTheirWeek(
 	}
 	if err := store.Release(ctx, list[0]); err != nil || len(dueOf(now)) != 1 {
 		t.Fatalf("a released summary must be listed again: %v", err)
+	}
+}
+
+func TestRetentionRemovesWeeklySummaryRecordsOlderThanAYear(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 20, 4, 0, 0, 0, time.UTC)
+	tenantID, owner := uuid.New(), uuid.New()
+	defer func() { _, _ = pool.Exec(context.Background(), `delete from tenants where id = $1`, tenantID) }()
+	if _, err := pool.Exec(ctx, `insert into tenants (id, slug, name, timezone, status, access_ends_at) values ($1, $2, 'ร้านทดสอบ', 'Asia/Bangkok', 'ACTIVE', $3)`, tenantID, "weekly-ret-"+tenantID.String(), now.AddDate(1, 0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		day string
+		at  time.Time
+	}{{"2025-10-01", now.AddDate(-1, 0, -20)}, {"2026-10-14", now.AddDate(0, 0, -6)}} {
+		if _, err := pool.Exec(ctx, `insert into owner_weekly_summaries (tenant_id, recipient_id, sent_on, created_at) values ($1, $2, $3::date, $4)`, tenantID, owner, row.day, row.at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := NewRetentionStore(pool).Run(ctx, retention.ProductionPolicy(), now); err != nil {
+		t.Fatal(err)
+	}
+	var left int
+	if err := pool.QueryRow(ctx, `select count(*) from owner_weekly_summaries where tenant_id = $1`, tenantID).Scan(&left); err != nil || left != 1 {
+		t.Fatalf("only the recent record may stay: %d %v", left, err)
 	}
 }
