@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/report"
 )
@@ -199,7 +200,7 @@ func addExecutiveHighlights(presentation *FlexReportPresentation, primary report
 		if err != nil {
 			return ErrFlexInputInvalid
 		}
-		presentation.Highlights = append(presentation.Highlights, FlexMetricPresentation{Label: "สินค้าขายดี", Value: truncateRunes(name, flexHighlightNameLimit) + ": " + formatted + " บาท"})
+		presentation.Highlights = append(presentation.Highlights, FlexMetricPresentation{Label: "สินค้าขายดี", Value: highlightName(name, flexHighlightNameLimit) + ": " + formatted + " บาท"})
 	case report.PurchaseGoodsPayables:
 		name, amount, ok := topRanked(visualizations, "top_suppliers")
 		if !ok {
@@ -209,7 +210,7 @@ func addExecutiveHighlights(presentation *FlexReportPresentation, primary report
 		if err != nil {
 			return ErrFlexInputInvalid
 		}
-		value := truncateRunes(name, flexHighlightNameLimit) + ": " + formatted + " บาท"
+		value := highlightName(name, flexHighlightNameLimit) + ": " + formatted + " บาท"
 		if share, ok := sharePercent(amount, primary.Value); ok {
 			value += " (" + share + "% ของยอดซื้อ)"
 		}
@@ -328,6 +329,17 @@ func trustedZeroDashboard(dashboard *report.Dashboard, definition flexPresentati
 	return true
 }
 
+// flexMaxPercentShown is the largest change in percent a card shows as a percent.
+const flexMaxPercentShown = 150
+
+func percentIsAlarming(percent string) bool {
+	value, ok := new(big.Rat).SetString(normalizeNumber(percent))
+	if !ok {
+		return false
+	}
+	return new(big.Rat).Abs(value).Cmp(big.NewRat(flexMaxPercentShown, 1)) > 0
+}
+
 func comparisonHasChange(comparison report.MetricComparison) bool {
 	if comparison.Availability != report.ComparisonAvailable {
 		return false
@@ -372,6 +384,23 @@ func unitForMetricKey(key string) report.MetricUnit {
 	return report.UnitTHB
 }
 
+// flexShortLabels are labels that wrap in the middle of a Thai word on a narrow card ("ยอดเฉลี่ยต่อเอกสา/ร"): the same meaning in fewer letters.
+var flexShortLabels = map[string]string{"ยอดเฉลี่ยต่อเอกสาร": "เฉลี่ยต่อเอกสาร"}
+
+// highlightName shortens a product or supplier name for a card line: a trailing note in brackets such as "(cube)" goes first, and only then is the
+// name cut, so a name is not left hanging in the middle of its bracket ("… (cu…").
+func highlightName(name string, limit int) string {
+	name = strings.TrimSpace(name)
+	for utf8.RuneCountInString(name) > limit {
+		open := strings.LastIndex(name, "(")
+		if open <= 0 || !strings.HasSuffix(name, ")") {
+			break
+		}
+		name = strings.TrimSpace(name[:open])
+	}
+	return truncateRunes(name, limit)
+}
+
 func presentMetric(key report.Key, metric report.DashboardMetric) (FlexMetricPresentation, error) {
 	value, err := formatMetricValue(metric.Value, metric.Unit)
 	if err != nil {
@@ -380,6 +409,9 @@ func presentMetric(key report.Key, metric report.DashboardMetric) (FlexMetricPre
 	label := metric.Label
 	if override := flexLabelOverrides[key][metric.Key]; override != "" {
 		label = override
+	}
+	if short := flexShortLabels[label]; short != "" {
+		label = short
 	}
 	return FlexMetricPresentation{Label: label, Value: value, Unit: flexUnitLabel(metric)}, nil
 }
@@ -408,7 +440,9 @@ func presentComparison(metric report.DashboardMetric, comparisonPeriod report.Pe
 	}
 	value := comparison.Percent
 	unit := report.UnitPercent
-	if strings.TrimSpace(value) == "" {
+	if strings.TrimSpace(value) == "" || percentIsAlarming(value) && strings.TrimSpace(comparison.Delta) != "" {
+		// A change of several hundred percent comes from a small base (a payment of 6,000 baht against 19,000): it reads as an alarm and says little,
+		// so the card says by how much the amount changed instead.
 		value, unit = comparison.Delta, metric.Unit
 	}
 	formatted, err := formatMetricValue(value, unit)
@@ -416,6 +450,11 @@ func presentComparison(metric report.DashboardMetric, comparisonPeriod report.Pe
 		return nil, ErrFlexInputInvalid
 	}
 	formatted = strings.TrimPrefix(strings.TrimPrefix(formatted, "−"), "-")
+	if unit != report.UnitPercent {
+		if label := flexUnitLabel(metric); label != "" {
+			formatted += " " + label
+		}
+	}
 	reference := comparisonReferenceLabel(comparisonPeriod)
 	if reference == "" {
 		return &FlexComparisonPresentation{Text: arrow + " " + formatted + " จากช่วงก่อน", Direction: comparison.Direction}, nil
@@ -441,8 +480,15 @@ func comparisonReferenceLabel(period report.Period) string {
 	if fromErr != nil || toErr != nil || to.Before(from) {
 		return ""
 	}
-	return strings.TrimPrefix(strings.TrimPrefix(periodLabel(period), "ข้อมูล ณ "), "ข้อมูล ")
+	label := strings.TrimPrefix(strings.TrimPrefix(periodLabel(period), "ข้อมูล ณ "), "ข้อมูล ")
+	if from.Equal(to) {
+		// "เทียบวันพุธ 7 ต.ค. 2569": a single compared day says which weekday it was, so a daily figure is not read against the wrong day.
+		return "วัน" + thaiWeekdayNames[from.Weekday()] + " " + label
+	}
+	return label
 }
+
+var thaiWeekdayNames = [...]string{"อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"}
 
 func attentionFor(key report.Key, metrics map[string]report.DashboardMetric, visualizations []report.DashboardVisualization, quality report.DashboardQuality) *FlexAttentionPresentation {
 	if key == report.GrossProfitByProduct || key == report.GrossProfitByARCustomer {

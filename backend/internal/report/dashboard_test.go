@@ -1,6 +1,7 @@
 package report
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -11,8 +12,13 @@ func TestResolveComparisonPeriodUsesBusinessEquivalentPeriods(t *testing.T) {
 		want Period
 	}{
 		{
-			name: "yesterday compares the preceding day",
+			name: "yesterday compares the same weekday a week before",
 			in:   Period{Preset: Yesterday, DateFrom: "2026-07-09", DateTo: "2026-07-09"},
+			want: Period{Preset: Custom, DateFrom: "2026-07-02", DateTo: "2026-07-02"},
+		},
+		{
+			name: "a balance as of a day compares the day before",
+			in:   Period{Preset: AsOfRun, DateFrom: "2026-07-09", DateTo: "2026-07-09"},
 			want: Period{Preset: Custom, DateFrom: "2026-07-08", DateTo: "2026-07-08"},
 		},
 		{
@@ -305,5 +311,26 @@ func TestStockBalanceDashboardWarnsWhenTheTotalIsNegative(t *testing.T) {
 		if warning == NegativeStockWarning {
 			t.Fatal("the stock reorder report must not carry the negative stock warning")
 		}
+	}
+}
+
+func TestReceiptsWarnWhenTheirChannelsDoNotAddUpToTheTotal(t *testing.T) {
+	build := func(total string, channels ...string) Dashboard {
+		dashboard := Dashboard{ReportKey: CashBankReceipts, Quality: DashboardQuality{Status: "OK", Warnings: []string{}},
+			KPIs:           []DashboardMetric{{Key: "total_amount", Value: total}},
+			Visualizations: []DashboardVisualization{{Key: "cash_receipt_methods", Series: []VisualizationSeries{{Key: "amount", Values: channels}}}}}
+		addDashboardQualityWarnings(&dashboard)
+		return dashboard
+	}
+	short := build("27940.00", "5100.00", "12440.00")
+	if short.Quality.Status != "WARNING" || len(short.Quality.Warnings) != 1 || !strings.Contains(short.Quality.Warnings[0], "17,540") && !strings.Contains(short.Quality.Warnings[0], "17540") {
+		t.Fatalf("channels 17,540 against a total of 27,940 must be flagged: %+v", short.Quality)
+	}
+	if !strings.Contains(short.Quality.Warnings[0], "ห้ามบอกว่าส่วนที่เหลือ") {
+		t.Fatalf("the warning must forbid naming the missing part: %s", short.Quality.Warnings[0])
+	}
+	exact := build("17540.00", "5100.00", "12440.00")
+	if exact.Quality.Status != "OK" || len(exact.Quality.Warnings) != 0 {
+		t.Fatalf("channels that add up must not warn: %+v", exact.Quality)
 	}
 }

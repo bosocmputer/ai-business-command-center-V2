@@ -371,6 +371,11 @@ func (service *Service) Compare(ctx context.Context, principal Principal, rawKey
 		response.Warnings = append(response.Warnings, "ช่วง B เป็นศูนย์ จึงคำนวณเปอร์เซ็นต์ไม่ได้")
 	}
 	response.Warnings = append(response.Warnings, compareWarnings(periodA, periodB, locationOf(principal), now)...)
+	if today := shopToday(principal, now); periodIsUnfinishedDay(periodA, today) || periodIsUnfinishedDay(periodB, today) {
+		// The difference of a day that is not over and a whole day says nothing: the two figures stay, the difference does not.
+		response.Delta, response.Percent = "", ""
+		response.Warnings = append(response.Warnings, MessageTodayNotWhole)
+	}
 	if finished := snapshotA.snapshot.SourceFinishedAt; finished != nil {
 		response.CollectedAt = finished.In(locationOf(principal)).Format(time.RFC3339)
 	}
@@ -687,11 +692,29 @@ func (service *Service) reportResponse(principal Principal, definition report.De
 	if finished := snapshot.snapshot.SourceFinishedAt; finished != nil {
 		response.CollectedAt = finished.In(locationOf(principal)).Format(time.RFC3339)
 	}
-	service.fill(&response, principal, snapshot.snapshot.Dashboard)
+	dashboard := snapshot.snapshot.Dashboard
+	if periodIsUnfinishedDay(period, shopToday(principal, service.now().UTC())) {
+		// Today so far is not a whole day: put next to yesterday it would always look like a fall, so no comparison is handed out.
+		dashboard.KPIs = slices.Clone(dashboard.KPIs)
+		for index := range dashboard.KPIs {
+			dashboard.KPIs[index].Comparison = report.MetricComparison{Availability: report.ComparisonUnavailable}
+		}
+		dashboard.ComparisonPeriod = report.Period{}
+		response.Warnings = append(response.Warnings, MessageTodayNotWhole)
+	}
+	service.fill(&response, principal, dashboard)
 	if response.Period != nil {
 		response.Period.Mode = string(definition.ParameterKind)
 	}
 	return response
+}
+
+// MessageTodayNotWhole goes with figures of today, and with a comparison that has today on one side.
+const MessageTodayNotWhole = "วันนี้ยังไม่จบ ตัวเลขเป็นยอดถึงเวลาที่ดึง จึงไม่เทียบกับวันอื่นทั้งวัน (ถ้าเทียบจะดูเหมือนลดลงเสมอ) ให้บอกเจ้าของว่าเป็นยอดถึงตอนนี้ และรอเทียบเมื่อวันจบ"
+
+// periodIsUnfinishedDay says that a period is exactly one day and that day is today (or later) in the shop.
+func periodIsUnfinishedDay(period report.Period, today string) bool {
+	return period.DateFrom != "" && period.DateFrom == period.DateTo && period.DateTo >= today
 }
 
 // fill copies the dashboard's figures into the response, replacing customer and supplier names with aliases

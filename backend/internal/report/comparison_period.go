@@ -39,7 +39,13 @@ func ResolveComparisonPeriod(period Period) (Period, error) {
 		if !from.Equal(to) {
 			return Period{}, errors.New("single-day report preset resolved to a date range")
 		}
-		comparisonFrom = from.AddDate(0, 0, -1)
+		// A day of sales, receipts or payments follows the rhythm of the week, so "yesterday" is compared with the same weekday a week before:
+		// the same comparison the morning alerts and the digest make. A balance as of a day (stock, receivables) is compared with the day before.
+		step := -1
+		if period.Preset == Yesterday {
+			step = -7
+		}
+		comparisonFrom = from.AddDate(0, 0, step)
 		comparisonTo = comparisonFrom
 	case Custom:
 		days := int(to.Sub(from).Hours()/24) + 1

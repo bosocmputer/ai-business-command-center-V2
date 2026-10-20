@@ -139,3 +139,49 @@ func TestRoutedSenderUsesTheChannelTheShopChose(t *testing.T) {
 		t.Fatalf("code = %s", code)
 	}
 }
+
+func TestEveryAlertGetsButtonsThatLINEAcceptsAndTheAssistantUnderstands(t *testing.T) {
+	for _, def := range agent.AlertCatalog() {
+		buttons := alertQuickReplies(def.Key)
+		if len(buttons) == 0 || len(buttons) > 2 {
+			t.Fatalf("%s: %d buttons", def.Key, len(buttons))
+		}
+		for _, button := range buttons {
+			if n := len([]rune(button.Action.Label)); n == 0 || n > 20 || button.Action.Text == "" || len([]rune(button.Action.Text)) > 300 || button.Action.Type != "message" {
+				t.Fatalf("%s: a button LINE would refuse: %+v", def.Key, button)
+			}
+		}
+		last := buttons[len(buttons)-1].Action.Text
+		if def.Key == agent.AlertMorningDigest {
+			if last != "ปิดสรุปเช้า" {
+				t.Fatalf("digest switch-off text = %q", last)
+			}
+			continue
+		}
+		if last != "ปิดเตือน"+def.Label || len(buttons) != 2 || buttons[0].Action.Text == "" {
+			t.Fatalf("%s: switch-off must be the phrase the alert text teaches (ปิดเตือน + the rule's name): %+v", def.Key, buttons)
+		}
+	}
+}
+
+func TestAnAlertPushCarriesItsButtonsAndAWeeklySummaryDoesNot(t *testing.T) {
+	pusher := &pusherFake{result: line.PushResult{Outcome: line.PushAccepted}}
+	sender := lineSender(pusher, recipientsFake{id: "U123456"}, 250, true)
+	if err := sender.Send(context.Background(), agent.AlertEvent{ID: uuid.New(), Rule: agent.AlertReceiptsDrop, Message: "⚠️ แจ้งเตือน"}); err != nil {
+		t.Fatal(err)
+	}
+	var withButtons struct {
+		QuickReply struct {
+			Items []quickReply `json:"items"`
+		} `json:"quickReply"`
+	}
+	if err := json.Unmarshal(pusher.message, &withButtons); err != nil || len(withButtons.QuickReply.Items) != 2 {
+		t.Fatalf("alert message = %s %v", pusher.message, err)
+	}
+	if err := sender.SendText(context.Background(), uuid.New(), uuid.New(), "สรุป"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(pusher.message), "quickReply") {
+		t.Fatalf("a weekly summary has no buttons: %s", pusher.message)
+	}
+}

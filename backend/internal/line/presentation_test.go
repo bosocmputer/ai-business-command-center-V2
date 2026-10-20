@@ -112,7 +112,7 @@ func TestBuildFlexReportPresentationKeepsNonzeroComparisonForTrustedZeroData(t *
 	if err != nil {
 		t.Fatalf("BuildFlexReportPresentation() error = %v", err)
 	}
-	if presentation.DataState != FlexDataZero || presentation.Comparison == nil || presentation.Comparison.Text != "↓ 100.00% เทียบ 11 ก.ค. 2569 (100.00 บาท)" {
+	if presentation.DataState != FlexDataZero || presentation.Comparison == nil || presentation.Comparison.Text != "↓ 100.00% เทียบ วันอาทิตย์ 5 ก.ค. 2569 (100.00 บาท)" {
 		t.Fatalf("zero state lost a meaningful comparison: %+v", presentation)
 	}
 }
@@ -159,7 +159,7 @@ func TestBuildFlexReportPresentationNamesComparisonReferenceAndPreviousValue(t *
 	if err != nil {
 		t.Fatalf("BuildFlexReportPresentation() error = %v", err)
 	}
-	if presentation.Comparison == nil || presentation.Comparison.Text != "↑ 103.32% เทียบ 12 ก.ย. 2569 (70,669.40 บาท)" {
+	if presentation.Comparison == nil || presentation.Comparison.Text != "↑ 103.32% เทียบ วันเสาร์ 12 ก.ย. 2569 (70,669.40 บาท)" {
 		t.Fatalf("comparison = %+v", presentation.Comparison)
 	}
 	if presentation.Primary.Unit != "บาท" || presentation.Supporting[0].Label != "บิลขาย" || presentation.Supporting[0].Unit != "ใบ" || presentation.Supporting[1].Label != "ยอดเฉลี่ยต่อบิล" {
@@ -321,3 +321,45 @@ func TestBuildFlexReportPresentationFallsBackForLegacySummary(t *testing.T) {
 		t.Fatalf("legacy presentation = %+v", presentation)
 	}
 }
+
+func TestACardSaysTheAmountInsteadOfAChangeOfSeveralHundredPercent(t *testing.T) {
+	period := report.Period{Preset: report.Yesterday, DateFrom: "2026-10-14", DateTo: "2026-10-14"}
+	dashboard := previewDashboard(report.PurchaseGoodsPayables, period)
+	dashboard.KPIs[0].Value = "19172.49"
+	dashboard.KPIs[0].Comparison = report.MetricComparison{Availability: report.ComparisonAvailable, PreviousValue: "6000.00", Delta: "13172.49", Percent: "219.54", Direction: report.DirectionUp}
+	presentation, err := BuildFlexReportPresentation(FlexReport{Key: report.PurchaseGoodsPayables, Dashboard: &dashboard, ActionURL: "https://dashboard.nextstep-soft.com/app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if presentation.Comparison == nil || presentation.Comparison.Text != "↑ 13,172.49 บาท เทียบ วันพุธ 7 ต.ค. 2569 (6,000.00 บาท)" {
+		t.Fatalf("a change over 150%% must be said as an amount: %+v", presentation.Comparison)
+	}
+	dashboard.KPIs[0].Comparison.Percent, dashboard.KPIs[0].Comparison.Delta = "31.39", "5000.00"
+	presentation, err = BuildFlexReportPresentation(FlexReport{Key: report.PurchaseGoodsPayables, Dashboard: &dashboard, ActionURL: "https://dashboard.nextstep-soft.com/app"})
+	if err != nil || presentation.Comparison == nil || !strings.HasPrefix(presentation.Comparison.Text, "↑ 31.39% เทียบ วันพุธ 7 ต.ค. 2569") {
+		t.Fatalf("an ordinary change stays a percent: %+v %v", presentation.Comparison, err)
+	}
+}
+
+func TestHighlightNamesLoseABracketedNoteBeforeTheyAreCut(t *testing.T) {
+	long := "คอนกรีตผสมเสร็จ กำลังอัด 350 ksc. (cube)"
+	if got := highlightName(long, 38); got != "คอนกรีตผสมเสร็จ กำลังอัด 350 ksc." {
+		t.Fatalf("name = %q", got)
+	}
+	if got := highlightName("ปูนซีเมนต์ (ถุง)", 38); got != "ปูนซีเมนต์ (ถุง)" {
+		t.Fatalf("a name that fits is kept whole: %q", got)
+	}
+	cut := highlightName("ชื่อสินค้าที่ยาวมากมากมากมากมากมากมากมากมากมากมากมากมากมาก", 20)
+	if utf8RuneCount(cut) != 20 || !strings.HasSuffix(cut, "…") {
+		t.Fatalf("a long plain name is cut with an ellipsis: %q", cut)
+	}
+}
+
+func TestCardLabelsThatWrapInsideAWordAreShortened(t *testing.T) {
+	item, err := presentMetric(report.PurchaseGoodsPayables, report.DashboardMetric{Key: "average_per_document", Label: "ยอดเฉลี่ยต่อเอกสาร", Value: "9586.25", Unit: report.UnitTHB})
+	if err != nil || item.Label != "เฉลี่ยต่อเอกสาร" {
+		t.Fatalf("label = %q %v", item.Label, err)
+	}
+}
+
+func utf8RuneCount(value string) int { return len([]rune(value)) }

@@ -73,6 +73,9 @@ const NegativeStockWarning = "มูลค่าสต็อกคงเหล�
 
 // addDashboardQualityWarnings adds the warnings that follow from the figures themselves.
 func addDashboardQualityWarnings(dashboard *Dashboard) {
+	if dashboard.ReportKey == CashBankReceipts || dashboard.ReportKey == CashBankPayments {
+		addChannelSumWarning(dashboard)
+	}
 	if dashboard.ReportKey != StockBalance {
 		return
 	}
@@ -82,6 +85,41 @@ func addDashboardQualityWarnings(dashboard *Dashboard) {
 		}
 		if total, ok := new(big.Rat).SetString(metric.Value); ok && total.Sign() < 0 {
 			addQualityWarning(dashboard, NegativeStockWarning)
+		}
+	}
+}
+
+// ChannelsDoNotAddUp is the warning for a receipts or payments total that its payment channels (cash, transfer, card, cheque) do not make up.
+// The channels of a document often do not add up to its total (an advance applied, a line without a channel), so the missing part belongs to no channel.
+func channelsDoNotAddUp(shown, total string) string {
+	return "ช่องทางที่แสดงรวมกัน " + shown + " บาท ไม่เท่ายอดรวม " + total + " บาท ส่วนต่างไม่ได้ระบุช่องทางในระบบ ห้ามบอกว่าส่วนที่เหลือเป็นช่องทางใดช่องทางหนึ่ง"
+}
+
+func addChannelSumWarning(dashboard *Dashboard) {
+	var totalText string
+	for _, metric := range dashboard.KPIs {
+		if metric.Key == "total_amount" {
+			totalText = metric.Value
+		}
+	}
+	total, ok := new(big.Rat).SetString(totalText)
+	if !ok {
+		return
+	}
+	for _, visualization := range dashboard.Visualizations {
+		if visualization.Key != "cash_receipt_methods" && visualization.Key != "cash_payment_methods" || len(visualization.Series) == 0 {
+			continue
+		}
+		shown := new(big.Rat)
+		for _, value := range visualization.Series[0].Values {
+			amount, valid := new(big.Rat).SetString(value)
+			if !valid {
+				return
+			}
+			shown.Add(shown, amount)
+		}
+		if new(big.Rat).Sub(total, shown).Abs(new(big.Rat).Sub(total, shown)).Cmp(big.NewRat(1, 100)) > 0 {
+			addQualityWarning(dashboard, channelsDoNotAddUp(money(shown), money(total)))
 		}
 	}
 }

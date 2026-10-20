@@ -60,11 +60,58 @@ type LineSender struct {
 }
 
 func (sender *LineSender) Send(ctx context.Context, event agent.AlertEvent) error {
-	return sender.SendText(ctx, event.Recipient, event.ID, event.Message)
+	return sender.push(ctx, event.Recipient, event.ID, event.Message, alertQuickReplies(event.Rule))
 }
 
 // SendText pushes one text message to a recipient under the same quota guard; retryKey makes a repeat of the same message harmless.
 func (sender *LineSender) SendText(ctx context.Context, recipientID, retryKey uuid.UUID, message string) error {
+	return sender.push(ctx, recipientID, retryKey, message, nil)
+}
+
+// quickReply is a button under the last message of a chat: a tap sends its text as if the owner had typed it. It costs nothing extra.
+type quickReply struct {
+	Type   string      `json:"type"`
+	Action quickAction `json:"action"`
+}
+
+type quickAction struct {
+	Type  string `json:"type"`
+	Label string `json:"label"` // LINE allows at most 20 characters
+	Text  string `json:"text"`
+}
+
+// alertFollowUps is the question an owner most likely asks next about an alert (the same questions the alert text suggests).
+var alertFollowUps = map[agent.AlertRuleKey]string{
+	agent.AlertAROverdue:      "ลูกหนี้รายไหนเลยกำหนดเยอะสุด",
+	agent.AlertAROverYear:     "ลูกหนี้รายไหนค้างนานที่สุด",
+	agent.AlertStockReorder:   "สินค้าอะไรใกล้หมดสต็อกบ้าง",
+	agent.AlertCustomersQuiet: "ลูกค้ารายไหนเงียบเกินรอบเยอะสุด",
+	agent.AlertSalesDrop:      "ยอดขายเมื่อวานเป็นอย่างไรบ้าง",
+	agent.AlertReceiptsDrop:   "เงินเข้าเมื่อวานเป็นอย่างไรบ้าง",
+	agent.AlertMarginDrop:     "กำไรขั้นต้นเมื่อวานเป็นอย่างไรบ้าง",
+}
+
+// alertQuickReplies gives an alert its two buttons, "ask more about this" and "switch this alert off", so an owner who does not type much can
+// answer with a tap. The morning digest only gets the switch-off button.
+func alertQuickReplies(rule agent.AlertRuleKey) []quickReply {
+	button := func(label, text string) quickReply {
+		return quickReply{Type: "action", Action: quickAction{Type: "message", Label: label, Text: text}}
+	}
+	if rule == agent.AlertMorningDigest {
+		return []quickReply{button("ปิดสรุปเช้า", "ปิดสรุปเช้า")}
+	}
+	definition, known := agent.AlertRuleFor(string(rule))
+	if !known {
+		return nil
+	}
+	var buttons []quickReply
+	if question := alertFollowUps[rule]; question != "" {
+		buttons = append(buttons, button("ถามต่อเรื่องนี้", question))
+	}
+	return append(buttons, button("ปิดเตือนนี้", "ปิดเตือน"+definition.Label))
+}
+
+func (sender *LineSender) push(ctx context.Context, recipientID, retryKey uuid.UUID, message string, buttons []quickReply) error {
 	left, known := sender.Left(ctx, sender.Now())
 	if !known {
 		return &SendError{Code: "QUOTA_UNKNOWN"}
@@ -80,7 +127,11 @@ func (sender *LineSender) SendText(ctx context.Context, recipientID, retryKey uu
 	if len(text) > maxLineText {
 		text = text[:maxLineText]
 	}
-	payload, err := json.Marshal(map[string]string{"type": "text", "text": string(text)})
+	body := map[string]any{"type": "text", "text": string(text)}
+	if len(buttons) > 0 {
+		body["quickReply"] = map[string]any{"items": buttons}
+	}
+	payload, err := json.Marshal(body)
 	if err != nil {
 		return &SendError{Code: "ENCODE_FAILED"}
 	}

@@ -701,3 +701,47 @@ func TestANewReadThatDoesNotFinishInTimeLeavesTheOldFiguresWithTheStaleNote(t *t
 		t.Fatalf("the read was started, so it counts: %s", got)
 	}
 }
+
+func TestTodayIsNeverComparedWithAWholeDay(t *testing.T) {
+	// Today (1 Oct 2026, noon) so far: the report carries a comparison with yesterday, which must not reach the assistant.
+	today := report.Period{DateFrom: "2026-10-01", DateTo: "2026-10-01"}
+	yesterday := report.Period{DateFrom: "2026-09-30", DateTo: "2026-09-30"}
+	store := &fakeStore{permitted: []report.Key{report.SalesGoodsServices}}
+	snapshots := &fakeSnapshots{exact: map[string]viewer.DashboardSnapshot{
+		snapshotKey(report.SalesGoodsServices, today):     fresh(salesDashboard(today, "45135.00")),
+		snapshotKey(report.SalesGoodsServices, yesterday): fresh(salesDashboard(yesterday, "124425.00")),
+	}}
+	service := newService(store, snapshots)
+
+	response, err := service.Report(context.Background(), principal, "sales_goods_services", "2026-10-01", "2026-10-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != "READY" || response.KPIs[0].Value != "45135.00" {
+		t.Fatalf("today's figure must still be given: %+v", response)
+	}
+	for _, kpi := range response.KPIs {
+		if kpi.Comparison != nil {
+			t.Fatalf("a day that is not over must carry no comparison: %+v", kpi)
+		}
+	}
+	if response.ComparisonPeriod != nil || !strings.Contains(strings.Join(response.Warnings, "|"), "วันนี้ยังไม่จบ") {
+		t.Fatalf("the response must say today is not whole: %+v", response)
+	}
+
+	past, err := service.Report(context.Background(), principal, "sales_goods_services", "2026-09-30", "2026-09-30")
+	if err != nil || past.KPIs[0].Comparison == nil {
+		t.Fatalf("a finished day keeps its comparison: %+v %v", past, err)
+	}
+
+	compared, err := service.Compare(context.Background(), principal, "sales_goods_services", "total_amount", "2026-10-01", "2026-10-01", "2026-09-30", "2026-09-30")
+	if err != nil || compared.Status != "READY" {
+		t.Fatalf("compare = %+v %v", compared, err)
+	}
+	if compared.A.Value != "45135.00" || compared.B.Value != "124425.00" {
+		t.Fatalf("both figures stay: %+v", compared)
+	}
+	if compared.Delta != "" || compared.Percent != "" || !strings.Contains(strings.Join(compared.Warnings, "|"), "วันนี้ยังไม่จบ") {
+		t.Fatalf("the difference of a partial day and a whole day must not be given: %+v", compared)
+	}
+}
