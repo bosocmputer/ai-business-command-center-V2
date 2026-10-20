@@ -16,6 +16,7 @@ RUN CGO_ENABLED=0 GOOS=linux go test ./... \
     && CGO_ENABLED=0 GOOS=linux go build -trimpath -tags timetzdata -ldflags="-s -w" -o /out/evidence ./cmd/evidence \
     && CGO_ENABLED=0 GOOS=linux go build -trimpath -tags timetzdata -ldflags="-s -w" -o /out/provision ./cmd/provision \
     && CGO_ENABLED=0 GOOS=linux go build -trimpath -tags timetzdata -ldflags="-s -w" -o /out/richmenu ./cmd/richmenu \
+    && CGO_ENABLED=0 GOOS=linux go build -trimpath -tags timetzdata -ldflags="-s -w" -o /out/erase ./cmd/erase \
     && CGO_ENABLED=0 GOOS=linux go build -trimpath -tags timetzdata -ldflags="-s -w" -o /out/sentinel ./cmd/sentinel \
     && CGO_ENABLED=0 GOOS=linux go build -trimpath -tags timetzdata -ldflags="-s -w" -o /out/sentinel-preflight ./cmd/sentinel-preflight \
     && CGO_ENABLED=0 GOOS=linux go build -trimpath -tags timetzdata -ldflags="-s -w" -o /out/sentinel-healthcheck ./cmd/sentinel-healthcheck
