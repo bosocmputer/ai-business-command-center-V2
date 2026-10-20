@@ -15,11 +15,13 @@ import (
 
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/agent"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/alert"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/assistantcfg"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/auth"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/config"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/database"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/delivery"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/inactivity"
+	"github.com/bosocmputer/nextstep-dashboard-backend/internal/keywatch"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/line"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/master"
 	"github.com/bosocmputer/nextstep-dashboard-backend/internal/notification"
@@ -180,6 +182,8 @@ func main() {
 		logger.Info("weekly summaries started")
 	}
 	if cfg.OperatorNoticeMode != "off" {
+		go keyWatchLoop(ctx, buildKeyWatcher(cfg, pool, box, logger))
+		logger.Info("model key watch started", "mode", cfg.OperatorNoticeMode)
 		go inactivityLoop(ctx, logger, buildInactivityNotifier(cfg, pool, recipientService, logger))
 		logger.Info("owner inactivity notices started", "mode", cfg.OperatorNoticeMode)
 	}
@@ -241,6 +245,50 @@ func weeklyLoop(ctx context.Context, notifier *weekly.Notifier) {
 	for ctx.Err() == nil {
 		notifier.RunOnce(ctx)
 		timer := time.NewTimer(15 * time.Minute)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+// shopKeys reads a shop's current OpenRouter key through the same path the assistant's own config pull uses, so a shop that is switched off,
+// expired or without a key has none to check.
+type shopKeys struct{ settings *assistantcfg.Service }
+
+func (keys shopKeys) KeyFor(ctx context.Context, tenantID uuid.UUID) (string, error) {
+	config, err := keys.settings.AgentConfig(ctx, tenantID)
+	if err != nil || !config.Enabled || config.Secrets == nil {
+		return "", err
+	}
+	return config.Secrets.OpenRouterKey, nil
+}
+
+func buildKeyWatcher(cfg config.Config, pool *pgxpool.Pool, box *secret.Box, logger *slog.Logger) *keywatch.Watcher {
+	mode := keywatch.Mode(cfg.OperatorNoticeMode)
+	var sender keywatch.Sender
+	if mode == keywatch.ModeSend {
+		token, tokenErr := os.ReadFile(cfg.OperatorTelegramTokenFile)
+		chat, chatErr := os.ReadFile(cfg.OperatorTelegramChatFile)
+		telegram, err := operatornotice.NewTelegram(string(token), string(chat), "", nil)
+		if tokenErr != nil || chatErr != nil || err != nil {
+			logger.Error("operator Telegram is not usable, model key notices only look", "safeErrorCode", "OPERATOR_TELEGRAM_UNAVAILABLE")
+			mode = keywatch.ModeObserve
+		} else {
+			sender = telegram
+		}
+	}
+	settings := assistantcfg.NewService(database.NewAssistantSettingsStore(pool), box, time.Now)
+	return keywatch.NewWatcher(database.NewKeyWatchStore(pool), shopKeys{settings: settings}, keywatch.NewOpenRouter(keywatch.DefaultEndpoint, 10*time.Second), sender, mode, time.Now, logger)
+}
+
+// keyWatchLoop asks every half hour; most passes find every key well stocked and say nothing.
+func keyWatchLoop(ctx context.Context, watcher *keywatch.Watcher) {
+	for ctx.Err() == nil {
+		watcher.RunOnce(ctx)
+		timer := time.NewTimer(30 * time.Minute)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
