@@ -334,3 +334,21 @@ func TestReceiptsWarnWhenTheirChannelsDoNotAddUpToTheTotal(t *testing.T) {
 		t.Fatalf("channels that add up must not warn: %+v", exact.Quality)
 	}
 }
+
+func TestReceivablesWarnWhenTheirAgeGroupsExceedTheTotalBecauseOfCredit(t *testing.T) {
+	build := func(total string, groups ...string) Dashboard {
+		dashboard := Dashboard{ReportKey: ARAging, Quality: DashboardQuality{Status: "OK", Warnings: []string{}},
+			KPIs:           []DashboardMetric{{Key: "total_balance", Value: total}},
+			Visualizations: []DashboardVisualization{{Key: "ar_aging_doc_age", Series: []VisualizationSeries{{Key: "amount", Values: groups}}}}}
+		addDashboardQualityWarnings(&dashboard)
+		return dashboard
+	}
+	credit := build("7644030.10", "2420593.00", "2014474.00", "1263686.00", "261222.10", "127310.00", "1557245.00")
+	if len(credit.Quality.Warnings) != 1 || !strings.Contains(credit.Quality.Warnings[0], "-500.00") || !strings.Contains(credit.Quality.Warnings[0], "เครดิตคงค้าง") {
+		t.Fatalf("groups 500 above the total must be explained by the credit balance: %+v", credit.Quality)
+	}
+	exact := build("100.00", "60.00", "40.00")
+	if len(exact.Quality.Warnings) != 0 {
+		t.Fatalf("groups that add up must not warn: %+v", exact.Quality)
+	}
+}

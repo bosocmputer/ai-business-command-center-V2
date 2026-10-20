@@ -887,10 +887,10 @@ func compareWarnings(a, b report.Period, location *time.Location, now time.Time)
 	}
 	today := now.In(location).Format(time.DateOnly)
 	if a.DateTo >= today {
-		warnings = append(warnings, "ช่วง A ยังไม่จบ ยอดจะเพิ่มขึ้นอีกจนสิ้นช่วง")
+		warnings = append(warnings, "ช่วง A ยังไม่จบ นับถึงวันที่ "+a.DateTo+" ให้บอกช่วงที่นับ ไม่ต้องบอกว่ายอดจะเพิ่ม")
 	}
 	if b.DateTo >= today {
-		warnings = append(warnings, "ช่วง B ยังไม่จบ ยอดจะเพิ่มขึ้นอีกจนสิ้นช่วง")
+		warnings = append(warnings, "ช่วง B ยังไม่จบ นับถึงวันที่ "+b.DateTo+" ให้บอกช่วงที่นับ ไม่ต้องบอกว่ายอดจะเพิ่ม")
 	}
 	if a.DateFrom <= b.DateTo && b.DateFrom <= a.DateTo {
 		warnings = append(warnings, "สองช่วงทับซ้อนกัน")

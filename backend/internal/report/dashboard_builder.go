@@ -76,6 +76,9 @@ func addDashboardQualityWarnings(dashboard *Dashboard) {
 	if dashboard.ReportKey == CashBankReceipts || dashboard.ReportKey == CashBankPayments {
 		addChannelSumWarning(dashboard)
 	}
+	if dashboard.ReportKey == ARAging {
+		addAgingSumWarning(dashboard)
+	}
 	if dashboard.ReportKey != StockBalance {
 		return
 	}
@@ -93,6 +96,38 @@ func addDashboardQualityWarnings(dashboard *Dashboard) {
 // The channels of a document often do not add up to its total (an advance applied, a line without a channel), so the missing part belongs to no channel.
 func channelsDoNotAddUp(shown, total string) string {
 	return "ช่องทางที่แสดงรวมกัน " + shown + " บาท ไม่เท่ายอดรวม " + total + " บาท ส่วนต่างไม่ได้ระบุช่องทางในระบบ ห้ามบอกว่าส่วนที่เหลือเป็นช่องทางใดช่องทางหนึ่ง"
+}
+
+// addAgingSumWarning says why the age groups of receivables do not add up to the total: the credit balance (a credit note or an overpayment, below
+// zero) sits in no age group. Without it the assistant lists groups that exceed the total.
+func addAgingSumWarning(dashboard *Dashboard) {
+	var totalText string
+	for _, metric := range dashboard.KPIs {
+		if metric.Key == "total_balance" {
+			totalText = metric.Value
+		}
+	}
+	total, ok := new(big.Rat).SetString(totalText)
+	if !ok {
+		return
+	}
+	for _, visualization := range dashboard.Visualizations {
+		if visualization.Key != "ar_aging_doc_age" || len(visualization.Series) == 0 {
+			continue
+		}
+		groups := new(big.Rat)
+		for _, value := range visualization.Series[0].Values {
+			amount, valid := new(big.Rat).SetString(value)
+			if !valid {
+				return
+			}
+			groups.Add(groups, amount)
+		}
+		difference := new(big.Rat).Sub(total, groups)
+		if new(big.Rat).Abs(difference).Cmp(big.NewRat(1, 100)) > 0 {
+			addQualityWarning(dashboard, "กลุ่มอายุใบรวมกัน "+money(groups)+" บาท ไม่เท่ายอดค้างรวม "+money(total)+" บาท ส่วนต่าง "+money(difference)+" บาท คือเครดิตคงค้าง (ใบลดหนี้หรือรับชำระเกิน) ที่ไม่อยู่ในกลุ่มอายุ ให้แสดงเป็นบรรทัดเครดิตคงค้างติดลบเพื่อให้รวมเท่ายอดค้างรวม")
+		}
+	}
 }
 
 func addChannelSumWarning(dashboard *Dashboard) {
